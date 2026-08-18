@@ -151,7 +151,10 @@ export async function createPlanCheckout(input: {
               ...(plan.trialDays > 0 ? { trial_period_days: plan.trialDays } : {}),
             },
           }
-        : { payment_intent_data: { metadata } }),
+        : {
+            invoice_creation: { enabled: true, invoice_data: { metadata } },
+            payment_intent_data: { metadata },
+          }),
       ...redirectUrls(input),
     },
     { idempotencyKey: `plan-checkout:${purchaseId ?? `${input.user.id}:${plan.id}`}` },

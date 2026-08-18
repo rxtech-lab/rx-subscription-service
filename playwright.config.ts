@@ -32,6 +32,7 @@ export default defineConfig({
         AUTH_SECRET: E2E_SECRET,
         E2E_STRIPE_API_BASE: E2E_STRIPE_URL,
         STRIPE_SECRET_KEY: "sk_test_playwright",
+        STRIPE_SANDBOX_SECRET_KEY: "sk_test_playwright_sandbox",
         NEXT_PUBLIC_SITE_URL: E2E_BASE_URL,
       },
     },
