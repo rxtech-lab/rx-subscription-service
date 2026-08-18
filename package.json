@@ -18,6 +18,8 @@
   "dependencies": {
     "@ai-sdk/gateway": "3.0.153",
     "@ai-sdk/react": "^3",
+    "@json-render/core": "0.20.0",
+    "@json-render/react": "0.20.0",
     "@libsql/client": "0.17.4",
     "@rxtech-lab/authjs-rxlab": "1.6.1",
     "ai": "6.0.230",

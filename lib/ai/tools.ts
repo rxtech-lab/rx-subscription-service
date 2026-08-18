@@ -13,6 +13,12 @@ import { listUsageItems } from "@/lib/subscription/usage-items";
 import { listEligibilityRules, listTopupProducts } from "@/lib/subscription/topups";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
 import { listTestUsers } from "@/lib/subscription/test-users";
+import {
+  DEFAULT_ANALYTICS_DAYS,
+  getApplicationAnalytics,
+  listRecentPurchases,
+} from "@/lib/subscription/analytics";
+import { uiCatalogReference, uiSpecSchema, validateUiSpec } from "./ui-catalog";
 import { writeToolSchemas } from "./tool-schemas";
 
 /**
@@ -143,6 +149,65 @@ export function buildTools(applicationId: string, actor: Actor) {
           subscriptions,
           balances,
         }));
+      },
+    }),
+
+    getAnalytics: tool({
+      description:
+        "Subscription, revenue, and user metrics for a recent date range, already bucketed by day. Use this for any 'how many' or 'how much' question, and as the data behind a chart. Amounts are integer cents in the returned currency; test users are excluded.",
+      inputSchema: z.object({
+        days: z
+          .number()
+          .int()
+          .min(7)
+          .max(365)
+          .optional()
+          .describe(`Length of the window. Defaults to ${DEFAULT_ANALYTICS_DAYS}.`),
+      }),
+      execute: async ({ days }) => getApplicationAnalytics(applicationId, { days }),
+    }),
+
+    listPurchases: tool({
+      description:
+        "List recent payments — one-time plan purchases and topups — newest first, with amounts in integer cents.",
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(200).optional(),
+        includeTest: z
+          .boolean()
+          .optional()
+          .describe("Include purchases made by test users. Defaults to false."),
+      }),
+      execute: async ({ limit, includeTest }) =>
+        listRecentPurchases(applicationId, { limit, includeTest }),
+    }),
+  };
+
+  /**
+   * Display tools render into the chat panel. They read nothing and change
+   * nothing, so they run without approval — the worst a bad call can do is show
+   * an ugly chart.
+   */
+  const displayTools = {
+    renderUI: tool({
+      description:
+        "Show a chart, table, or metric panel in the chat instead of describing numbers in prose. Pass a complete json-render spec built from the component catalog in the system prompt. Prefer this whenever the answer involves a series, a breakdown, or more than about three numbers.",
+      inputSchema: z.object({
+        spec: uiSpecSchema.describe(
+          "A json-render spec: the root element key and a flat list of elements, each with its own key, a catalog component type, its props, and the keys of its children.",
+        ),
+      }),
+      execute: async ({ spec }) => {
+        const validated = validateUiSpec(spec);
+        if (!validated.ok) {
+          return { ok: false, error: validated.error };
+        }
+        // The panel renders the spec from the tool input, so the result only
+        // needs to tell the model the view is already on screen.
+        return {
+          ok: true,
+          rendered: true,
+          note: "The user can see this view. Do not repeat its numbers in text.",
+        };
       },
     }),
   };
@@ -294,7 +359,7 @@ export function buildTools(applicationId: string, actor: Actor) {
     }),
   };
 
-  return { ...readTools, ...confirmationTools, ...writeTools };
+  return { ...readTools, ...displayTools, ...confirmationTools, ...writeTools };
 }
 
 export function systemPrompt(application: { id: string; name: string }): string {
@@ -314,6 +379,19 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- A role-gated topup must be reachable: before creating the topup, ensure every qualifying plan grants that role with `addPlanEntitlement` kind `role`. Never create an orphan role or add a role gate without a granting plan unless the role is default.",
     "- Plan entitlements are snapshotted when a subscription starts. Adding a role to an existing plan does not update older subscriptions, so use a direct `requires_active_plan` rule when current subscribers to that plan must qualify immediately.",
     "- Test users are disposable users on the Test tab, for trying out the subscriber experience. They are the only users whose balances, levels, and subscriptions you can change — there is no tool that edits a real subscriber, so if asked, say so and offer a test user instead. Call `listTestUsers` for their ids; `grantTestSubscription` skips payment entirely, and their checkouts run against the Stripe sandbox.",
+    "",
+    "",
+    "Showing data:",
+    "- `getAnalytics` returns day-bucketed series and totals; `listPurchases` returns individual payments. Money is always integer cents — divide by 100 only when writing a label.",
+    "- Call `renderUI` to put a chart, table, or metric panel in the chat. Use it for anything with a time series, a breakdown, or more than about three numbers, and keep your own text to the one-sentence takeaway.",
+    "- A `renderUI` spec is a root key plus a flat list of elements: `{\"root\":\"root\",\"elements\":[{\"key\":\"root\",\"type\":\"Stack\",\"props\":{},\"children\":[\"chart\"]},{\"key\":\"chart\",\"type\":\"LineChart\",\"props\":{\"title\":\"Active subscriptions\",\"series\":[{\"label\":\"Active\",\"points\":[{\"x\":\"2026-08-01\",\"y\":12}]}]},\"children\":[]}]}`.",
+    "- Every element needs `key`, `type`, `props`, and `children`. Only components with [holds children] may list child keys, every child key must belong to another element, and every element must be reachable from the root.",
+    "- Pass real values from a read tool. Never invent a data point, and never send an empty series.",
+    "- One number is a Metric, not a chart. A date axis is a LineChart. A comparison across categories is a BarChart, horizontal when the names are long. Past about seven rows, use a Table.",
+    "- Charts take at most four series; fold the rest into an Other row.",
+    "",
+    "Component catalog for `renderUI` (props are shown as TypeScript-style signatures; `?` marks an optional prop):",
+    uiCatalogReference(),
     "",
     "When you need the user to confirm a proposed setup or plan before proceeding, call the `confirmation` tool with only a short title and plain-language description. Never ask for confirmation in normal chat text or wait for a typed reply.",
     "The `confirmation` tool is only a simple decision prompt. It does not replace or change any write tool's own approval; after confirmation, call write tools normally and let their existing approvals work as before.",
