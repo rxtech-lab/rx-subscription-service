@@ -1,36 +1,164 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# rx-subscription
 
-## Getting Started
+A shared subscription, billing, and usage layer for rxlab applications. One
+deployment serves every app: each has its own plans, topups, roles, permissions,
+balance units, and usage items, and each user gets independent balances per app.
 
-First, run the development server:
+- **Next.js 16** App Router, server actions for the console
+- **Turso / libSQL + Drizzle** for storage
+- **Stripe** for payments
+- **@rxtech-lab/authjs-rxlab** for admin sign-in; applications come from
+  rxlab-auth's admin OAuth-client API
+- **AI SDK 6 + Vercel AI Gateway** for the assistant
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+bun install
+cp .env.example .env.local     # fill in the values
+bun run db:migrate             # apply migrations
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without `AUTH_*` set the app boots and explains what is missing rather than
+failing during an OAuth callback.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Authorization
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+There is no second permission system. Signing in yields an rxlab access token,
+which is used to call `GET /api/admin/oauth-clients` on rxlab-auth — whatever
+comes back is exactly the set of applications you may manage, per your
+`read:oauth_clients:all` or `read:oauth_clients:<ids>` grant. Every server action
+and AI tool re-checks that before touching anything.
 
-## Learn More
+> The client list is fetched with the signed-in admin's token because rxlab-auth
+> resolves the token `sub` against its `users` table
+> (`lib/admin-api/authorize.ts`), while a `client_credentials` token carries the
+> client id as `sub` (`app/api/oauth/token/route.ts:454`). Machine-to-machine
+> access to that endpoint is therefore not possible today; syncing happens during
+> an admin request instead.
 
-To learn more about Next.js, take a look at the following resources:
+## Concepts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Concept | What it is |
+|---|---|
+| **Application** | An rxlab OAuth client. Its client id is the primary key here. |
+| **Balance unit** | What you meter — points, credits, anything. Integer amounts, with an exact integer conversion to money. |
+| **Plan** | Monthly, quarterly, yearly, or one-time. Grants roles, permissions, usage allowances, and balances. |
+| **Topup** | A purchasable bundle of units, optionally gated behind a plan or role. |
+| **Subscription role** | What a subscriber *bought* — distinct from rxlab-auth's `oauth_client_roles`, which describe who someone *is*. |
+| **Permission** | A customizable action, serialized as `read:a:all` or `read:a:id1,id2` — the same syntax rxlab-auth uses. |
+| **Usage item** | Something counted per user, with its own reset schedule and overage policy. |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Usage resets
 
-## Deploy on Vercel
+Counters are never reset by a scheduled job. Asking for the current period is
+what rolls a lapsed one over, so a reset is exact at any granularity and an idle
+user accumulates no rows.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Policy | Behaviour |
+|---|---|
+| `never` | Accumulates forever |
+| `rolling_window` | N hours/days/weeks/months from first use |
+| `calendar_period` | Snapped to clock boundaries (UTC midnight, Monday, 1st of month) |
+| `billing_period` | Follows the subscription; falls back to calendar months |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Over the limit, an item can `block`, `allow`, or `charge_balance` at a set cost
+per extra unit.
+
+### Plan edits and existing subscribers
+
+A subscription stores a snapshot of what its plan granted at purchase, so editing
+a live plan never retroactively changes what someone already paid for. Price
+changes mint a new Stripe Price; existing subscriptions keep billing on theirs.
+
+## Machine API
+
+Your applications talk to `/api/v1` with an application API key
+(`X-Api-Key`, created under Settings). Users are addressed by their rxlab id.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/entitlements` | Plans, roles, permission expressions, balances, and usage in one call |
+| `GET/POST /api/v1/usage` | Read or report metered usage |
+| `GET/POST /api/v1/balances` | Read, credit, or debit a balance |
+| `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility |
+| `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, or the billing portal |
+
+```bash
+curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $KEY"
+```
+
+```json
+{
+  "roles": ["free", "pro"],
+  "permissions": ["read:a:all"],
+  "usage": [{ "key": "api_calls", "used": 4, "limit": 1000, "remaining": 996,
+              "resetsAt": "2026-08-19T00:00:00.000Z" }],
+  "balances": [{ "unit": "points", "amount": 700, "available": 700 }]
+}
+```
+
+Credits, debits, and topup fulfillment are idempotent on a caller-supplied key,
+so a retried request or a replayed webhook can never double-charge. Balance
+debits are a single conditional update, so concurrent spends cannot overdraw.
+
+## Stripe
+
+Point a webhook at `/api/stripe/webhook` for `checkout.session.*`,
+`customer.subscription.*`, `invoice.paid`, `charge.refunded`, and
+`charge.dispute.*`. Events are claimed in a dedupe table before processing, so
+Stripe's retries are safe. Topup eligibility is re-checked at fulfillment, not
+just at checkout, so a plan cancelled mid-payment cannot unlock a gated pack.
+
+Two accounts run side by side: `live` for real subscribers and `sandbox` for
+test users. Stripe ids are per-account, so plans and topups store a second
+product/price pair for the sandbox; `lib/stripe/accounts.ts` owns which account
+a call belongs to and which columns go with it.
+
+## Test users
+
+The **Test** tab creates disposable users for walking through the subscriber
+experience. They are ordinary `app_users` rows flagged `is_test`, so balances,
+usage, entitlements, and subscriptions all behave exactly as they do for a real
+subscriber — but they are hidden from the Users tab and from the dashboard
+counts, tagged wherever they do surface, and they transact against a **separate
+Stripe sandbox account** (`STRIPE_SANDBOX_SECRET_KEY`), never the live one. A
+test user needs no RxLab identity; a synthetic `test:<uuid>` one is generated.
+
+"Test user" in a row's menu opens `/test/<appId>` in a new tab as that user: a
+plain storefront showing their entitlements, balances, and usage, with plans and
+topups they can actually buy. Authorization is a signed, httpOnly, 8-hour cookie
+minted by a console-authenticated route, and every request re-checks that the
+named user still exists and is still a test user.
+
+Point the sandbox account's webhook at `/api/stripe/webhook/sandbox`, which uses
+`STRIPE_SANDBOX_WEBHOOK_SECRET`. The storefront's return page also reconciles the
+Checkout session directly, so purchases still settle without a webhook tunnel;
+both paths are idempotent.
+
+The assistant can manage test users (`listTestUsers`, `createTestUser`,
+`grantTestSubscription`, `adjustTestUserBalance`, …). Test users are the only
+users whose balances and subscriptions it can change — every write resolves the
+id through `requireTestUser`, so an approved call naming a real subscriber is
+refused server-side.
+
+## The assistant
+
+The button in the bottom-right of any application opens a chat that can add,
+edit, and list subscription settings in plain language. Read tools run
+immediately. A minimal HMAC-signed confirmation card handles simple decisions
+without requiring a typed reply, while every write tool retains its existing
+signed approval. Writes go through the same service layer as the console and
+are recorded in `audit_logs` with `actorType: "ai"` and the originating
+conversation.
+
+## Development
+
+```bash
+bun run typecheck
+bun run test
+bun run db:generate     # after changing lib/db/schema/*
+bun run scripts/seed-demo.ts   # seed a demo app and print an API key
+```
+</content>
