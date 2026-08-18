@@ -6,33 +6,32 @@ import {
 } from "@/lib/stripe/checkout";
 import { readTestSessionFor } from "@/lib/test-session";
 
-function first(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
-
 /**
  * Return path from sandbox Checkout.
  *
  * Reconciling here means the storefront works without a webhook tunnel running
  * locally. The webhook performs the same fulfillment, and both paths are
  * idempotent, so whichever arrives second is a no-op.
+ *
+ * This is a Route Handler rather than a page because `revalidatePath` may not
+ * be called during a render.
  */
-export default async function TestCheckoutCompletePage({
-  params,
-  searchParams,
-}: PageProps<"/test/[appId]/checkout/complete">) {
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ appId: string }> },
+) {
   const { appId } = await params;
-  const query = await searchParams;
+  const query = new URL(request.url).searchParams;
   const session = await readTestSessionFor(appId);
   if (!session) notFound();
 
   const base = `/test/${encodeURIComponent(appId)}`;
-  if (first(query.status) === "cancelled") {
+  if (query.get("status") === "cancelled") {
     redirect(`${base}?checkout=cancelled`);
   }
 
-  const sessionId = first(query.session_id);
-  const kind = first(query.kind);
+  const sessionId = query.get("session_id");
+  const kind = query.get("kind");
   if (!sessionId || (kind !== "plan" && kind !== "topup")) {
     redirect(`${base}?checkout=failed`);
   }
