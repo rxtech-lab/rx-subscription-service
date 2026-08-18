@@ -2,11 +2,14 @@
 
 import { cancelSubscription } from "@/lib/subscription/subscriptions";
 import {
+  clearTestUserUsageLimit,
   createTestUser,
   creditTestBalance,
   deleteTestUser,
   grantTestSubscription,
   requireTestUser,
+  setTestUserRoles,
+  setTestUserUsageLimit,
   updateTestUser,
 } from "@/lib/subscription/test-users";
 import { resetUsageCounter } from "@/lib/subscription/usage";
@@ -14,9 +17,11 @@ import { adjustBalance } from "@/lib/subscription/users";
 import {
   checkbox,
   integer,
+  optionalInteger,
   optionalText,
   revalidateApp,
   text,
+  textList,
   toActionState,
   withApplication,
   type ActionState,
@@ -65,6 +70,25 @@ export async function createTestUserAction(
           actor,
         });
       }
+
+      await setTestUserRoles({
+        applicationId,
+        appUserId: user.id,
+        roleIds: textList(formData, "roleIds"),
+        actor,
+      });
+
+      const usageItemId = optionalText(formData, "usageItemId");
+      const usageLimit = optionalInteger(formData, "usageLimit");
+      if (usageItemId && usageLimit !== null) {
+        await setTestUserUsageLimit({
+          applicationId,
+          appUserId: user.id,
+          usageItemId,
+          limitValue: usageLimit,
+          actor,
+        });
+      }
     });
   } catch (error) {
     return toActionState(error);
@@ -81,14 +105,23 @@ export async function updateTestUserAction(
   const applicationId = text(formData, "applicationId");
   try {
     await withApplication(applicationId, async ({ actor }) => {
+      const appUserId = text(formData, "appUserId");
       await updateTestUser({
         applicationId,
-        appUserId: text(formData, "appUserId"),
+        appUserId,
         displayName: text(formData, "displayName"),
         email: optionalText(formData, "email"),
         level: integer(formData, "level", 0),
         levelKey: optionalText(formData, "levelKey"),
         note: optionalText(formData, "note"),
+        actor,
+      });
+      // The edit form renders the full role list with the held ones checked, so
+      // an empty submission means "no roles", not "leave them alone".
+      await setTestUserRoles({
+        applicationId,
+        appUserId,
+        roleIds: textList(formData, "roleIds"),
         actor,
       });
     });
@@ -146,6 +179,63 @@ export async function adjustTestBalanceAction(
   }
   revalidateApp(applicationId, "test");
   return { success: "Balance adjusted." };
+}
+
+/**
+ * Pin, unlimit, or drop a test user's allowance for one usage item.
+ *
+ * `limitMode` keeps the three outcomes apart that a lone number field cannot
+ * express: a finite limit, unlimited, and "no override — use the plan".
+ */
+export async function setTestUserUsageLimitAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const applicationId = text(formData, "applicationId");
+  const mode = text(formData, "limitMode") || "limited";
+  try {
+    await withApplication(applicationId, async ({ actor }) => {
+      const appUserId = text(formData, "appUserId");
+      const usageItemId = text(formData, "usageItemId");
+      if (mode === "default") {
+        await clearTestUserUsageLimit({
+          applicationId,
+          appUserId,
+          usageItemId,
+          actor,
+        });
+        return;
+      }
+      await setTestUserUsageLimit({
+        applicationId,
+        appUserId,
+        usageItemId,
+        limitValue: mode === "unlimited" ? null : integer(formData, "limitValue", 0),
+        actor,
+      });
+    });
+  } catch (error) {
+    return toActionState(error);
+  }
+  revalidateApp(applicationId, "test");
+  return {
+    success: mode === "default" ? "Override removed." : "Usage limit set.",
+  };
+}
+
+export async function clearTestUserUsageLimitAction(
+  formData: FormData,
+): Promise<void> {
+  const applicationId = text(formData, "applicationId");
+  await withApplication(applicationId, async ({ actor }) => {
+    await clearTestUserUsageLimit({
+      applicationId,
+      appUserId: text(formData, "appUserId"),
+      usageItemId: text(formData, "usageItemId"),
+      actor,
+    });
+  });
+  revalidateApp(applicationId, "test");
 }
 
 export async function deleteTestUserAction(formData: FormData): Promise<void> {

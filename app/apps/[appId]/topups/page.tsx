@@ -8,7 +8,7 @@ import {
 } from "@/app/actions/catalog";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
 import { TopupEligibilityFields } from "@/components/forms/topup-eligibility-fields";
-import { ActionMenu } from "@/components/ui/action-menu";
+import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Badge,
@@ -208,6 +208,9 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                             value={topup.status === "active" ? "draft" : "active"}
                           />
                         </InlineActionButton>
+
+                        <ActionMenuDivider />
+
                         <InlineActionButton
                           action={deleteTopupAction}
                           label="Delete"

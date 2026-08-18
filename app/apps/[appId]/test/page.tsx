@@ -5,10 +5,11 @@ import {
   createTestUserAction,
   deleteTestUserAction,
   grantTestSubscriptionAction,
+  setTestUserUsageLimitAction,
   updateTestUserAction,
 } from "@/app/actions/test-users";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
-import { ActionMenu } from "@/components/ui/action-menu";
+import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Badge,
@@ -25,13 +26,18 @@ import {
 } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
 import { sandboxConfigured, stripeMode } from "@/lib/stripe/client";
+import { listRoles } from "@/lib/subscription/roles";
+import { describeClockOffset } from "@/lib/subscription/test-clock";
 import { listPurchasablePlans } from "@/lib/subscription/subscriptions";
 import { listTestUsers, type TestUserSummary } from "@/lib/subscription/test-users";
 import { listBalanceUnits } from "@/lib/subscription/units";
+import { listUsageItems } from "@/lib/subscription/usage-items";
 import { formatDate, formatInterval, formatMoney } from "@/lib/utils";
 
 type Plan = Awaited<ReturnType<typeof listPurchasablePlans>>[number];
 type Unit = Awaited<ReturnType<typeof listBalanceUnits>>[number];
+type Role = Awaited<ReturnType<typeof listRoles>>[number];
+type UsageItem = Awaited<ReturnType<typeof listUsageItems>>[number];
 
 function planOption(plan: Plan) {
   return `${plan.name} · ${formatMoney(plan.priceAmountCents, plan.currency)} ${formatInterval(
@@ -43,12 +49,19 @@ function planOption(plan: Plan) {
 function TestUserFields({
   plans,
   units,
+  roles,
+  usageItems,
   user,
+  roleIds = [],
 }: {
   plans: Plan[];
   units: Unit[];
+  roles: Role[];
+  usageItems: UsageItem[];
   user?: TestUserSummary["user"];
+  roleIds?: string[];
 }) {
+  const held = new Set(roleIds);
   return (
     <div className="space-y-4">
       <Field label="Display name">
@@ -79,6 +92,34 @@ function TestUserFields({
           placeholder="Pro annual, low balance"
         />
       </Field>
+
+      {roles.length > 0 ? (
+        <div className="border-t border-slate-100 pt-4">
+          <p className="text-xs font-semibold text-slate-700">Roles</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Granted directly, with no plan behind them — the way to try a
+            permission-gated screen without paying for it. Roles that come with a
+            subscription still apply on top.
+          </p>
+          <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            {roles.map((role) => (
+              <label
+                key={role.id}
+                className="flex items-center gap-2 text-xs text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  name="roleIds"
+                  value={role.id}
+                  defaultChecked={held.has(role.id)}
+                />
+                <code className="rounded bg-slate-100 px-1.5 py-0.5">{role.key}</code>
+                <span className="truncate text-slate-500">{role.title}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {user ? null : (
         <>
@@ -115,6 +156,26 @@ function TestUserFields({
               <Input name="amount" type="number" min="0" step="1" defaultValue={0} />
             </Field>
           </div>
+          {usageItems.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Usage limit for">
+                <Select name="usageItemId" defaultValue="">
+                  <option value="">No override</option>
+                  {usageItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Limit"
+                hint="Overrides the plan allowance for this user only."
+              >
+                <Input name="usageLimit" type="number" min="0" step="1" />
+              </Field>
+            </div>
+          ) : null}
         </>
       )}
     </div>
@@ -125,10 +186,12 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
   const { appId } = await params;
   await requireApplicationAccess(appId);
 
-  const [testUsers, plans, units] = await Promise.all([
+  const [testUsers, plans, units, roles, usageItems] = await Promise.all([
     listTestUsers(appId),
     listPurchasablePlans(appId),
     listBalanceUnits(appId),
+    listRoles(appId),
+    listUsageItems(appId),
   ]);
   const sandboxReady = sandboxConfigured();
   const sandboxMode = stripeMode("sandbox");
@@ -174,7 +237,12 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                 autoComplete="off"
               >
                 <input type="hidden" name="applicationId" value={appId} />
-                <TestUserFields plans={plans} units={units} />
+                <TestUserFields
+                  plans={plans}
+                  units={units}
+                  roles={roles}
+                  usageItems={usageItems}
+                />
               </ActionForm>
             </FormDialog>
           }
@@ -191,6 +259,7 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
               <tr>
                 <Th>User</Th>
                 <Th>Subscriptions</Th>
+                <Th>Roles &amp; limits</Th>
                 <Th>Balances</Th>
                 <Th>Level</Th>
                 <Th>Created</Th>
@@ -198,7 +267,9 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
               </tr>
             </thead>
             <tbody>
-              {testUsers.map(({ user, subscriptions, balances }) => {
+              {testUsers.map((summary) => {
+                const { user, subscriptions, balances, usageLimits } = summary;
+                const heldRoles = summary.roles;
                 const active = subscriptions.filter((subscription) =>
                   ["active", "trialing", "past_due"].includes(subscription.status),
                 );
@@ -233,6 +304,43 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                               </span>
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </Td>
+                    <Td>
+                      {heldRoles.length === 0 &&
+                      usageLimits.length === 0 &&
+                      user.testClockOffsetMs === 0 ? (
+                        <span className="text-xs text-neutral-400">None</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {heldRoles.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {heldRoles.map((role) => (
+                                <Badge key={role.roleId} tone="blue">
+                                  {role.key}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : null}
+                          {usageLimits.map((limit) => (
+                            <p
+                              key={limit.usageItemId}
+                              className="text-xs text-neutral-600"
+                            >
+                              {limit.itemName}:{" "}
+                              {limit.limitValue === null
+                                ? "unlimited"
+                                : limit.limitValue.toLocaleString()}
+                            </p>
+                          ))}
+                          {user.testClockOffsetMs === 0 ? null : (
+                            // Worth surfacing: usage on this row is being read
+                            // against a clock that is not the wall clock.
+                            <p className="text-xs text-amber-700">
+                              Clock {describeClockOffset(user.testClockOffsetMs)}
+                            </p>
+                          )}
                         </div>
                       )}
                     </Td>
@@ -276,6 +384,8 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                           Test user
                         </a>
 
+                        <ActionMenuDivider />
+
                         <FormDialog
                           triggerLabel="Edit"
                           title={`Edit ${user.displayName || "test user"}`}
@@ -297,7 +407,10 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                             <TestUserFields
                               plans={plans}
                               units={units}
+                              roles={roles}
+                              usageItems={usageItems}
                               user={user}
+                              roleIds={heldRoles.map((role) => role.roleId)}
                             />
                           </ActionForm>
                         </FormDialog>
@@ -335,6 +448,69 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                                   ))}
                                 </Select>
                               </Field>
+                            </ActionForm>
+                          </FormDialog>
+                        ) : null}
+
+                        {usageItems.length > 0 ? (
+                          <FormDialog
+                            triggerLabel="Usage limit"
+                            title="Set a usage limit"
+                            description="Overrides the plan allowance for this user only, up or down."
+                            icon="edit"
+                            triggerVariant="menu"
+                            triggerSize="sm"
+                            size="sm"
+                          >
+                            <ActionForm
+                              action={setTestUserUsageLimitAction}
+                              submitLabel="Save limit"
+                            >
+                              <input
+                                type="hidden"
+                                name="applicationId"
+                                value={appId}
+                              />
+                              <input
+                                type="hidden"
+                                name="appUserId"
+                                value={user.id}
+                              />
+                              <div className="space-y-4">
+                                <Field label="Usage item">
+                                  <Select name="usageItemId" required>
+                                    {usageItems.map((item) => (
+                                      <option key={item.id} value={item.id}>
+                                        {item.name}
+                                        {item.defaultLimit === null
+                                          ? " · default unlimited"
+                                          : ` · default ${item.defaultLimit}`}
+                                      </option>
+                                    ))}
+                                  </Select>
+                                </Field>
+                                <Field label="Allowance">
+                                  <Select name="limitMode" defaultValue="limited">
+                                    <option value="limited">Set a limit</option>
+                                    <option value="unlimited">Unlimited</option>
+                                    <option value="default">
+                                      Remove override (use the plan)
+                                    </option>
+                                  </Select>
+                                </Field>
+                                <Field
+                                  label="Limit"
+                                  hint="Used when the allowance is a set limit."
+                                >
+                                  <Input
+                                    name="limitValue"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    defaultValue={0}
+                                  />
+                                </Field>
+                              </div>
                             </ActionForm>
                           </FormDialog>
                         ) : null}
@@ -415,6 +591,8 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                             <input type="hidden" name="immediately" value="true" />
                           </InlineActionButton>
                         ))}
+
+                        <ActionMenuDivider />
 
                         <InlineActionButton
                           action={deleteTestUserAction}

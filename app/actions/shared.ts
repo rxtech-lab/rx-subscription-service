@@ -79,6 +79,14 @@ export function optionalInteger(formData: FormData, key: string): number | null 
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
 }
 
+/** Every value submitted under one name — a checkbox group or a multi-select. */
+export function textList(formData: FormData, key: string): string[] {
+  return formData
+    .getAll(key)
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+}
+
 export function checkbox(formData: FormData, key: string): boolean {
   return formData.get(key) === "on" || formData.get(key) === "true";
 }

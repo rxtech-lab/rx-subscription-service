@@ -2,21 +2,31 @@ import "server-only";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  appUserRoles,
+  appUserUsageLimits,
   appUsers,
   balanceUnits,
   balances,
   plans,
+  subscriptionRoles,
   subscriptions,
+  usageItems,
   type AppUser,
 } from "@/lib/db/schema";
 import {
+  assertNonNegativeInteger,
+  assertPositiveInteger,
   newId,
   NotFoundError,
   recordAudit,
   ValidationError,
   type Actor,
 } from "./shared";
+import { resolveEntitlements } from "./entitlements";
+import { requireRole } from "./roles";
+import { clampClockOffset } from "./test-clock";
 import { upsertSubscriptionFromStripe } from "./subscriptions";
+import { requireUsageItem } from "./usage-items";
 import { creditBalance, requireAppUser } from "./users";
 
 /** How long a granted test subscription runs before it looks expired. */
@@ -242,6 +252,234 @@ export async function creditTestBalance(input: {
   return result.entry;
 }
 
+/** The role ids a user holds directly, ignoring plans and default roles. */
+async function directRoleIds(appUserId: string): Promise<string[]> {
+  const rows = await db
+    .select({ roleId: appUserRoles.roleId })
+    .from(appUserRoles)
+    .where(eq(appUserRoles.appUserId, appUserId));
+  return rows.map((row) => row.roleId);
+}
+
+/**
+ * Replace the roles a test user holds directly.
+ *
+ * Roles normally arrive with a plan, which makes the permission-gated parts of
+ * an application awkward to try out: you would have to buy something first.
+ * Granting them here goes through the same resolution path, so the application
+ * sees an ordinary role holder.
+ */
+export async function setTestUserRoles(input: {
+  applicationId: string;
+  appUserId: string;
+  roleIds: string[];
+  actor: Actor;
+}) {
+  const user = await requireTestUser(input.applicationId, input.appUserId);
+  const roleIds = Array.from(new Set(input.roleIds.filter(Boolean)));
+  // Each role is re-checked against the application, so a hand-edited form
+  // cannot attach another application's role to this user.
+  for (const roleId of roleIds) await requireRole(input.applicationId, roleId);
+
+  const before = await directRoleIds(user.id);
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx.delete(appUserRoles).where(eq(appUserRoles.appUserId, user.id));
+    if (roleIds.length === 0) return;
+    await tx.insert(appUserRoles).values(
+      roleIds.map((roleId) => ({
+        id: newId(),
+        appUserId: user.id,
+        roleId,
+        createdAt: now,
+      })),
+    );
+  });
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "test_user.set_roles",
+    entityType: "app_user",
+    entityId: user.id,
+    before: { roleIds: before },
+    after: { roleIds },
+  });
+  return roleIds;
+}
+
+/**
+ * Pin a usage allowance for one test user. `limitValue` null means unlimited.
+ *
+ * The override wins over the plan allowance in both directions, so a limit can
+ * be lowered to the edge of the cap and then raised again without editing —
+ * and without disturbing — the plan every other subscriber is on.
+ */
+export async function setTestUserUsageLimit(input: {
+  applicationId: string;
+  appUserId: string;
+  usageItemId: string;
+  limitValue: number | null;
+  actor: Actor;
+}) {
+  const user = await requireTestUser(input.applicationId, input.appUserId);
+  const item = await requireUsageItem(input.applicationId, input.usageItemId);
+  if (input.limitValue !== null) {
+    assertNonNegativeInteger(input.limitValue, "limitValue");
+  }
+
+  const now = new Date();
+  const [saved] = await db
+    .insert(appUserUsageLimits)
+    .values({
+      id: newId(),
+      appUserId: user.id,
+      usageItemId: item.id,
+      limitValue: input.limitValue,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [appUserUsageLimits.appUserId, appUserUsageLimits.usageItemId],
+      set: { limitValue: input.limitValue, updatedAt: now },
+    })
+    .returning();
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "test_user.set_usage_limit",
+    entityType: "app_user",
+    entityId: user.id,
+    after: { usageItemId: item.id, limitValue: input.limitValue },
+  });
+  return saved;
+}
+
+/** Drop the override, putting the user back on the plan allowance. */
+export async function clearTestUserUsageLimit(input: {
+  applicationId: string;
+  appUserId: string;
+  usageItemId: string;
+  actor: Actor;
+}) {
+  const user = await requireTestUser(input.applicationId, input.appUserId);
+  const item = await requireUsageItem(input.applicationId, input.usageItemId);
+
+  await db
+    .delete(appUserUsageLimits)
+    .where(
+      and(
+        eq(appUserUsageLimits.appUserId, user.id),
+        eq(appUserUsageLimits.usageItemId, item.id),
+      ),
+    );
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "test_user.clear_usage_limit",
+    entityType: "app_user",
+    entityId: user.id,
+    before: { usageItemId: item.id },
+  });
+}
+
+/**
+ * Raise a test user's allowance by `by`, starting from whatever they have now.
+ *
+ * This is what the test app's "raise the limit" button calls: hitting a limit
+ * and then lifting it is the whole point of the exercise, and the caller should
+ * not have to know whether the current number came from a plan, the item
+ * default, or an earlier override.
+ */
+export async function increaseTestUserUsageLimit(input: {
+  applicationId: string;
+  appUserId: string;
+  usageItemId: string;
+  by: number;
+  actor: Actor;
+}) {
+  const user = await requireTestUser(input.applicationId, input.appUserId);
+  const item = await requireUsageItem(input.applicationId, input.usageItemId);
+  const by = assertPositiveInteger(input.by, "by");
+
+  const entitlements = await resolveEntitlements({
+    applicationId: input.applicationId,
+    appUserId: user.id,
+  });
+  const current =
+    item.id in entitlements.usageLimits
+      ? entitlements.usageLimits[item.id]
+      : item.defaultLimit;
+  if (current === null) {
+    throw new ValidationError(`${item.name} is already unlimited`);
+  }
+
+  await setTestUserUsageLimit({
+    applicationId: input.applicationId,
+    appUserId: user.id,
+    usageItemId: item.id,
+    limitValue: current + by,
+    actor: input.actor,
+  });
+  return { usageItemId: item.id, limitValue: current + by };
+}
+
+/**
+ * Move a test user's clock, in milliseconds relative to real time.
+ *
+ * Nothing else moves: their subscription dates, ledger and audit rows stay on
+ * the real timeline. What changes is which usage period `now` falls in, which
+ * is exactly what a reset policy is made of.
+ */
+export async function setTestUserClock(input: {
+  applicationId: string;
+  appUserId: string;
+  offsetMs: number;
+  actor: Actor;
+}) {
+  const before = await requireTestUser(input.applicationId, input.appUserId);
+  const offsetMs = clampClockOffset(input.offsetMs);
+
+  const [updated] = await db
+    .update(appUsers)
+    .set({ testClockOffsetMs: offsetMs, updatedAt: new Date() })
+    .where(eq(appUsers.id, before.id))
+    .returning();
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "test_user.set_clock",
+    entityType: "app_user",
+    entityId: updated.id,
+    before: { testClockOffsetMs: before.testClockOffsetMs },
+    after: { testClockOffsetMs: updated.testClockOffsetMs },
+  });
+  return updated;
+}
+
+/** Jump forward (or back, with a negative value) from where the clock is now. */
+export async function advanceTestUserClock(input: {
+  applicationId: string;
+  appUserId: string;
+  byMs: number;
+  actor: Actor;
+}) {
+  const user = await requireTestUser(input.applicationId, input.appUserId);
+  if (!Number.isFinite(input.byMs) || input.byMs === 0) {
+    throw new ValidationError("byMs must be a non-zero number of milliseconds");
+  }
+  return setTestUserClock({
+    applicationId: input.applicationId,
+    appUserId: user.id,
+    offsetMs: user.testClockOffsetMs + input.byMs,
+    actor: input.actor,
+  });
+}
+
 export interface TestUserSummary {
   user: AppUser;
   subscriptions: {
@@ -252,11 +490,20 @@ export interface TestUserSummary {
     currentPeriodEnd: Date | null;
   }[];
   balances: { unitKey: string; unitName: string; amount: number }[];
+  /** Roles held directly. Plan-granted roles are not repeated here. */
+  roles: { roleId: string; key: string; title: string }[];
+  usageLimits: {
+    usageItemId: string;
+    itemKey: string;
+    itemName: string;
+    limitValue: number | null;
+  }[];
 }
 
 /**
- * Everything the Test tab renders per row, in three queries rather than one per
- * user, so the page cost does not grow with the number of test users.
+ * Everything the Test tab renders per row, in a fixed number of queries rather
+ * than one per user, so the page cost does not grow with the number of test
+ * users.
  */
 export async function listTestUsers(
   applicationId: string,
@@ -269,7 +516,7 @@ export async function listTestUsers(
   if (users.length === 0) return [];
 
   const ids = users.map((user) => user.id);
-  const [subscriptionRows, balanceRows] = await Promise.all([
+  const [subscriptionRows, balanceRows, roleRows, limitRows] = await Promise.all([
     db
       .select({
         id: subscriptions.id,
@@ -293,6 +540,27 @@ export async function listTestUsers(
       .from(balances)
       .innerJoin(balanceUnits, eq(balances.unitId, balanceUnits.id))
       .where(inArray(balances.appUserId, ids)),
+    db
+      .select({
+        appUserId: appUserRoles.appUserId,
+        roleId: subscriptionRoles.id,
+        key: subscriptionRoles.key,
+        title: subscriptionRoles.title,
+      })
+      .from(appUserRoles)
+      .innerJoin(subscriptionRoles, eq(appUserRoles.roleId, subscriptionRoles.id))
+      .where(inArray(appUserRoles.appUserId, ids)),
+    db
+      .select({
+        appUserId: appUserUsageLimits.appUserId,
+        usageItemId: usageItems.id,
+        itemKey: usageItems.key,
+        itemName: usageItems.name,
+        limitValue: appUserUsageLimits.limitValue,
+      })
+      .from(appUserUsageLimits)
+      .innerJoin(usageItems, eq(appUserUsageLimits.usageItemId, usageItems.id))
+      .where(inArray(appUserUsageLimits.appUserId, ids)),
   ]);
 
   return users.map((user) => ({
@@ -312,6 +580,17 @@ export async function listTestUsers(
         unitKey: row.unitKey,
         unitName: row.unitName,
         amount: row.amount,
+      })),
+    roles: roleRows
+      .filter((row) => row.appUserId === user.id)
+      .map((row) => ({ roleId: row.roleId, key: row.key, title: row.title })),
+    usageLimits: limitRows
+      .filter((row) => row.appUserId === user.id)
+      .map((row) => ({
+        usageItemId: row.usageItemId,
+        itemKey: row.itemKey,
+        itemName: row.itemName,
+        limitValue: row.limitValue,
       })),
   }));
 }

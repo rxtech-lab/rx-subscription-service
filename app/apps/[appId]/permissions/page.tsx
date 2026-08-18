@@ -4,7 +4,7 @@ import {
   updatePermissionAction,
 } from "@/app/actions/access";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
-import { ActionMenu } from "@/components/ui/action-menu";
+import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Card,
@@ -136,6 +136,9 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
                           </div>
                         </ActionForm>
                       </FormDialog>
+
+                      <ActionMenuDivider />
+
                       <InlineActionButton
                         action={deletePermissionAction}
                         label="Delete"
