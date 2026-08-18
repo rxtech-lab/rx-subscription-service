@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Boxes, ShieldCheck, Sparkles } from "lucide-react";
 import { ApplicationGrid } from "@/components/console/application-grid";
 import { BrandMark } from "@/components/console/brand-mark";
+import { UserMenu } from "@/components/console/user-menu";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { authStatus } from "@/lib/auth";
 import { getConsoleUser, getManagedApplications } from "@/lib/console/session";
@@ -42,7 +43,6 @@ export default async function HomePage() {
 
   const applications = await getManagedApplications();
   const displayName = user.name || user.email || "Admin";
-  const avatarLabel = displayName.trim().charAt(0).toUpperCase() || "A";
 
   return (
     <div className="min-h-full bg-[#f7f8fc]">
@@ -61,17 +61,7 @@ export default async function HomePage() {
             </div>
           </Link>
 
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="hidden min-w-0 text-right sm:block">
-              <p className="truncate text-sm font-medium text-slate-800">{displayName}</p>
-              {user.email && user.email !== displayName ? (
-                <p className="truncate text-xs text-slate-400">{user.email}</p>
-              ) : null}
-            </div>
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white ring-4 ring-slate-100">
-              {avatarLabel}
-            </span>
-          </div>
+          <UserMenu displayName={displayName} email={user.email} />
         </div>
       </header>
 

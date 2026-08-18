@@ -57,6 +57,10 @@ export async function requireConsoleUser(): Promise<ConsoleUser> {
  * `read:oauth_clients` grant *is* the authorization model here — there is no
  * second permission list to keep in sync.
  *
+ * The console's own OAuth client is dropped: it is the login for this tool, not
+ * a product that sells subscriptions, and `requireApplicationAccess` reads this
+ * same list, so it cannot be reached by typing its id into the URL either.
+ *
  * Each call mirrors the clients into the local `applications` table so the rest
  * of the schema has a stable foreign key to point at.
  */
@@ -72,8 +76,13 @@ export const getManagedApplications = cache(
       throw error;
     }
 
-    await syncApplications(clients);
-    return clients.map((client) => ({
+    const consoleClientId = process.env.AUTH_CLIENT_ID?.trim();
+    const managed = consoleClientId
+      ? clients.filter((client) => client.id !== consoleClientId)
+      : clients;
+
+    await syncApplications(managed);
+    return managed.map((client) => ({
       id: client.id,
       name: client.name,
       description: client.description,
