@@ -3,18 +3,20 @@ import { redirect } from "next/navigation";
 import { requireApplicationAccess } from "@/lib/console/session";
 import { reconcilePlanCheckoutSession } from "@/lib/stripe/checkout";
 
-export default async function CompleteSubscriptionCheckoutPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ appId: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+/**
+ * Return path from admin Checkout.
+ *
+ * This is a Route Handler rather than a page because `revalidatePath` may not
+ * be called during a render.
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ appId: string }> },
+) {
   const { appId } = await params;
-  const { session_id: rawSessionId } = await searchParams;
+  const sessionId = new URL(request.url).searchParams.get("session_id");
   await requireApplicationAccess(appId);
 
-  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
   let status = "success";
 
   if (!sessionId) {
