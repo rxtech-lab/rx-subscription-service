@@ -1,0 +1,230 @@
+import "server-only";
+import type { Actor } from "@/lib/subscription/shared";
+import {
+  addPlanEntitlement,
+  createPlan,
+  setPlanStatus,
+  updatePlan,
+} from "@/lib/subscription/plans";
+import {
+  createPermission,
+  createRole,
+  setRolePermissions,
+} from "@/lib/subscription/roles";
+import { createBalanceUnit, setPointRate } from "@/lib/subscription/units";
+import { createUsageItem, updateUsageItem } from "@/lib/subscription/usage-items";
+import {
+  addEligibilityRule,
+  createTopupProduct,
+  updateTopupProduct,
+} from "@/lib/subscription/topups";
+import { cancelSubscription } from "@/lib/subscription/subscriptions";
+import {
+  createTestUser,
+  creditTestBalance,
+  deleteTestUser,
+  grantTestSubscription,
+  requireTestUser,
+  updateTestUser,
+} from "@/lib/subscription/test-users";
+import { adjustBalance } from "@/lib/subscription/users";
+import { writeToolSchemas, type WriteToolName } from "./tool-schemas";
+
+/**
+ * Apply an approved write tool call.
+ *
+ * The model never reaches this directly: the chat route defines write tools
+ * without an executor, the panel asks the human to approve, and only then does a
+ * server action call in here. Input is re-validated against the same schema, and
+ * `applicationId` comes from the authorized session — never from the model.
+ */
+export async function executeWriteTool(input: {
+  name: WriteToolName;
+  args: unknown;
+  applicationId: string;
+  actor: Actor;
+}): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
+  const schema = writeToolSchemas[input.name];
+  const parsed = schema.safeParse(input.args);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const applicationId = input.applicationId;
+  const actor = input.actor;
+
+  try {
+    switch (input.name) {
+      case "createPlan": {
+        const args = parsed.data as typeof writeToolSchemas.createPlan._output;
+        return { ok: true, result: await createPlan({ applicationId, actor, ...args }) };
+      }
+      case "updatePlan": {
+        const args = parsed.data as typeof writeToolSchemas.updatePlan._output;
+        return { ok: true, result: await updatePlan({ applicationId, actor, ...args }) };
+      }
+      case "setPlanStatus": {
+        const args = parsed.data as typeof writeToolSchemas.setPlanStatus._output;
+        return {
+          ok: true,
+          result: await setPlanStatus({ applicationId, actor, ...args }),
+        };
+      }
+      case "addPlanEntitlement": {
+        const args = parsed.data as typeof writeToolSchemas.addPlanEntitlement._output;
+        return {
+          ok: true,
+          result: await addPlanEntitlement({ applicationId, actor, ...args }),
+        };
+      }
+      case "createRole": {
+        const args = parsed.data as typeof writeToolSchemas.createRole._output;
+        return { ok: true, result: await createRole({ applicationId, actor, ...args }) };
+      }
+      case "createPermission": {
+        const args = parsed.data as typeof writeToolSchemas.createPermission._output;
+        return {
+          ok: true,
+          result: await createPermission({ applicationId, actor, ...args }),
+        };
+      }
+      case "setRolePermissions": {
+        const args = parsed.data as typeof writeToolSchemas.setRolePermissions._output;
+        return {
+          ok: true,
+          result: await setRolePermissions({ applicationId, actor, ...args }),
+        };
+      }
+      case "createBalanceUnit": {
+        const args = parsed.data as typeof writeToolSchemas.createBalanceUnit._output;
+        return {
+          ok: true,
+          result: await createBalanceUnit({ applicationId, actor, ...args }),
+        };
+      }
+      case "setPointRate": {
+        const args = parsed.data as typeof writeToolSchemas.setPointRate._output;
+        return {
+          ok: true,
+          result: await setPointRate({ applicationId, actor, ...args }),
+        };
+      }
+      case "createUsageItem": {
+        const args = parsed.data as typeof writeToolSchemas.createUsageItem._output;
+        return {
+          ok: true,
+          result: await createUsageItem({ applicationId, actor, ...args }),
+        };
+      }
+      case "updateUsageItem": {
+        const args = parsed.data as typeof writeToolSchemas.updateUsageItem._output;
+        return {
+          ok: true,
+          result: await updateUsageItem({ applicationId, actor, ...args }),
+        };
+      }
+      case "createTopup": {
+        const args = parsed.data as typeof writeToolSchemas.createTopup._output;
+        return {
+          ok: true,
+          result: await createTopupProduct({ applicationId, actor, ...args }),
+        };
+      }
+      case "updateTopup": {
+        const args = parsed.data as typeof writeToolSchemas.updateTopup._output;
+        return {
+          ok: true,
+          result: await updateTopupProduct({ applicationId, actor, ...args }),
+        };
+      }
+      case "addTopupEligibilityRule": {
+        const args =
+          parsed.data as typeof writeToolSchemas.addTopupEligibilityRule._output;
+        return {
+          ok: true,
+          result: await addEligibilityRule({ applicationId, actor, ...args }),
+        };
+      }
+
+      // Test-user tools. Every one resolves its `appUserId` through
+      // `requireTestUser`, so an approved call naming a real subscriber is
+      // rejected here rather than mutating a live account.
+      case "createTestUser": {
+        const { planId, unitId, amount, ...rest } =
+          parsed.data as typeof writeToolSchemas.createTestUser._output;
+        const user = await createTestUser({ applicationId, actor, ...rest });
+        const subscription = planId
+          ? await grantTestSubscription({
+              applicationId,
+              actor,
+              appUserId: user.id,
+              planId,
+            })
+          : null;
+        if (unitId && amount) {
+          await creditTestBalance({
+            applicationId,
+            actor,
+            appUserId: user.id,
+            unitId,
+            amount,
+          });
+        }
+        return { ok: true, result: { user, subscription } };
+      }
+      case "updateTestUser": {
+        const args = parsed.data as typeof writeToolSchemas.updateTestUser._output;
+        return {
+          ok: true,
+          result: await updateTestUser({ applicationId, actor, ...args }),
+        };
+      }
+      case "deleteTestUser": {
+        const args = parsed.data as typeof writeToolSchemas.deleteTestUser._output;
+        return {
+          ok: true,
+          result: await deleteTestUser({ applicationId, actor, ...args }),
+        };
+      }
+      case "grantTestSubscription": {
+        const args =
+          parsed.data as typeof writeToolSchemas.grantTestSubscription._output;
+        return {
+          ok: true,
+          result: await grantTestSubscription({ applicationId, actor, ...args }),
+        };
+      }
+      case "cancelTestSubscription": {
+        const args =
+          parsed.data as typeof writeToolSchemas.cancelTestSubscription._output;
+        await requireTestUser(applicationId, args.appUserId);
+        return {
+          ok: true,
+          result: await cancelSubscription({
+            applicationId,
+            actor,
+            subscriptionId: args.subscriptionId,
+            immediately: args.immediately,
+          }),
+        };
+      }
+      case "adjustTestUserBalance": {
+        const args =
+          parsed.data as typeof writeToolSchemas.adjustTestUserBalance._output;
+        await requireTestUser(applicationId, args.appUserId);
+        return {
+          ok: true,
+          result: await adjustBalance({ applicationId, actor, ...args }),
+        };
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === "ValidationError" || error.name === "NotFoundError") {
+        return { ok: false, error: error.message };
+      }
+    }
+    console.error(`AI tool ${input.name} failed:`, error);
+    return { ok: false, error: "The change could not be applied." };
+  }
+}

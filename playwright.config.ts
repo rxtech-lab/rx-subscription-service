@@ -1,0 +1,37 @@
+import { defineConfig } from "@playwright/test";
+import {
+  E2E_BASE_URL,
+  E2E_DATABASE_URL,
+  E2E_SECRET,
+  E2E_STRIPE_URL,
+} from "./e2e/fixtures";
+
+export default defineConfig({
+  testDir: "./e2e",
+  testMatch: "**/*.spec.ts",
+  fullyParallel: false,
+  workers: 1,
+  use: { baseURL: E2E_BASE_URL },
+  webServer: [
+    {
+      command: "bun e2e/fake-stripe.ts",
+      url: `${E2E_STRIPE_URL}/health`,
+      reuseExistingServer: false,
+    },
+    {
+      command:
+        "bun e2e/prepare.ts && bun run dev -- --hostname 127.0.0.1 --port 3100",
+      url: `${E2E_BASE_URL}/login`,
+      reuseExistingServer: false,
+      env: {
+        TURSO_DATABASE_URL: E2E_DATABASE_URL,
+        TURSO_AUTH_TOKEN: "",
+        IS_E2E: "true",
+        E2E_SECRET,
+        E2E_STRIPE_API_BASE: E2E_STRIPE_URL,
+        STRIPE_SECRET_KEY: "sk_test_playwright",
+        NEXT_PUBLIC_SITE_URL: E2E_BASE_URL,
+      },
+    },
+  ],
+});
