@@ -46,16 +46,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
-  if (!process.env.AI_GATEWAY_API_KEY?.trim()) {
-    return Response.json(
-      {
-        error: "ai_not_configured",
-        error_description: "AI_GATEWAY_API_KEY is not set",
-      },
-      { status: 503 },
-    );
-  }
-
   // Store the incoming snapshot first so the user's latest turn or approval is
   // not lost if the model request fails before it can produce a response.
   await saveAssistantMessages(application.id, user.id, messages);
