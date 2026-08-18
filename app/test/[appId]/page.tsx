@@ -6,6 +6,10 @@ import {
   resetTestUsageAction,
 } from "@/app/actions/test-usage";
 import { InlineActionButton } from "@/components/forms/action-form";
+import {
+  NoticeToast,
+  type NoticeTone,
+} from "@/components/test-app/notice-toast";
 import { SetClockForm } from "@/components/test-app/set-clock-form";
 import { UsageAmountActions } from "@/components/test-app/usage-amount";
 import {
@@ -30,30 +34,29 @@ import { getBalances } from "@/lib/subscription/users";
 import { readTestSessionFor } from "@/lib/test-session";
 import { formatDate } from "@/lib/utils";
 
-function checkoutNotice(value: string | string[] | undefined) {
+type Notice = { tone: NoticeTone; message: string };
+
+function checkoutNotice(value: string | string[] | undefined): Notice | null {
   const status = Array.isArray(value) ? value[0] : value;
   if (status === "success") {
     return {
-      tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      tone: "ok",
       message: "Purchase complete. Your entitlements below are up to date.",
     };
   }
   if (status === "cancelled") {
-    return {
-      tone: "border-amber-200 bg-amber-50 text-amber-800",
-      message: "Checkout was cancelled. Nothing was charged.",
-    };
+    return { tone: "warn", message: "Checkout was cancelled. Nothing was charged." };
   }
   if (status === "pending") {
     return {
-      tone: "border-amber-200 bg-amber-50 text-amber-800",
+      tone: "warn",
       message:
         "Payment is still processing. Refresh in a moment — the webhook will finish it.",
     };
   }
   if (status === "failed") {
     return {
-      tone: "border-rose-200 bg-rose-50 text-rose-800",
+      tone: "bad",
       message: "Checkout returned, but the purchase could not be verified.",
     };
   }
@@ -66,60 +69,55 @@ const LIMIT_STEP = 10;
 function usageNotice(
   value: string | string[] | undefined,
   amountValue: string | string[] | undefined,
-) {
+): Notice | null {
   const outcome = Array.isArray(value) ? value[0] : value;
   const raw = Array.isArray(amountValue) ? amountValue[0] : amountValue;
   const amount = Number(raw);
   const spent = Number.isFinite(amount) && amount >= 1 ? Math.trunc(amount) : 1;
-  const tones = {
-    ok: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    warn: "border-amber-200 bg-amber-50 text-amber-800",
-    bad: "border-rose-200 bg-rose-50 text-rose-800",
-  };
   switch (outcome) {
     case "recorded":
       return {
-        tone: tones.ok,
+        tone: "ok",
         message: `Recorded ${spent.toLocaleString()} ${
           spent === 1 ? "unit" : "units"
         } of usage.`,
       };
     case "limit_exceeded":
       return {
-        tone: tones.warn,
+        tone: "warn",
         message:
           "Blocked — that would take you past your limit for this item. Raise the limit and try again.",
       };
     case "insufficient_balance":
       return {
-        tone: tones.warn,
+        tone: "warn",
         message:
           "Blocked — the overage needed more balance than you have. Buy a topup and try again.",
       };
     case "blocked":
-      return { tone: tones.warn, message: "That usage was not allowed." };
+      return { tone: "warn", message: "That usage was not allowed." };
     case "limit_raised":
       return {
-        tone: tones.ok,
+        tone: "ok",
         message: `Limit raised by ${LIMIT_STEP}. This overrides the plan allowance for you only.`,
       };
     case "reset":
       return {
-        tone: tones.ok,
+        tone: "ok",
         message: "Usage reset to zero for this period. The limit is unchanged.",
       };
     case "clock_moved":
       return {
-        tone: tones.ok,
+        tone: "ok",
         message:
           "Clock moved. Any allowance whose period lapsed has rolled over below.",
       };
     case "clock_real":
-      return { tone: tones.ok, message: "Back on real time." };
+      return { tone: "ok", message: "Back on real time." };
     case "already_unlimited":
-      return { tone: tones.warn, message: "That item is already unlimited." };
+      return { tone: "warn", message: "That item is already unlimited." };
     case "failed":
-      return { tone: tones.bad, message: "That did not work. Please try again." };
+      return { tone: "bad", message: "That did not work. Please try again." };
     default:
       return null;
   }
@@ -130,7 +128,12 @@ export default async function TestOverviewPage({
   searchParams,
 }: PageProps<"/test/[appId]">) {
   const { appId } = await params;
-  const { checkout, usage: usageOutcome, amount: usageAmount } = await searchParams;
+  const {
+    checkout,
+    usage: usageOutcome,
+    amount: usageAmount,
+    n: noticeNonce,
+  } = await searchParams;
   const session = await readTestSessionFor(appId);
   if (!session) notFound();
 
@@ -142,16 +145,14 @@ export default async function TestOverviewPage({
   ]);
   const notice =
     checkoutNotice(checkout) ?? usageNotice(usageOutcome, usageAmount);
+  // Each usage action carries a fresh nonce, so repeating the same action
+  // remounts the toast instead of leaving the dismissed one hidden.
+  const renderKey = `${Array.isArray(noticeNonce) ? noticeNonce[0] : noticeNonce}`;
 
   return (
     <>
       {notice ? (
-        <div
-          role="status"
-          className={`rounded-xl border px-4 py-3 text-sm ${notice.tone}`}
-        >
-          {notice.message}
-        </div>
+        <NoticeToast key={renderKey} tone={notice.tone} message={notice.message} />
       ) : null}
 
       <Card>

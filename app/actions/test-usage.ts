@@ -25,13 +25,19 @@ async function requireSession() {
   return session;
 }
 
-/** Where the storefront lands after a usage action, with the outcome to show. */
+/**
+ * Where the storefront lands after a usage action, with the outcome to show.
+ *
+ * The `n` param is a per-action nonce: repeating the same action would land on
+ * a byte-identical URL, and the outcome toast keys off this to raise itself
+ * again rather than staying hidden from the previous one.
+ */
 function backTo(
   applicationId: string,
   outcome: string,
   amount?: number,
 ): string {
-  const params = new URLSearchParams({ usage: outcome });
+  const params = new URLSearchParams({ usage: outcome, n: newId() });
   if (amount !== undefined) params.set("amount", String(amount));
   return `/test/${encodeURIComponent(applicationId)}?${params}#usage`;
 }

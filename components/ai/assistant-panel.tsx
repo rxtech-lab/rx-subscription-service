@@ -39,6 +39,7 @@ import {
   DEFAULT_ASSISTANT_PANEL_WIDTH,
   MIN_ASSISTANT_PANEL_WIDTH,
 } from "@/components/ai/assistant-panel-width";
+import { GeneratedUi } from "@/components/ai/generated-ui";
 import { MarkdownMessage } from "@/components/ai/markdown-message";
 import {
   calculatePinnedBottomSpacing,
@@ -707,6 +708,28 @@ export function AssistantPanel({
                 if (!part.type.startsWith("tool-")) return null;
                 const toolPart = part as typeof part & DisplayToolPart;
                 const label = humanizeTool(part.type);
+
+                // A generated view replaces the tool card entirely — the point
+                // of the call is the chart, not a "done" line.
+                if (part.type === "tool-renderUI") {
+                  const output = toolPart.output as { ok?: boolean } | null;
+                  if (
+                    toolPart.state === "output-error" ||
+                    toolPart.state === "output-denied"
+                  ) {
+                    return null;
+                  }
+                  if (toolPart.state !== "output-available") {
+                    return (
+                      <p key={index} className="text-xs text-neutral-400">
+                        Preparing view…
+                      </p>
+                    );
+                  }
+                  if (!output?.ok) return null;
+                  const input = toolPart.input as { spec?: unknown } | null;
+                  return <GeneratedUi key={index} spec={input?.spec} />;
+                }
 
                 if (part.type === "tool-confirmation" && toolPart.approval) {
                   const approvalId = toolPart.approval.id;

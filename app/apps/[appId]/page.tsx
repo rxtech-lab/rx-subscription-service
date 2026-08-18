@@ -1,6 +1,11 @@
 import Link from "next/link";
+import { AnalyticsOverview } from "@/components/console/analytics-overview";
 import { Card, CardHeader } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
+import {
+  clampAnalyticsDays,
+  getApplicationAnalytics,
+} from "@/lib/subscription/analytics";
 import { listPlans } from "@/lib/subscription/plans";
 import { listRoles } from "@/lib/subscription/roles";
 import { listTopupProducts } from "@/lib/subscription/topups";
@@ -9,11 +14,17 @@ import { listBalanceUnits } from "@/lib/subscription/units";
 import { listAppUsers } from "@/lib/subscription/users";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
 
-export default async function OverviewPage({ params }: PageProps<"/apps/[appId]">) {
+export default async function OverviewPage({
+  params,
+  searchParams,
+}: PageProps<"/apps/[appId]">) {
   const { appId } = await params;
   await requireApplicationAccess(appId);
 
-  const [plans, topups, roles, usageItems, units, users, subscriptions] =
+  const { days } = await searchParams;
+  const range = clampAnalyticsDays(Number(Array.isArray(days) ? days[0] : days));
+
+  const [plans, topups, roles, usageItems, units, users, subscriptions, analytics] =
     await Promise.all([
       listPlans(appId),
       listTopupProducts(appId),
@@ -22,6 +33,7 @@ export default async function OverviewPage({ params }: PageProps<"/apps/[appId]"
       listBalanceUnits(appId),
       listAppUsers(appId),
       listSubscriptions(appId),
+      getApplicationAnalytics(appId, { days: range }),
     ]);
 
   // Test users are excluded from the Users count by `listAppUsers`, so their
@@ -61,6 +73,8 @@ export default async function OverviewPage({ params }: PageProps<"/apps/[appId]"
           </Link>
         ))}
       </div>
+
+      <AnalyticsOverview appId={appId} analytics={analytics} />
 
       <Card>
         <CardHeader
