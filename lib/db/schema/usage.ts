@@ -138,7 +138,45 @@ export const usageRecords = sqliteTable(
   ],
 );
 
+/**
+ * A per-user allowance override for one usage item.
+ *
+ * Highest precedence: it wins over every plan allowance and over the item's own
+ * default, in both directions. That is what makes a limit testable — the Test
+ * tab can park a user one call away from their cap, and the test app's "raise
+ * the limit" button can lift it again without touching the plan.
+ *
+ * A null `limitValue` means unlimited, matching the plan entitlement encoding.
+ * Deleting the row falls back to the plan.
+ */
+export const appUserUsageLimits = sqliteTable(
+  "app_user_usage_limits",
+  {
+    id: text("id").primaryKey(),
+    appUserId: text("app_user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    usageItemId: text("usage_item_id")
+      .notNull()
+      .references(() => usageItems.id, { onDelete: "cascade" }),
+    limitValue: integer("limit_value"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("app_user_usage_limits_user_item_idx").on(
+      table.appUserId,
+      table.usageItemId,
+    ),
+    check(
+      "app_user_usage_limits_nonnegative",
+      sql`${table.limitValue} IS NULL OR ${table.limitValue} >= 0`,
+    ),
+  ],
+);
+
 export type UsageItem = typeof usageItems.$inferSelect;
 export type NewUsageItem = typeof usageItems.$inferInsert;
 export type UsageCounter = typeof usageCounters.$inferSelect;
 export type UsageRecord = typeof usageRecords.$inferSelect;
+export type AppUserUsageLimit = typeof appUserUsageLimits.$inferSelect;

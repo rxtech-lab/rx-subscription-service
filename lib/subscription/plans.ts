@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  balanceUnits,
   planEntitlements,
   plans,
   subscriptionRoles,
@@ -230,9 +231,8 @@ export async function listPlanEntitlements(planId: string) {
     .orderBy(asc(planEntitlements.kind));
 }
 
-export async function addPlanEntitlement(input: {
+type EntitlementFields = {
   applicationId: string;
-  planId: string;
   kind: EntitlementKind;
   roleId?: string | null;
   permissionKey?: string | null;
@@ -244,8 +244,11 @@ export async function addPlanEntitlement(input: {
   amount?: number | null;
   featureKey?: string | null;
   featureValue?: string | null;
-  actor: Actor;
-}) {
+};
+
+export async function addPlanEntitlement(
+  input: EntitlementFields & { planId: string; actor: Actor },
+) {
   await requirePlan(input.applicationId, input.planId);
   await assertEntitlementShape(input);
 
@@ -256,16 +259,7 @@ export async function addPlanEntitlement(input: {
       id: newId(),
       planId: input.planId,
       kind: input.kind,
-      roleId: input.roleId ?? null,
-      permissionKey: input.permissionKey ?? null,
-      permissionScope: input.permissionScope ?? null,
-      permissionTargetIds: input.permissionTargetIds ?? null,
-      usageItemId: input.usageItemId ?? null,
-      limitValue: input.limitValue ?? null,
-      unitId: input.unitId ?? null,
-      amount: input.amount ?? null,
-      featureKey: input.featureKey ?? null,
-      featureValue: input.featureValue ?? null,
+      ...entitlementColumnsForKind(input),
       createdAt: now,
       updatedAt: now,
     })
@@ -282,28 +276,73 @@ export async function addPlanEntitlement(input: {
   return entitlement;
 }
 
-async function assertEntitlementShape(input: {
-  applicationId: string;
-  kind: EntitlementKind;
-  roleId?: string | null;
-  permissionKey?: string | null;
-  permissionScope?: "all" | "selected" | null;
-  permissionTargetIds?: string[] | null;
-  usageItemId?: string | null;
-  limitValue?: number | null;
-  unitId?: string | null;
-  amount?: number | null;
-  featureKey?: string | null;
-}) {
+/** An empty string is not a missing id: it would be sent to SQLite as a real
+ * foreign key and fail the constraint. Callers that fill in every field — an AI
+ * tool call, a single form with inputs for every kind — hit that easily. */
+const blankToNull = (value?: string | null) => value?.trim() || null;
+
+/**
+ * Keep only the columns that belong to this kind. A role grant stores a role and
+ * nothing else, so leftovers from other kinds never reach the row.
+ */
+function entitlementColumnsForKind(input: EntitlementFields) {
+  const empty = {
+    roleId: null,
+    permissionKey: null,
+    permissionScope: null,
+    permissionTargetIds: null,
+    usageItemId: null,
+    limitValue: null,
+    unitId: null,
+    amount: null,
+    featureKey: null,
+    featureValue: null,
+  } as const;
+
+  switch (input.kind) {
+    case "role":
+      return { ...empty, roleId: blankToNull(input.roleId) };
+    case "permission":
+      return {
+        ...empty,
+        permissionKey: blankToNull(input.permissionKey),
+        permissionScope: input.permissionScope ?? null,
+        permissionTargetIds: input.permissionTargetIds?.length
+          ? input.permissionTargetIds
+          : null,
+      };
+    case "usage_limit":
+      return {
+        ...empty,
+        usageItemId: blankToNull(input.usageItemId),
+        limitValue: input.limitValue ?? null,
+      };
+    case "balance_grant":
+      return {
+        ...empty,
+        unitId: blankToNull(input.unitId),
+        amount: input.amount ?? null,
+      };
+    case "feature":
+      return {
+        ...empty,
+        featureKey: blankToNull(input.featureKey),
+        featureValue: blankToNull(input.featureValue),
+      };
+  }
+}
+
+async function assertEntitlementShape(input: EntitlementFields) {
   switch (input.kind) {
     case "role": {
-      if (!input.roleId) throw new ValidationError("roleId is required for a role grant");
+      const roleId = blankToNull(input.roleId);
+      if (!roleId) throw new ValidationError("roleId is required for a role grant");
       const [role] = await db
         .select({ id: subscriptionRoles.id })
         .from(subscriptionRoles)
         .where(
           and(
-            eq(subscriptionRoles.id, input.roleId),
+            eq(subscriptionRoles.id, roleId),
             eq(subscriptionRoles.applicationId, input.applicationId),
           ),
         )
@@ -312,7 +351,7 @@ async function assertEntitlementShape(input: {
       return;
     }
     case "permission": {
-      if (!input.permissionKey) {
+      if (!blankToNull(input.permissionKey)) {
         throw new ValidationError("permissionKey is required for a permission grant");
       }
       if (input.permissionScope === "selected" && !input.permissionTargetIds?.length) {
@@ -321,7 +360,8 @@ async function assertEntitlementShape(input: {
       return;
     }
     case "usage_limit": {
-      if (!input.usageItemId) {
+      const usageItemId = blankToNull(input.usageItemId);
+      if (!usageItemId) {
         throw new ValidationError("usageItemId is required for a usage limit");
       }
       const [item] = await db
@@ -329,7 +369,7 @@ async function assertEntitlementShape(input: {
         .from(usageItems)
         .where(
           and(
-            eq(usageItems.id, input.usageItemId),
+            eq(usageItems.id, usageItemId),
             eq(usageItems.applicationId, input.applicationId),
           ),
         )
@@ -343,8 +383,22 @@ async function assertEntitlementShape(input: {
       return;
     }
     case "balance_grant": {
-      if (!input.unitId) {
+      const unitId = blankToNull(input.unitId);
+      if (!unitId) {
         throw new ValidationError("unitId is required for a balance grant");
+      }
+      const [unit] = await db
+        .select({ id: balanceUnits.id })
+        .from(balanceUnits)
+        .where(
+          and(
+            eq(balanceUnits.id, unitId),
+            eq(balanceUnits.applicationId, input.applicationId),
+          ),
+        )
+        .limit(1);
+      if (!unit) {
+        throw new ValidationError("balance unit does not belong to this application");
       }
       assertPositiveInteger(input.amount ?? 0, "amount");
       return;

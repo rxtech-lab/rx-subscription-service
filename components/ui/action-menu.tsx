@@ -12,6 +12,18 @@ import {
 import { ClientPortal } from "@/components/ui/client-portal";
 import { Button } from "@/components/ui/primitives";
 
+/**
+ * A rule between two runs of related items — editing here, state changes there,
+ * destructive last. Placed by the menu that knows what belongs together, and
+ * only where the grouping is real; a rule between every item is just noise.
+ *
+ * Keep it inside the same condition as the group it introduces, so a group that
+ * renders nothing does not leave a rule behind.
+ */
+export function ActionMenuDivider() {
+  return <div role="separator" className="mx-1 my-1 h-px bg-slate-100" />;
+}
+
 export function ActionMenu({
   children,
   label = "Open actions",

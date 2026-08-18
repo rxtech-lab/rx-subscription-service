@@ -6,6 +6,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { applications } from "./applications";
+import { appUsers } from "./users";
 
 /**
  * An application-level subscription role. Distinct from rxlab-auth's
@@ -86,6 +87,34 @@ export const rolePermissions = sqliteTable(
   ],
 );
 
+/**
+ * A role held directly by a user, outside any plan.
+ *
+ * Plans are the normal way in, but a role is not always something you buy: the
+ * console Test tab hands one to a test user so the permission-gated parts of an
+ * application can be exercised without a payment. These resolve alongside
+ * plan-granted and default roles, so nothing downstream has to know the
+ * difference.
+ */
+export const appUserRoles = sqliteTable(
+  "app_user_roles",
+  {
+    id: text("id").primaryKey(),
+    appUserId: text("app_user_id")
+      .notNull()
+      .references(() => appUsers.id, { onDelete: "cascade" }),
+    roleId: text("role_id")
+      .notNull()
+      .references(() => subscriptionRoles.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("app_user_roles_user_role_idx").on(table.appUserId, table.roleId),
+    index("app_user_roles_role_idx").on(table.roleId),
+  ],
+);
+
 export type SubscriptionRole = typeof subscriptionRoles.$inferSelect;
 export type Permission = typeof permissions.$inferSelect;
 export type RolePermission = typeof rolePermissions.$inferSelect;
+export type AppUserRole = typeof appUserRoles.$inferSelect;

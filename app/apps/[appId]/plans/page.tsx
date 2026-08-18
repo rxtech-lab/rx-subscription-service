@@ -6,7 +6,7 @@ import {
   updatePlanAction,
 } from "@/app/actions/plans";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
-import { ActionMenu } from "@/components/ui/action-menu";
+import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Badge,
@@ -209,6 +209,9 @@ export default async function PlansPage({ params }: PageProps<"/apps/[appId]">) 
                             <input type="hidden" name="status" value="draft" />
                           </InlineActionButton>
                         )}
+
+                        <ActionMenuDivider />
+
                         <InlineActionButton
                           action={setPlanStatusAction}
                           label="Archive"

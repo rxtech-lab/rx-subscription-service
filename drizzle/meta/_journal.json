@@ -15,6 +15,20 @@
       "when": 1787035579461,
       "tag": "0001_flowery_mulholland_black",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787044998434,
+      "tag": "0002_tiny_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787046293438,
+      "tag": "0003_heavy_sebastian_shaw",
+      "breakpoints": true
     }
   ]
 }

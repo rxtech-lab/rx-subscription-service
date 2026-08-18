@@ -1,5 +1,14 @@
 import { notFound } from "next/navigation";
 import {
+  advanceTestClockAction,
+  increaseTestUsageLimitAction,
+  resetTestClockAction,
+  resetTestUsageAction,
+} from "@/app/actions/test-usage";
+import { InlineActionButton } from "@/components/forms/action-form";
+import { SetClockForm } from "@/components/test-app/set-clock-form";
+import { UsageAmountActions } from "@/components/test-app/usage-amount";
+import {
   Badge,
   Card,
   CardHeader,
@@ -10,6 +19,12 @@ import {
   statusTone,
 } from "@/components/ui/primitives";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
+import {
+  DAY_MS,
+  HOUR_MS,
+  describeClockOffset,
+  simulatedNow,
+} from "@/lib/subscription/test-clock";
 import { getUsageStatus } from "@/lib/subscription/usage";
 import { getBalances } from "@/lib/subscription/users";
 import { readTestSessionFor } from "@/lib/test-session";
@@ -45,21 +60,88 @@ function checkoutNotice(value: string | string[] | undefined) {
   return null;
 }
 
+/** How much one click of "Raise the limit" adds. */
+const LIMIT_STEP = 10;
+
+function usageNotice(
+  value: string | string[] | undefined,
+  amountValue: string | string[] | undefined,
+) {
+  const outcome = Array.isArray(value) ? value[0] : value;
+  const raw = Array.isArray(amountValue) ? amountValue[0] : amountValue;
+  const amount = Number(raw);
+  const spent = Number.isFinite(amount) && amount >= 1 ? Math.trunc(amount) : 1;
+  const tones = {
+    ok: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    warn: "border-amber-200 bg-amber-50 text-amber-800",
+    bad: "border-rose-200 bg-rose-50 text-rose-800",
+  };
+  switch (outcome) {
+    case "recorded":
+      return {
+        tone: tones.ok,
+        message: `Recorded ${spent.toLocaleString()} ${
+          spent === 1 ? "unit" : "units"
+        } of usage.`,
+      };
+    case "limit_exceeded":
+      return {
+        tone: tones.warn,
+        message:
+          "Blocked — that would take you past your limit for this item. Raise the limit and try again.",
+      };
+    case "insufficient_balance":
+      return {
+        tone: tones.warn,
+        message:
+          "Blocked — the overage needed more balance than you have. Buy a topup and try again.",
+      };
+    case "blocked":
+      return { tone: tones.warn, message: "That usage was not allowed." };
+    case "limit_raised":
+      return {
+        tone: tones.ok,
+        message: `Limit raised by ${LIMIT_STEP}. This overrides the plan allowance for you only.`,
+      };
+    case "reset":
+      return {
+        tone: tones.ok,
+        message: "Usage reset to zero for this period. The limit is unchanged.",
+      };
+    case "clock_moved":
+      return {
+        tone: tones.ok,
+        message:
+          "Clock moved. Any allowance whose period lapsed has rolled over below.",
+      };
+    case "clock_real":
+      return { tone: tones.ok, message: "Back on real time." };
+    case "already_unlimited":
+      return { tone: tones.warn, message: "That item is already unlimited." };
+    case "failed":
+      return { tone: tones.bad, message: "That did not work. Please try again." };
+    default:
+      return null;
+  }
+}
+
 export default async function TestOverviewPage({
   params,
   searchParams,
 }: PageProps<"/test/[appId]">) {
   const { appId } = await params;
-  const { checkout } = await searchParams;
+  const { checkout, usage: usageOutcome, amount: usageAmount } = await searchParams;
   const session = await readTestSessionFor(appId);
   if (!session) notFound();
 
+  const now = simulatedNow(session.user.testClockOffsetMs);
   const [entitlements, balances, usage] = await Promise.all([
     resolveEntitlements({ applicationId: appId, appUserId: session.user.id }),
     getBalances(session.user.id),
     getUsageStatus({ applicationId: appId, appUserId: session.user.id }),
   ]);
-  const notice = checkoutNotice(checkout);
+  const notice =
+    checkoutNotice(checkout) ?? usageNotice(usageOutcome, usageAmount);
 
   return (
     <>
@@ -146,10 +228,56 @@ export default async function TestOverviewPage({
         )}
       </Card>
 
-      <Card>
-        <CardHeader title="Usage this period" />
+      <Card id="clock">
+        <CardHeader
+          title="Simulated clock"
+          description="Only this user's clock. Nothing else moves — but usage periods are worked out from the time, so a daily or monthly allowance rolls over as soon as you pass its reset."
+        />
+        <div className="space-y-4 px-5 py-4">
+          <p className="text-sm text-slate-700">
+            {formatDate(now)}
+            <span className="ml-2 text-xs text-slate-500">
+              {describeClockOffset(session.user.testClockOffsetMs)}
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { label: "+1 hour", byMs: HOUR_MS },
+              { label: "+1 day", byMs: DAY_MS },
+              { label: "+7 days", byMs: 7 * DAY_MS },
+              { label: "+1 month", byMs: 31 * DAY_MS },
+            ].map((step) => (
+              <InlineActionButton
+                key={step.label}
+                action={advanceTestClockAction}
+                label={step.label}
+                variant="secondary"
+              >
+                <input type="hidden" name="byMs" value={step.byMs} />
+              </InlineActionButton>
+            ))}
+            {session.user.testClockOffsetMs === 0 ? null : (
+              <InlineActionButton
+                action={resetTestClockAction}
+                label="Back to real time"
+                variant="secondary"
+              />
+            )}
+          </div>
+          <SetClockForm />
+        </div>
+      </Card>
+
+      <Card id="usage">
+        <CardHeader
+          title="Usage this period"
+          description="Spend against an allowance to see the limit bite, then raise it and carry on. A raised limit applies to you alone — the plan is untouched."
+        />
         {usage.length === 0 ? (
-          <EmptyState title="No metered usage" />
+          <EmptyState
+            title="No metered usage"
+            description="Define a usage item in the console to meter something here."
+          />
         ) : (
           <Table>
             <thead>
@@ -157,26 +285,78 @@ export default async function TestOverviewPage({
                 <Th>Item</Th>
                 <Th>Used</Th>
                 <Th>Resets</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
             <tbody>
-              {usage.map((item) => (
-                <tr key={item.itemId}>
-                  <Td>{item.name}</Td>
-                  <Td>
-                    {item.used.toLocaleString()}
-                    <span className="text-slate-400">
-                      {" / "}
-                      {item.limit === null ? "unlimited" : item.limit.toLocaleString()}
-                    </span>
-                  </Td>
-                  <Td>
-                    <span className="text-xs text-slate-500">
-                      {formatDate(item.resetsAt)}
-                    </span>
-                  </Td>
-                </tr>
-              ))}
+              {usage.map((item) => {
+                const atLimit = item.remaining !== null && item.remaining <= 0;
+                return (
+                  <tr key={item.itemId}>
+                    <Td>
+                      {item.name}
+                      {atLimit ? (
+                        <Badge tone="amber" className="ml-2">
+                          at limit
+                        </Badge>
+                      ) : null}
+                    </Td>
+                    <Td>
+                      {item.used.toLocaleString()}
+                      <span className="text-slate-400">
+                        {" / "}
+                        {item.limit === null
+                          ? "unlimited"
+                          : item.limit.toLocaleString()}
+                      </span>
+                      {item.itemId in entitlements.usageLimitOverrides ? (
+                        <span className="ml-2 text-xs text-slate-500">
+                          overridden
+                        </span>
+                      ) : null}
+                    </Td>
+                    <Td>
+                      <span className="text-xs text-slate-500">
+                        {formatDate(item.resetsAt)}
+                      </span>
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <UsageAmountActions
+                          appId={appId}
+                          itemId={item.itemId}
+                          itemName={item.name}
+                        />
+                        {item.limit === null ? null : (
+                          <InlineActionButton
+                            action={increaseTestUsageLimitAction}
+                            label={`Raise limit +${LIMIT_STEP}`}
+                            variant="secondary"
+                          >
+                            <input
+                              type="hidden"
+                              name="usageItemId"
+                              value={item.itemId}
+                            />
+                            <input type="hidden" name="by" value={LIMIT_STEP} />
+                          </InlineActionButton>
+                        )}
+                        <InlineActionButton
+                          action={resetTestUsageAction}
+                          label="Reset"
+                          variant="secondary"
+                        >
+                          <input
+                            type="hidden"
+                            name="usageItemId"
+                            value={item.itemId}
+                          />
+                        </InlineActionButton>
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
         )}

@@ -28,6 +28,8 @@ export default defineConfig({
         TURSO_AUTH_TOKEN: "",
         IS_E2E: "true",
         E2E_SECRET,
+        // Pinned so a spec can mint the storefront session cookie itself.
+        AUTH_SECRET: E2E_SECRET,
         E2E_STRIPE_API_BASE: E2E_STRIPE_URL,
         STRIPE_SECRET_KEY: "sk_test_playwright",
         NEXT_PUBLIC_SITE_URL: E2E_BASE_URL,

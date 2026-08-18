@@ -1,4 +1,5 @@
 import {
+  consumeStream,
   convertToModelMessages,
   safeValidateUIMessages,
   stepCountIs,
@@ -6,6 +7,7 @@ import {
   type UIMessage,
 } from "ai";
 import { saveAssistantMessages } from "@/lib/ai/conversations";
+import { dropIncompleteToolCalls } from "@/lib/ai/messages";
 import { buildTools, systemPrompt } from "@/lib/ai/tools";
 import { requireApplicationAccess, requireConsoleUser } from "@/lib/console/session";
 
@@ -29,7 +31,9 @@ export async function POST(request: Request) {
   if (!validation.success) {
     return Response.json({ error: "invalid_messages" }, { status: 400 });
   }
-  const messages = validation.data;
+  // A stopped response can leave tool calls without a result; they would be
+  // replayed to the model as an unanswered tool call.
+  const messages = dropIncompleteToolCalls(validation.data);
 
   const user = await requireConsoleUser();
 
@@ -62,6 +66,9 @@ export async function POST(request: Request) {
     messages: await convertToModelMessages(messages),
     tools: buildTools(application.id, { type: "ai", id: user.id }),
     stopWhen: stepCountIs(12),
+    // Stop the model run when the browser stops the response instead of paying
+    // for tokens nobody will read.
+    abortSignal: request.signal,
     // Signs each approval request so a hand-crafted "approved" from the browser
     // cannot make a write tool run.
     experimental_toolApprovalSecret: process.env.AUTH_SECRET,
@@ -70,7 +77,15 @@ export async function POST(request: Request) {
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
     onFinish: async ({ messages }) => {
-      await saveAssistantMessages(application.id, user.id, messages);
+      // Runs for aborted responses too, so a stopped turn keeps what it wrote.
+      await saveAssistantMessages(
+        application.id,
+        user.id,
+        dropIncompleteToolCalls(messages),
+      );
     },
+    // Keeps consuming the stream after the browser disconnects so onFinish
+    // still runs on abort.
+    consumeSseStream: consumeStream,
   });
 }

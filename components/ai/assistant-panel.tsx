@@ -12,22 +12,33 @@ import {
   CheckCircle2,
   Loader2,
   Send,
+  Square,
   Trash2,
   X,
   XCircle,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
 } from "react";
 import { clearAssistantConversationAction } from "@/app/actions/assistant";
 import {
   findLatestPendingApproval,
   latestUserTextAfter,
 } from "@/components/ai/assistant-approval-state";
+import { completedWriteToolCallIds } from "@/components/ai/assistant-data-changes";
+import {
+  clampAssistantPanelWidth,
+  DEFAULT_ASSISTANT_PANEL_WIDTH,
+  MIN_ASSISTANT_PANEL_WIDTH,
+} from "@/components/ai/assistant-panel-width";
 import { MarkdownMessage } from "@/components/ai/markdown-message";
 import {
   calculatePinnedBottomSpacing,
@@ -50,6 +61,8 @@ interface ConfirmationInput {
 }
 
 const PINNED_MESSAGE_TOP_INSET = 16;
+const PANEL_WIDTH_STORAGE_KEY = "assistant-panel-width";
+const PANEL_WIDTH_KEYBOARD_STEP = 24;
 
 /** Turn `createPlan` into `Create plan` for the approval card. */
 function humanizeTool(name: string): string {
@@ -291,6 +304,7 @@ export function AssistantPanel({
   applicationName: string;
   initialMessages: UIMessage[];
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -299,6 +313,21 @@ export function AssistantPanel({
     null,
   );
   const [bottomSpacing, setBottomSpacing] = useState(0);
+  // The panel is closed on first render, so reading the stored width here
+  // cannot desync hydration.
+  // Writes already in the stored conversation shaped the page that just
+  // rendered, so only later ones should trigger a refresh.
+  const [refreshedToolCalls] = useState(
+    () => new Set(completedWriteToolCallIds(initialMessages)),
+  );
+  const [panelWidth, setPanelWidth] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_ASSISTANT_PANEL_WIDTH;
+    const stored = window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+    return stored
+      ? clampAssistantPanelWidth(Number(stored), window.innerWidth)
+      : DEFAULT_ASSISTANT_PANEL_WIDTH;
+  });
+  const [resizing, setResizing] = useState(false);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const pinnedUserMessageRef = useRef<HTMLDivElement>(null);
@@ -310,6 +339,7 @@ export function AssistantPanel({
     setMessages,
     sendMessage,
     status,
+    stop,
     addToolApprovalResponse,
     clearError: clearChatError,
     error,
@@ -410,6 +440,80 @@ export function AssistantPanel({
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages, open, pinnedUserMessageId, status]);
 
+  useEffect(() => {
+    const unseenWrites = completedWriteToolCallIds(messages).filter(
+      (toolCallId) => !refreshedToolCalls.has(toolCallId),
+    );
+    if (unseenWrites.length === 0) return;
+
+    for (const toolCallId of unseenWrites) refreshedToolCalls.add(toolCallId);
+    // The assistant changed data this route rendered from; re-fetch it so the
+    // page behind the panel shows the change without a manual reload.
+    router.refresh();
+  }, [messages, refreshedToolCalls, router]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    // A narrower window shrinks the panel without overwriting the stored width.
+    const handleViewportResize = () => {
+      setPanelWidth((width) =>
+        clampAssistantPanelWidth(width, window.innerWidth),
+      );
+    };
+    window.addEventListener("resize", handleViewportResize);
+    return () => window.removeEventListener("resize", handleViewportResize);
+  }, [open]);
+
+  function storePanelWidth(width: number) {
+    window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(width));
+  }
+
+  function startResize(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizing(true);
+  }
+
+  function resize(event: PointerEvent<HTMLDivElement>) {
+    if (!resizing) return;
+    setPanelWidth(
+      clampAssistantPanelWidth(
+        window.innerWidth - event.clientX,
+        window.innerWidth,
+      ),
+    );
+  }
+
+  function endResize(event: PointerEvent<HTMLDivElement>) {
+    if (!resizing) return;
+    // A cancelled pointer has already lost capture.
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setResizing(false);
+    storePanelWidth(panelWidth);
+  }
+
+  function resizeWithKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    // The panel is anchored right, so dragging the handle left widens it.
+    const step =
+      event.key === "ArrowLeft"
+        ? PANEL_WIDTH_KEYBOARD_STEP
+        : event.key === "ArrowRight"
+          ? -PANEL_WIDTH_KEYBOARD_STEP
+          : 0;
+    if (step === 0) return;
+
+    event.preventDefault();
+    const next = clampAssistantPanelWidth(
+      panelWidth + step,
+      window.innerWidth,
+    );
+    setPanelWidth(next);
+    storePanelWidth(next);
+  }
+
   function submit() {
     const text = draft.trim();
     if (!text || busy || pendingApproval) return;
@@ -422,6 +526,14 @@ export function AssistantPanel({
       role: "user",
       parts: [{ type: "text", text }],
     });
+  }
+
+  /** Cancel the in-flight response, keeping whatever it already streamed. */
+  async function stopResponse() {
+    if (!busy) return;
+    await stop();
+    setPinnedUserMessageId(null);
+    setBottomSpacing(0);
   }
 
   async function resumePendingApproval() {
@@ -483,7 +595,34 @@ export function AssistantPanel({
   }
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-[420px]">
+    <aside
+      style={
+        { "--assistant-panel-width": `${panelWidth}px` } as CSSProperties
+      }
+      className={cn(
+        "fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-[var(--assistant-panel-width)]",
+        resizing && "select-none",
+      )}
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize assistant panel"
+        aria-valuenow={panelWidth}
+        aria-valuemin={MIN_ASSISTANT_PANEL_WIDTH}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onPointerMove={resize}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        onKeyDown={resizeWithKeyboard}
+        className={cn(
+          "absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize touch-none sm:block",
+          "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors hover:after:bg-neutral-400 focus-visible:after:bg-neutral-500",
+          resizing ? "after:bg-neutral-500" : "after:bg-transparent",
+        )}
+      />
+
       <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-neutral-900">Assistant</p>
@@ -710,18 +849,28 @@ export function AssistantPanel({
           }
           className="min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
         />
-        <Button
-          type="submit"
-          size="icon"
-          className="shadow-none"
-          disabled={busy || pendingApproval !== null || !draft.trim()}
-        >
-          {busy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
+        {busy ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
+            className="shadow-none"
+            onClick={() => void stopResponse()}
+            aria-label="Stop response"
+          >
+            <Square className="h-3.5 w-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="icon"
+            className="shadow-none"
+            disabled={pendingApproval !== null || !draft.trim()}
+            aria-label="Send message"
+          >
             <Send className="h-4 w-4" />
-          )}
-        </Button>
+          </Button>
+        )}
       </form>
     </aside>
   );

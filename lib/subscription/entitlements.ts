@@ -2,8 +2,11 @@ import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  appUserRoles,
+  appUserUsageLimits,
   planEntitlements,
   plans,
+  subscriptionRoles,
   subscriptions,
   type PlanEntitlement,
 } from "@/lib/db/schema";
@@ -32,9 +35,51 @@ export interface ResolvedEntitlements {
   /** Serialized `read:a:all` / `read:a:id1,id2` expressions. */
   permissions: string[];
   features: Record<string, string | null>;
-  /** Per-period allowance by usage item id, merged across active plans. */
+  /**
+   * Per-period allowance by usage item id, merged across active plans and then
+   * overridden by any per-user limit.
+   */
   usageLimits: Record<string, number | null>;
+  /** Role ids held directly, rather than through a plan or a default role. */
+  directRoleIds: string[];
+  /** The per-user overrides that were applied on top of the plan allowances. */
+  usageLimitOverrides: Record<string, number | null>;
   balanceGrants: { unitId: string; amount: number }[];
+}
+
+/** Roles a user holds directly, filtered to this application's own roles. */
+async function directRoleIdsFor(input: {
+  applicationId: string;
+  appUserId: string;
+}): Promise<string[]> {
+  const rows = await db
+    .select({ roleId: appUserRoles.roleId })
+    .from(appUserRoles)
+    .innerJoin(subscriptionRoles, eq(appUserRoles.roleId, subscriptionRoles.id))
+    .where(
+      and(
+        eq(appUserRoles.appUserId, input.appUserId),
+        eq(subscriptionRoles.applicationId, input.applicationId),
+      ),
+    );
+  return rows.map((row) => row.roleId);
+}
+
+/** Per-user usage allowances, keyed by usage item id. */
+export async function getUsageLimitOverrides(
+  appUserId: string,
+): Promise<Record<string, number | null>> {
+  const rows = await db
+    .select({
+      usageItemId: appUserUsageLimits.usageItemId,
+      limitValue: appUserUsageLimits.limitValue,
+    })
+    .from(appUserUsageLimits)
+    .where(eq(appUserUsageLimits.appUserId, appUserId));
+
+  const overrides: Record<string, number | null> = {};
+  for (const row of rows) overrides[row.usageItemId] = row.limitValue;
+  return overrides;
 }
 
 /**
@@ -78,21 +123,30 @@ export async function resolveEntitlements(input: {
       ),
     );
 
+  const [allRoles, directRoleIds, usageLimitOverrides] = await Promise.all([
+    listRoles(input.applicationId),
+    directRoleIdsFor(input),
+    getUsageLimitOverrides(input.appUserId),
+  ]);
+
   const empty: ResolvedEntitlements = {
     plans: [],
     roleKeys: [],
     roleIds: [],
+    directRoleIds,
     permissions: [],
     features: {},
-    usageLimits: {},
+    usageLimits: { ...usageLimitOverrides },
+    usageLimitOverrides,
     balanceGrants: [],
   };
 
-  // Default roles apply to everyone, subscriber or not.
-  const allRoles = await listRoles(input.applicationId);
-  const roleIds = new Set(
-    allRoles.filter((role) => role.isDefault).map((role) => role.id),
-  );
+  // Default roles apply to everyone, subscriber or not; directly granted roles
+  // apply the same way, without a plan behind them.
+  const roleIds = new Set([
+    ...allRoles.filter((role) => role.isDefault).map((role) => role.id),
+    ...directRoleIds,
+  ]);
 
   if (rows.length === 0 && roleIds.size === 0) return empty;
 
@@ -170,6 +224,11 @@ export async function resolveEntitlements(input: {
     }
   }
 
+  // A per-user override replaces whatever the plans worked out to, in either
+  // direction — it is set deliberately, so it is not a "best allowance wins"
+  // merge like the plan values above.
+  Object.assign(usageLimits, usageLimitOverrides);
+
   // Roles contribute their own permission grants on top of any direct ones.
   const roleIdList = Array.from(roleIds);
   const rolesById = new Map(allRoles.map((role) => [role.id, role]));
@@ -190,6 +249,8 @@ export async function resolveEntitlements(input: {
       cancelAtPeriodEnd: row.cancelAtPeriodEnd,
     })),
     roleIds: roleIdList,
+    directRoleIds,
+    usageLimitOverrides,
     roleKeys: roleIdList
       .map((roleId) => rolesById.get(roleId)?.key)
       .filter((key): key is string => Boolean(key))

@@ -5,7 +5,7 @@ import {
   updateRoleAction,
 } from "@/app/actions/access";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
-import { ActionMenu } from "@/components/ui/action-menu";
+import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Badge,
@@ -131,6 +131,9 @@ export default async function RolesPage({ params }: PageProps<"/apps/[appId]">) 
                           </div>
                         </ActionForm>
                       </FormDialog>
+
+                      <ActionMenuDivider />
+
                       <InlineActionButton
                         action={deleteRoleAction}
                         label="Delete"

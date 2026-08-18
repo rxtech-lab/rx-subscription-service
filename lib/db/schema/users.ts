@@ -37,6 +37,15 @@ export const appUsers = sqliteTable(
     isTest: integer("is_test", { mode: "boolean" }).notNull().default(false),
     /** Free-text label for what this test user is set up to exercise. */
     testNote: text("test_note"),
+    /**
+     * How far this user's clock runs ahead of the real one, in milliseconds.
+     *
+     * Usage periods reset by arithmetic on `now` rather than on a schedule, so
+     * shifting what `now` means for one user is enough to watch a daily or
+     * monthly allowance roll over without waiting for it. Zero — every real
+     * user — is ordinary wall-clock time.
+     */
+    testClockOffsetMs: integer("test_clock_offset_ms").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

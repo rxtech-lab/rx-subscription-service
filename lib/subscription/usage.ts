@@ -10,10 +10,12 @@ import {
 import {
   assertPositiveInteger,
   newId,
+  recordAudit,
   ValidationError,
   type Actor,
 } from "./shared";
 import { resolvePeriod, type Period } from "./periods";
+import { simulatedNow } from "./test-clock";
 import { getBillingWindow, resolveEntitlements } from "./entitlements";
 import { listUsageItems, requireUsageItem } from "./usage-items";
 import { debitBalance, InsufficientBalanceError, requireAppUser } from "./users";
@@ -126,9 +128,13 @@ export async function getUsageStatus(input: {
   appUserId: string;
   now?: Date;
 }): Promise<UsageStatus[]> {
-  const now = input.now ?? new Date();
   const items = await listUsageItems(input.applicationId);
   if (items.length === 0) return [];
+
+  // A test user may be living at a simulated time; for everyone else the offset
+  // is zero and this is the wall clock.
+  const user = await requireAppUser(input.applicationId, input.appUserId);
+  const now = input.now ?? simulatedNow(user.testClockOffsetMs);
 
   const entitlements = await resolveEntitlements({
     applicationId: input.applicationId,
@@ -212,9 +218,9 @@ export async function recordUsage(input: {
   if (!input.idempotencyKey.trim()) {
     throw new ValidationError("idempotencyKey is required");
   }
-  const now = input.now ?? new Date();
 
-  await requireAppUser(input.applicationId, input.appUserId);
+  const user = await requireAppUser(input.applicationId, input.appUserId);
+  const now = input.now ?? simulatedNow(user.testClockOffsetMs);
   const item = await requireUsageItem(input.applicationId, input.usageItemId);
 
   const [duplicate] = await db
@@ -368,5 +374,17 @@ export async function resetUsageCounter(input: {
     .set({ used: 0, updatedAt: new Date() })
     .where(eq(usageCounters.id, counter.id))
     .returning();
+
+  // Wiping a counter loses the only record that it ever ran up, so the audit
+  // row is where the previous figure survives.
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "usage.reset",
+    entityType: "usage_counter",
+    entityId: updated.id,
+    before: { usageItemId: item.id, used: counter.used },
+    after: { usageItemId: item.id, used: 0 },
+  });
   return updated;
 }
