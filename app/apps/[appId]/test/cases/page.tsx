@@ -5,6 +5,7 @@ import {
   deleteTestSuiteAction,
 } from "@/app/actions/test-cases";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
+import { RunSuiteButton } from "@/components/testing/run-suite-button";
 import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
@@ -118,11 +119,11 @@ export default async function TestCasesPage({
           <Table className="table-fixed">
             <thead>
               <tr>
-                <Th className="w-[38%]">Suite</Th>
+                <Th className="w-[32%]">Suite</Th>
                 <Th className="w-[15%]">Tests</Th>
                 <Th className="w-[15%]">Last run</Th>
                 <Th className="w-[22%]">Updated</Th>
-                <Th className="w-[10%]">Actions</Th>
+                <Th className="w-[16%]">Actions</Th>
               </tr>
             </thead>
             <tbody>
@@ -170,26 +171,43 @@ export default async function TestCasesPage({
                       ) : null}
                     </Td>
                     <Td>
-                      <ActionMenu label={`Actions for ${suite.name}`}>
-                        <Link
-                          href={href}
-                          className="flex w-full items-center justify-start rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950"
-                        >
-                          Open
-                        </Link>
+                      <div className="flex items-center gap-2">
+                        <RunSuiteButton
+                          applicationId={appId}
+                          suiteId={suite.id}
+                          suiteName={suite.name}
+                          activeRunId={
+                            suite.lastRun?.status === "queued" ||
+                            suite.lastRun?.status === "running"
+                              ? suite.lastRun.id
+                              : null
+                          }
+                        />
+                        <ActionMenu label={`Actions for ${suite.name}`}>
+                          <Link
+                            href={href}
+                            className="flex w-full items-center justify-start rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950"
+                          >
+                            Open
+                          </Link>
 
-                        <ActionMenuDivider />
+                          <ActionMenuDivider />
 
-                        <InlineActionButton
-                          action={deleteTestSuiteAction}
-                          label="Delete suite"
-                          variant="menuDanger"
-                          confirmMessage="Delete this suite and its run history?"
-                        >
-                          <input type="hidden" name="applicationId" value={appId} />
-                          <input type="hidden" name="suiteId" value={suite.id} />
-                        </InlineActionButton>
-                      </ActionMenu>
+                          <InlineActionButton
+                            action={deleteTestSuiteAction}
+                            label="Delete suite"
+                            variant="menuDanger"
+                            confirmMessage="Delete this suite and its run history?"
+                          >
+                            <input
+                              type="hidden"
+                              name="applicationId"
+                              value={appId}
+                            />
+                            <input type="hidden" name="suiteId" value={suite.id} />
+                          </InlineActionButton>
+                        </ActionMenu>
+                      </div>
                     </Td>
                   </tr>
                 );

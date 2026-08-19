@@ -63,7 +63,11 @@ export default async function OverviewPage({
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Link key={stat.label} href={`/apps/${appId}/${stat.href}`}>
+          <Link
+            key={stat.label}
+            href={`/apps/${appId}/${stat.href}`}
+            prefetch={false}
+          >
             <Card className="p-4 transition hover:border-neutral-400">
               <p className="text-xs text-neutral-500">{stat.label}</p>
               <p className="mt-1 text-2xl font-semibold text-neutral-900">

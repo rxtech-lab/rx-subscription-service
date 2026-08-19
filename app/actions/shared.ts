@@ -5,6 +5,7 @@ import {
   requireConsoleUser,
 } from "@/lib/console/session";
 import type { Actor } from "@/lib/subscription/shared";
+import { scheduleAutomaticTestRuns } from "@/lib/testing/automation";
 
 export interface ActionState {
   error?: string;
@@ -25,6 +26,21 @@ export async function withApplication<T>(
   return run({
     applicationId,
     actor: { type: "user", id: user.id },
+  });
+}
+
+/** A configuration mutation followed by the application's optional test suites. */
+export async function withConfigurationUpdate<T>(
+  applicationId: string,
+  run: (context: { applicationId: string; actor: Actor }) => Promise<T>,
+): Promise<T> {
+  return withApplication(applicationId, async (context) => {
+    const result = await run(context);
+    await scheduleAutomaticTestRuns({
+      applicationId,
+      triggeredBy: context.actor.id,
+    });
+    return result;
   });
 }
 

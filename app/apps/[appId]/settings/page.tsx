@@ -1,6 +1,11 @@
 import Link from "next/link";
+import { updateTestAutomationSettingsAction } from "@/app/actions/settings";
 import { createApiKeyAction, deleteApiKeyAction } from "@/app/actions/users";
-import { ApiKeyForm, InlineActionButton } from "@/components/forms/action-form";
+import {
+  ActionForm,
+  ApiKeyForm,
+  InlineActionButton,
+} from "@/components/forms/action-form";
 import { SearchField } from "@/components/forms/search-field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
@@ -15,6 +20,7 @@ import {
 } from "@/components/ui/primitives";
 import { listApiKeys } from "@/lib/api/keys";
 import { requireApplicationAccess } from "@/lib/console/session";
+import { getTestAutomationSettings } from "@/lib/testing/automation";
 import { formatDate } from "@/lib/utils";
 
 function first(value: string | string[] | undefined) {
@@ -30,10 +36,13 @@ export default async function SettingsPage({
   const application = await requireApplicationAccess(appId);
 
   const query = first(q)?.trim() ?? "";
-  const { keys, pagination } = await listApiKeys(appId, {
-    page: Number(first(page)) || 1,
-    query,
-  });
+  const [{ keys, pagination }, testAutomation] = await Promise.all([
+    listApiKeys(appId, {
+      page: Number(first(page)) || 1,
+      query,
+    }),
+    getTestAutomationSettings(appId),
+  ]);
 
   function pageHref(target: number) {
     const search = new URLSearchParams();
@@ -60,6 +69,65 @@ export default async function SettingsPage({
             <dd className="font-mono text-xs text-neutral-900">{application.id}</dd>
           </div>
         </dl>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Test automation"
+          description="Run regression suites after subscription configuration changes from the console or assistant."
+        />
+        <ActionForm
+          action={updateTestAutomationSettingsAction}
+          submitLabel="Save automation"
+          pendingLabel="Saving test automation…"
+          className="px-5 py-4"
+        >
+          <input type="hidden" name="applicationId" value={appId} />
+          <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <input
+              type="checkbox"
+              name="runTestsOnChange"
+              defaultChecked={testAutomation.runTestsOnChange}
+              className="mt-0.5 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-900">
+                Run all test suites after configuration changes
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-slate-500">
+                Applies to plans, top-ups, access, units, usage items, and coupons.
+                Runs use disposable test users and continue in the background.
+              </span>
+            </span>
+          </label>
+          <p className="mt-3 text-xs text-slate-500">
+            {testAutomation.suiteCount === 0 ? (
+              <>
+                No suites are configured. Add one in{" "}
+                <Link
+                  href={`/apps/${appId}/test/cases`}
+                  className="font-semibold text-blue-700 hover:underline"
+                >
+                  Test cases
+                </Link>
+                .
+              </>
+            ) : (
+              <>
+                {testAutomation.suiteCount.toLocaleString("en-US")} test{" "}
+                {testAutomation.suiteCount === 1 ? "suite" : "suites"} will run
+                after each change. Manage them in{" "}
+                <Link
+                  href={`/apps/${appId}/test/cases`}
+                  className="font-semibold text-blue-700 hover:underline"
+                >
+                  Test cases
+                </Link>
+                .
+              </>
+            )}
+          </p>
+        </ActionForm>
       </Card>
 
       <Card>

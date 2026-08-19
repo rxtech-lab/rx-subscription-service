@@ -43,6 +43,7 @@ export function AnalyticsOverview({
             <Link
               key={range}
               href={`/apps/${appId}?days=${range}`}
+              prefetch={false}
               scroll={false}
               aria-current={range === days ? "page" : undefined}
               className={cn(

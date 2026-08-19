@@ -17,7 +17,7 @@ import {
   revalidateApp,
   text,
   toActionState,
-  withApplication,
+  withConfigurationUpdate,
   type ActionState,
 } from "./shared";
 
@@ -27,7 +27,7 @@ export async function createPlanAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createPlan({
         applicationId,
         key: text(formData, "key"),
@@ -54,7 +54,7 @@ export async function updatePlanAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updatePlan({
         applicationId,
         planId: text(formData, "planId"),
@@ -75,7 +75,7 @@ export async function updatePlanAction(
 
 export async function setPlanStatusAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await setPlanStatus({
       applicationId,
       planId: text(formData, "planId"),
@@ -93,7 +93,7 @@ export async function addPlanEntitlementAction(
   const applicationId = text(formData, "applicationId");
   const kind = text(formData, "kind") as EntitlementKind;
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await addPlanEntitlement({
         applicationId,
         planId: text(formData, "planId"),
@@ -125,7 +125,7 @@ export async function addPlanEntitlementAction(
 
 export async function removePlanEntitlementAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await removePlanEntitlement({
       applicationId,
       planId: text(formData, "planId"),

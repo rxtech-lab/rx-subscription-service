@@ -18,7 +18,7 @@ import {
   text,
   textList,
   toActionState,
-  withApplication,
+  withConfigurationUpdate,
   type ActionState,
 } from "./shared";
 
@@ -55,7 +55,7 @@ export async function createCouponAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createCoupon({
         applicationId,
         code: text(formData, "code"),
@@ -81,7 +81,7 @@ export async function updateCouponAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updateCoupon({
         applicationId,
         couponId: text(formData, "couponId"),
@@ -99,7 +99,7 @@ export async function updateCouponAction(
 
 export async function setCouponStatusAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await setCouponStatus({
       applicationId,
       couponId: text(formData, "couponId"),
@@ -112,7 +112,7 @@ export async function setCouponStatusAction(formData: FormData): Promise<void> {
 
 export async function deleteCouponAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await deleteCoupon({
       applicationId,
       couponId: text(formData, "couponId"),

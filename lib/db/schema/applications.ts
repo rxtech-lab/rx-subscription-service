@@ -20,6 +20,10 @@ export const applications = sqliteTable("applications", {
     .notNull()
     .default("active"),
   defaultCurrency: text("default_currency").notNull().default("usd"),
+  /** Run every saved test suite after subscription configuration changes. */
+  runTestsOnChange: integer("run_tests_on_change", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   syncedAt: integer("synced_at", { mode: "timestamp_ms" }),

@@ -49,7 +49,11 @@ export const testRuns = sqliteTable(
     })
       .notNull()
       .default("queued"),
-    trigger: text("trigger", { enum: ["console", "ai"] }).notNull().default("console"),
+    trigger: text("trigger", {
+      enum: ["console", "ai", "automatic"],
+    })
+      .notNull()
+      .default("console"),
     triggeredBy: text("triggered_by"),
     conversationId: text("conversation_id"),
     /** Which execution backend served the run: `sandbox` or `local`. */

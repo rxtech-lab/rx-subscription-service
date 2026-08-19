@@ -68,6 +68,7 @@ export function ApplicationNavigation({
             <li key={section.href}>
               <Link
                 href={href}
+                prefetch={false}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-xl text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",

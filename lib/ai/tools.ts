@@ -38,6 +38,8 @@ import { uiCatalogReference, uiSpecSchema, validateUiSpec } from "./ui-catalog";
 import { writeToolSchemas } from "./tool-schemas";
 import { USAGE_LIMIT_PROMPT_RULES } from "./subscription-prompt-rules";
 import { TEST_SUITE_EDIT_PROMPT_RULES } from "./test-suite-prompt-rules";
+import { isConfigurationWriteTool } from "./configuration-write-tools";
+import { scheduleAutomaticTestRuns } from "@/lib/testing/automation";
 
 /**
  * Read tools execute immediately — they cannot change anything, and making the
@@ -54,6 +56,12 @@ export function buildTools(applicationId: string, actor: Actor) {
   const runWrite = (name: WriteToolName) => async (args: unknown) => {
     const outcome = await executeWriteTool({ name, args, applicationId, actor });
     if (!outcome.ok) return { ok: false, error: outcome.error };
+    if (isConfigurationWriteTool(name)) {
+      await scheduleAutomaticTestRuns({
+        applicationId,
+        triggeredBy: actor.id,
+      });
+    }
     revalidatePath(`/apps/${applicationId}`, "layout");
     return { ok: true, result: outcome.result };
   };
