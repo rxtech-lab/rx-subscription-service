@@ -7,13 +7,13 @@ import {
   type BrowserContext,
 } from "@playwright/test";
 import {
-  E2E_API_KEY,
   E2E_APPLICATION_ID,
   E2E_BASE_URL,
   E2E_DAILY_ITEM_NAME,
   E2E_PERMISSION_KEY,
   E2E_ROLE_ID,
   E2E_ROLE_KEY,
+  E2E_SANDBOX_API_KEY,
   E2E_SECRET,
   E2E_USAGE_ITEM_ID,
 } from "./fixtures";
@@ -30,7 +30,7 @@ test.describe.serial("test user roles and usage limits", () => {
     api = await createRequest.newContext({
       baseURL: E2E_BASE_URL,
       extraHTTPHeaders: {
-        "X-Api-Key": E2E_API_KEY,
+        "X-Api-Key": E2E_SANDBOX_API_KEY,
         "X-E2E-Secret": E2E_SECRET,
       },
     });

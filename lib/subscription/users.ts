@@ -36,7 +36,11 @@ export async function createAppUser(input: {
   if (displayName && displayName.length > 120) {
     throw new ValidationError("displayName must be at most 120 characters");
   }
-  if (await getAppUserByRxlabId(input.applicationId, rxlabUserId)) {
+  if (
+    await getAppUserByRxlabId(input.applicationId, rxlabUserId, {
+      isTest: false,
+    })
+  ) {
     throw new ValidationError("This RxLab user already belongs to the application");
   }
 
@@ -80,11 +84,14 @@ export async function ensureAppUser(input: {
   rxlabUserId: string;
   email?: string | null;
   displayName?: string | null;
+  isTest: boolean;
 }) {
   const rxlabUserId = input.rxlabUserId.trim();
   if (!rxlabUserId) throw new ValidationError("rxlabUserId is required");
 
-  const existing = await getAppUserByRxlabId(input.applicationId, rxlabUserId);
+  const existing = await getAppUserByRxlabId(input.applicationId, rxlabUserId, {
+    isTest: input.isTest,
+  });
   if (existing) {
     // Keep contact details fresh, but never overwrite with nothing.
     if (
@@ -115,6 +122,8 @@ export async function ensureAppUser(input: {
       email: input.email ?? null,
       displayName: input.displayName ?? null,
       level: 0,
+      isTest: input.isTest,
+      testNote: input.isTest ? "Created by sandbox API" : null,
       createdAt: now,
       updatedAt: now,
     })
@@ -122,10 +131,21 @@ export async function ensureAppUser(input: {
     .returning();
 
   // A concurrent request may have won the insert; re-read rather than fail.
-  return created ?? (await requireAppUserByRxlabId(input.applicationId, rxlabUserId));
+  return (
+    created ??
+    (await requireAppUserByRxlabId(
+      input.applicationId,
+      rxlabUserId,
+      input.isTest,
+    ))
+  );
 }
 
-export async function getAppUserByRxlabId(applicationId: string, rxlabUserId: string) {
+export async function getAppUserByRxlabId(
+  applicationId: string,
+  rxlabUserId: string,
+  options: { isTest: boolean },
+) {
   const [user] = await db
     .select()
     .from(appUsers)
@@ -133,14 +153,19 @@ export async function getAppUserByRxlabId(applicationId: string, rxlabUserId: st
       and(
         eq(appUsers.applicationId, applicationId),
         eq(appUsers.rxlabUserId, rxlabUserId),
+        eq(appUsers.isTest, options.isTest),
       ),
     )
     .limit(1);
   return user ?? null;
 }
 
-async function requireAppUserByRxlabId(applicationId: string, rxlabUserId: string) {
-  const user = await getAppUserByRxlabId(applicationId, rxlabUserId);
+async function requireAppUserByRxlabId(
+  applicationId: string,
+  rxlabUserId: string,
+  isTest: boolean,
+) {
+  const user = await getAppUserByRxlabId(applicationId, rxlabUserId, { isTest });
   if (!user) throw new NotFoundError("app user", rxlabUserId);
   return user;
 }

@@ -79,8 +79,18 @@ changes mint a new Stripe Price; existing subscriptions keep billing on theirs.
 
 ## Machine API
 
-Your applications talk to `/api/v1` with an application API key
-(`X-Api-Key`, created under Settings). Users are addressed by their rxlab id.
+Your applications talk to `/api/v1` with an environment-scoped application API
+key (`X-Api-Key`, created under Settings). Users are addressed by their rxlab id.
+The endpoint URL stays the same; the key selects the data plane:
+
+- **Sandbox** keys create and resolve isolated test users, use the Stripe sandbox
+  account, and never read or mutate the matching production user's balances,
+  usage, purchases, subscriptions, or reservations.
+- **Production** keys create and resolve real users and use live Stripe. Keys
+  created before environment support are migrated to production.
+
+The same `rxlabUserId` may exist in both environments. API keys cannot be moved
+between environments after creation; rotate a key if its environment changes.
 
 | Endpoint | Purpose |
 |---|---|
@@ -100,7 +110,7 @@ Your applications talk to `/api/v1` with an application API key
 | `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, with an optional `couponCode`, or the billing portal |
 
 ```bash
-curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $KEY"
+curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $SANDBOX_KEY"
 ```
 
 ```json

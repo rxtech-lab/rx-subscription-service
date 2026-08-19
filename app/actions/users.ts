@@ -1,6 +1,10 @@
 "use server";
 
-import { createApiKey, deleteApiKey } from "@/lib/api/keys";
+import {
+  createApiKey,
+  deleteApiKey,
+  isApiEnvironment,
+} from "@/lib/api/keys";
 import { requireConsoleUser } from "@/lib/console/session";
 import {
   isPermissionError,
@@ -144,8 +148,17 @@ export async function createApiKeyAction(
 ): Promise<ApiKeyState> {
   const applicationId = text(formData, "applicationId");
   try {
+    const environment = text(formData, "environment");
+    if (!isApiEnvironment(environment)) {
+      throw new ValidationError("Choose sandbox or production");
+    }
     const created = await withApplication(applicationId, ({ actor }) =>
-      createApiKey({ applicationId, name: text(formData, "name"), actor }),
+      createApiKey({
+        applicationId,
+        name: text(formData, "name"),
+        environment,
+        actor,
+      }),
     );
     revalidateApp(applicationId, "settings");
     return {

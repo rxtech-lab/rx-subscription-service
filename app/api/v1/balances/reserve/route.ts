@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       description: parsed.data.description,
       idempotencyKey: apiReservationKey(
         context.application.id,
+        context.environment,
         parsed.data.idempotencyKey,
       ),
       metadata: parsed.data.metadata ?? null,

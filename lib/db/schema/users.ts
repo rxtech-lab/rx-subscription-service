@@ -11,9 +11,9 @@ import { applications } from "./applications";
 import { balanceUnits } from "./units";
 
 /**
- * A user *within* an application. The same rxlab identity (`rxlabUserId`, the
- * token `sub`) gets an independent row — and therefore independent balances,
- * level, and usage — per application.
+ * A user *within* an application environment. The same rxlab identity
+ * (`rxlabUserId`, the token `sub`) gets independent production and sandbox
+ * rows — and therefore independent balances, level, usage, and purchases.
  */
 export const appUsers = sqliteTable(
   "app_users",
@@ -50,7 +50,11 @@ export const appUsers = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
-    uniqueIndex("app_users_app_rxlab_idx").on(table.applicationId, table.rxlabUserId),
+    uniqueIndex("app_users_app_rxlab_env_idx").on(
+      table.applicationId,
+      table.rxlabUserId,
+      table.isTest,
+    ),
     index("app_users_rxlab_idx").on(table.rxlabUserId),
     index("app_users_app_test_idx").on(table.applicationId, table.isTest),
   ],

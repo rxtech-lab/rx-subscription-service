@@ -81,6 +81,7 @@ export async function POST(request: Request) {
       description: parsed.data.description,
       idempotencyKey: apiBalanceKey(
         context.application.id,
+        context.environment,
         parsed.data.idempotencyKey,
       ),
       referenceType: "api",

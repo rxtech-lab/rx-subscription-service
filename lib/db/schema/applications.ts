@@ -6,6 +6,9 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+export const API_ENVIRONMENTS = ["sandbox", "production"] as const;
+export type ApiEnvironment = (typeof API_ENVIRONMENTS)[number];
+
 /**
  * A subscription-enabled application. The primary key is the rxlab-auth OAuth
  * client id, so it stays stable across syncs and can be used as the foreign key
@@ -42,6 +45,13 @@ export const applicationApiKeys = sqliteTable(
       .notNull()
       .references(() => applications.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /**
+     * The data plane this credential may reach. Existing credentials predate
+     * environment support and migrate to production.
+     */
+    environment: text("environment", { enum: API_ENVIRONMENTS })
+      .notNull()
+      .default("production"),
     keyPrefix: text("key_prefix").notNull(),
     hashedKey: text("hashed_key").notNull().unique(),
     lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),

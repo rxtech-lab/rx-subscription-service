@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireApiReservation,
 } from "@/lib/api/context";
 import { apiReservationOperationKey } from "@/lib/api/idempotency";
 import { settleBalanceReservation } from "@/lib/subscription/balance-reservations";
@@ -31,6 +32,7 @@ export async function POST(
       );
     }
     const { id } = await params;
+    await requireApiReservation(context, id);
     const result = await settleBalanceReservation({
       applicationId: context.application.id,
       reservationId: id,
@@ -40,6 +42,7 @@ export async function POST(
       metadata: parsed.data.metadata ?? null,
       idempotencyKey: apiReservationOperationKey(
         context.application.id,
+        context.environment,
         parsed.data.idempotencyKey,
       ),
     });
