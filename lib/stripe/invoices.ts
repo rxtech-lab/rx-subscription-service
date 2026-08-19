@@ -14,6 +14,8 @@ export interface PaymentHistoryItem {
   currency: string;
   status: string;
   createdAt: Date;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
   invoiceUrl: string | null;
 }
 
@@ -73,6 +75,8 @@ export async function listPaymentHistory(input: {
       currency: invoice.currency,
       status: invoice.status ?? "unknown",
       createdAt: new Date(invoice.created * 1_000),
+      hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+      invoicePdfUrl: invoice.invoice_pdf ?? null,
       invoiceUrl: invoice.hosted_invoice_url ?? invoice.invoice_pdf ?? null,
     })),
     hasMore: invoices.has_more,

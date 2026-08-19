@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 import {
   E2E_BASE_URL,
   E2E_DATABASE_URL,
+  E2E_SANDBOX_WEBHOOK_SECRET,
   E2E_SECRET,
   E2E_STRIPE_URL,
 } from "./e2e/fixtures";
@@ -33,6 +34,7 @@ export default defineConfig({
         E2E_STRIPE_API_BASE: E2E_STRIPE_URL,
         STRIPE_SECRET_KEY: "sk_test_playwright",
         STRIPE_SANDBOX_SECRET_KEY: "sk_test_playwright_sandbox",
+        STRIPE_SANDBOX_WEBHOOK_SECRET: E2E_SANDBOX_WEBHOOK_SECRET,
         NEXT_PUBLIC_SITE_URL: E2E_BASE_URL,
       },
     },

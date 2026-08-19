@@ -1,5 +1,6 @@
 import "server-only";
 import { cache } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -9,6 +10,7 @@ import {
 } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { applications } from "@/lib/db/schema";
+import { isAuthorizedE2EHeaders } from "@/lib/e2e/request";
 import {
   isPermissionError,
   listAllOAuthClients,
@@ -29,11 +31,21 @@ export interface ConsoleApplication {
   iconUrl: string | null;
 }
 
+const E2E_CONSOLE_ACCESS_TOKEN = "rx-subscription-e2e-console";
+
 /**
  * The signed-in admin. Cached per request so a page that checks the session in
  * several places still performs one session read.
  */
 export const getConsoleUser = cache(async (): Promise<ConsoleUser | null> => {
+  if (isAuthorizedE2EHeaders(await headers())) {
+    return {
+      id: "playwright-console-user",
+      name: "Playwright Admin",
+      email: "playwright@rxlab.test",
+      accessToken: E2E_CONSOLE_ACCESS_TOKEN,
+    };
+  }
   if (!authStatus.configured) return null;
   const session = await auth();
   if (session?.error === RX_LAB_REFRESH_TOKEN_ERROR) return null;
@@ -67,6 +79,16 @@ export async function requireConsoleUser(): Promise<ConsoleUser> {
 export const getManagedApplications = cache(
   async (): Promise<ConsoleApplication[]> => {
     const user = await requireConsoleUser();
+
+    if (user.accessToken === E2E_CONSOLE_ACCESS_TOKEN) {
+      const localApplications = await db.select().from(applications);
+      return localApplications.map((application) => ({
+        id: application.id,
+        name: application.name,
+        description: application.description,
+        iconUrl: application.iconUrl,
+      }));
+    }
 
     let clients: OAuthClientSummary[];
     try {

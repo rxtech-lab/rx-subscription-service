@@ -5,6 +5,7 @@ import {
   type Browser,
 } from "@playwright/test";
 import {
+  E2E_API_KEY,
   E2E_APPLICATION_ID,
   E2E_BASE_URL,
   E2E_SANDBOX_API_KEY,
@@ -56,6 +57,70 @@ test("a test user can page through Stripe invoices and open one", async ({
       },
     });
     expect(checkout.ok()).toBe(true);
+
+    const invoicesResponse = await api.get("/api/v1/invoices", {
+      params: { rxlabUserId: user.rxlabUserId },
+    });
+    expect(invoicesResponse.ok()).toBe(true);
+    const invoices = (await invoicesResponse.json()) as {
+      invoices: {
+        id: string;
+        number: string;
+        status: string;
+        amountCents: number;
+        hostedInvoiceUrl: string;
+        invoicePdfUrl: string;
+      }[];
+      pagination: {
+        hasMore: boolean;
+        firstCursor: string;
+        lastCursor: string;
+      };
+    };
+    expect(invoices.invoices).toHaveLength(10);
+    expect(invoices.invoices[0]).toMatchObject({
+      id: "in_e2e_01",
+      number: "TEST-01",
+      status: "paid",
+      amountCents: 1_000,
+      hostedInvoiceUrl: "https://invoice.stripe.test/in_e2e_01",
+      invoicePdfUrl: "https://invoice.stripe.test/in_e2e_01.pdf",
+    });
+    expect(invoices.pagination).toEqual({
+      hasMore: true,
+      firstCursor: "in_e2e_01",
+      lastCursor: "in_e2e_10",
+    });
+
+    const nextInvoicesResponse = await api.get("/api/v1/invoices", {
+      params: {
+        rxlabUserId: user.rxlabUserId,
+        after: invoices.pagination.lastCursor,
+      },
+    });
+    expect(nextInvoicesResponse.ok()).toBe(true);
+    await expect(nextInvoicesResponse.json()).resolves.toMatchObject({
+      invoices: [{ id: "in_e2e_11" }, { id: "in_e2e_12" }],
+      pagination: {
+        hasMore: false,
+        firstCursor: "in_e2e_11",
+        lastCursor: "in_e2e_12",
+      },
+    });
+
+    const productionInvoices = await api.get("/api/v1/invoices", {
+      headers: { "X-Api-Key": E2E_API_KEY },
+      params: { rxlabUserId: user.rxlabUserId },
+    });
+    expect(productionInvoices.ok()).toBe(true);
+    await expect(productionInvoices.json()).resolves.toEqual({
+      invoices: [],
+      pagination: {
+        hasMore: false,
+        firstCursor: null,
+        lastCursor: null,
+      },
+    });
 
     const context = await signedInAs(browser, user.sessionToken);
     const page = await context.newPage();

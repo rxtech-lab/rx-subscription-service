@@ -1,7 +1,10 @@
 import { proxy as authProxy } from "@/lib/auth";
 import type { NextFetchEvent, NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { isAuthorizedE2EHeaders } from "@/lib/e2e/request";
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (isAuthorizedE2EHeaders(request.headers)) return NextResponse.next();
   return authProxy(request, event);
 }
 

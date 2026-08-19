@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import {
   adjustTestBalanceAction,
@@ -374,6 +375,12 @@ export default async function TestPage({ params }: PageProps<"/apps/[appId]">) {
                       <ActionMenu
                         label={`Actions for ${user.displayName || "test user"}`}
                       >
+                        <Link
+                          href={`/apps/${encodeURIComponent(appId)}/users/${encodeURIComponent(user.id)}?environment=sandbox`}
+                          className="flex w-full items-center justify-start gap-2 rounded-lg px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950"
+                        >
+                          View sandbox data
+                        </Link>
                         <a
                           href={`/apps/${appId}/users/${user.id}/test-session`}
                           target="_blank"

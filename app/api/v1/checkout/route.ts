@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 
     if (parsed.data.kind === "portal") {
       const portal = await createBillingPortalSession({
-        appUserId: user.id,
+        user,
         returnUrl: parsed.data.returnUrl,
       });
       return Response.json(portal, { headers: noStore });
