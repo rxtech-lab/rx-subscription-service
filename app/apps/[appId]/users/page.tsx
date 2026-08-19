@@ -79,32 +79,39 @@ export default async function UsersPage({
         description="One record per rxlab identity per application, each with its own balances, level, and usage."
         action={
           availableUsers.length > 0 ? (
-            <FormDialog
-              triggerLabel="Add user"
-              title="Add an RxLab user"
-              description="Search the RxLab user directory and add the selected identity to this application."
-              size="lg"
-              triggerSize="sm"
-            >
-              <ActionForm
-                action={createAppUserAction}
-                submitLabel="Add user"
-                pendingLabel="Adding user…"
-                autoComplete="off"
+            <div className="shrink-0 whitespace-nowrap">
+              <FormDialog
+                triggerLabel="Add user"
+                title="Add an RxLab user"
+                description="Search the RxLab user directory and add the selected identity to this application."
+                size="lg"
+                triggerSize="sm"
               >
-                <input type="hidden" name="applicationId" value={appId} />
-                <RxLabUserList
-                  users={availableUsers.map((user) => ({
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                  }))}
-                />
-              </ActionForm>
-            </FormDialog>
+                <ActionForm
+                  action={createAppUserAction}
+                  submitLabel="Add user"
+                  pendingLabel="Adding user…"
+                  autoComplete="off"
+                >
+                  <input type="hidden" name="applicationId" value={appId} />
+                  <RxLabUserList
+                    users={availableUsers.map((user) => ({
+                      id: user.id,
+                      name: user.name,
+                      email: user.email,
+                    }))}
+                  />
+                </ActionForm>
+              </FormDialog>
+            </div>
           ) : (
-            <div className="max-w-64 text-right">
-              <Button type="button" size="sm" disabled>
+            <div className="max-w-64 shrink-0 text-right">
+              <Button
+                type="button"
+                size="sm"
+                className="whitespace-nowrap"
+                disabled
+              >
                 Add user
               </Button>
               <p className="mt-1 text-xs leading-4 text-slate-500">

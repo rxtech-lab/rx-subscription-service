@@ -375,7 +375,6 @@ export function AssistantPanel({
   const messagesViewportRef = useRef<HTMLDivElement>(null);
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const pinnedUserMessageRef = useRef<HTMLDivElement>(null);
-  const bottomSpacerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const panelWidthRef = useRef(panelWidth);
 
@@ -421,21 +420,32 @@ export function AssistantPanel({
 
     const viewport = messagesViewportRef.current;
     const pinnedMessage = pinnedUserMessageRef.current;
-    const spacer = bottomSpacerRef.current;
-    if (!viewport || !pinnedMessage || !spacer) return;
+    const content = messagesContentRef.current;
+    if (!viewport || !pinnedMessage || !content) return;
 
     const viewportRect = viewport.getBoundingClientRect();
     const pinnedRect = pinnedMessage.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
     const pinnedOffsetTop = pinnedRect.top - viewportRect.top + viewport.scrollTop;
     const targetScrollTop = Math.max(
       0,
       pinnedOffsetTop - PINNED_MESSAGE_TOP_INSET,
     );
+    // scrollHeight is clamped to clientHeight when a new conversation is
+    // short. Measure the transcript itself so the spacer never feeds back
+    // into this calculation and grows once per layout pass.
+    const viewportPaddingBottom = Number.parseFloat(
+      window.getComputedStyle(viewport).paddingBottom,
+    );
+    const contentHeightWithoutSpacer =
+      contentRect.bottom -
+      viewportRect.top +
+      viewport.scrollTop +
+      (Number.isFinite(viewportPaddingBottom) ? viewportPaddingBottom : 0);
     const requiredSpacing = calculatePinnedBottomSpacing({
       viewportHeight: viewport.clientHeight,
       targetScrollTop,
-      scrollHeight: viewport.scrollHeight,
-      currentSpacerHeight: spacer.getBoundingClientRect().height,
+      contentHeightWithoutSpacer,
     });
 
     const pinnedIndex = messages.findIndex(
@@ -1077,7 +1087,6 @@ export function AssistantPanel({
           ) : null}
         </div>
         <div
-          ref={bottomSpacerRef}
           style={{ height: bottomSpacing }}
           aria-hidden="true"
         />

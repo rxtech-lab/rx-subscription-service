@@ -10,8 +10,7 @@ describe("pinned message layout", () => {
       calculatePinnedBottomSpacing({
         viewportHeight: 600,
         targetScrollTop: 500,
-        scrollHeight: 660,
-        currentSpacerHeight: 0,
+        contentHeightWithoutSpacer: 660,
       }),
     ).toBe(440);
   });
@@ -21,10 +20,19 @@ describe("pinned message layout", () => {
       calculatePinnedBottomSpacing({
         viewportHeight: 600,
         targetScrollTop: 500,
-        scrollHeight: 1_100,
-        currentSpacerHeight: 240,
+        contentHeightWithoutSpacer: 860,
       }),
     ).toBe(240);
+  });
+
+  it("uses the real content height when a short transcript does not overflow", () => {
+    expect(
+      calculatePinnedBottomSpacing({
+        viewportHeight: 600,
+        targetScrollTop: 20,
+        contentHeightWithoutSpacer: 180,
+      }),
+    ).toBe(440);
   });
 
   it("releases only after real content exists after the pinned user message", () => {
