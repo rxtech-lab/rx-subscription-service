@@ -123,6 +123,16 @@ const server = createServer(async (request, response) => {
         ? { id: `price_e2e_${sequence}`, object: "price" }
         : request.method === "POST" && path === "/v1/customers"
           ? { id: `cus_e2e_${sequence}`, object: "customer" }
+        : request.method === "POST" && path === "/v1/billing_portal/sessions"
+          ? {
+              id: `bps_e2e_${sequence}`,
+              object: "billing_portal.session",
+              url: `https://billing.stripe.test/${
+                request.headers.authorization?.includes("sandbox")
+                  ? "sandbox"
+                  : "live"
+              }`,
+            }
         : couponPayload
           ? couponPayload
         : request.method === "POST" && path === "/v1/checkout/sessions"

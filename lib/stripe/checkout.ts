@@ -458,18 +458,19 @@ export async function createTopupCheckout(input: {
 
 /** Stripe-hosted portal for cancelling and updating payment methods. */
 export async function createBillingPortalSession(input: {
-  appUserId: string;
+  user: AppUser;
   returnUrl?: string;
   mode?: StripeMode;
 }) {
   const [customer] = await db
     .select()
     .from(stripeCustomers)
-    .where(eq(stripeCustomers.appUserId, input.appUserId))
+    .where(eq(stripeCustomers.appUserId, input.user.id))
     .limit(1);
   if (!customer) throw new ValidationError("user has no billing account yet");
 
-  const session = await stripe(input.mode ?? "live").billingPortal.sessions.create({
+  const mode = input.mode ?? modeForUser(input.user);
+  const session = await stripe(mode).billingPortal.sessions.create({
     customer: customer.stripeCustomerId,
     return_url: input.returnUrl ?? siteUrl(),
   });
