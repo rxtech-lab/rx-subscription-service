@@ -1,18 +1,15 @@
 interface PinnedBottomSpacingInput {
   viewportHeight: number;
   targetScrollTop: number;
-  scrollHeight: number;
-  currentSpacerHeight: number;
+  contentHeightWithoutSpacer: number;
 }
 
 /** The exact tail space needed to make the pinned row's target scroll reachable. */
 export function calculatePinnedBottomSpacing({
   viewportHeight,
   targetScrollTop,
-  scrollHeight,
-  currentSpacerHeight,
+  contentHeightWithoutSpacer,
 }: PinnedBottomSpacingInput): number {
-  const contentHeightWithoutSpacer = scrollHeight - currentSpacerHeight;
   return Math.max(
     0,
     Math.ceil(targetScrollTop + viewportHeight - contentHeightWithoutSpacer),
