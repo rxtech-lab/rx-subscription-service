@@ -185,6 +185,7 @@ export async function listAppUserOptions(
       rxlabUserId: appUsers.rxlabUserId,
       email: appUsers.email,
       displayName: appUsers.displayName,
+      isTest: appUsers.isTest,
     })
     .from(appUsers)
     .where(usersScope(applicationId, options.includeTest ?? false))

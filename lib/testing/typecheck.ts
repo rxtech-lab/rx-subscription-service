@@ -164,7 +164,7 @@ export function enforceSuiteTypes(code: string, actor: Actor): SuiteDiagnostic[]
   const diagnostics = checkSuiteTypes(code);
   if (diagnostics.length > 0 && actor.type === "ai") {
     const error = new Error(
-      `The suite does not compile. Fix these and send the whole file again:\n${formatSuiteDiagnostics(
+      `The suite does not compile. Fix these errors and retry the write:\n${formatSuiteDiagnostics(
         diagnostics,
       )}`,
     );

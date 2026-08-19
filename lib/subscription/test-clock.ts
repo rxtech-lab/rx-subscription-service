@@ -1,9 +1,10 @@
 /**
  * The simulated clock a test user lives on.
  *
- * Usage periods are resolved by arithmetic on `now` — nothing resets counters on
- * a schedule — so moving one user's `now` forward is the whole of time travel:
- * a daily allowance can be watched rolling over in a second rather than a day.
+ * Usage periods and coupon validity windows are resolved by arithmetic on
+ * `now` — nothing waits on a background timer — so moving one user's `now`
+ * forward is the whole of time travel: a daily allowance can roll over, or a
+ * scheduled coupon can start or expire, in a second rather than a day.
  *
  * Kept pure and free of `server-only` so the arithmetic is unit-testable, and
  * because both the storefront and the console need to describe an offset.

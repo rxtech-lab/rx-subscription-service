@@ -5,6 +5,7 @@ export * from "./plans";
 export * from "./usage";
 export * from "./users";
 export * from "./topups";
+export * from "./coupons";
 export * from "./billing";
 export * from "./ai";
 export * from "./testing";

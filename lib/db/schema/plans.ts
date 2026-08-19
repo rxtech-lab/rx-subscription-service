@@ -87,7 +87,10 @@ export const planEntitlements = sqliteTable(
     usageItemId: text("usage_item_id").references(() => usageItems.id, {
       onDelete: "cascade",
     }),
+    /** Allowance after the trial ends (and for plans without a trial). */
     limitValue: integer("limit_value"),
+    /** Allowance while Stripe reports the subscription as trialing. */
+    trialLimitValue: integer("trial_limit_value"),
     unitId: text("unit_id").references(() => balanceUnits.id, {
       onDelete: "cascade",
     }),

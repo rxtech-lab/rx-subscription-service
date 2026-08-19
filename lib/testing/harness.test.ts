@@ -25,6 +25,7 @@ let server: Server;
 let baseUrl: string;
 let controlCalls: ControlCall[] = [];
 let apiKeysSeen: string[] = [];
+let couponValidationBodies: Record<string, unknown>[] = [];
 
 beforeAll(async () => {
   server = createServer((request, response) => {
@@ -48,6 +49,31 @@ beforeAll(async () => {
       return;
     }
 
+    if (url.pathname === "/api/v1/coupons/validate") {
+      apiKeysSeen.push(String(request.headers["x-api-key"] ?? ""));
+      let body = "";
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        couponValidationBodies.push(JSON.parse(body || "{}"));
+        send(200, {
+          valid: true,
+          code: "SAVE25",
+          name: "Save 25%",
+          description: null,
+          terms: "25% off on the first charge",
+          duration: "once",
+          durationInMonths: null,
+          discountCents: 250,
+          totalCents: 750,
+          currency: "usd",
+          capped: false,
+          reason: null,
+          blockers: [],
+        });
+      });
+      return;
+    }
+
     if (url.pathname === "/api/testing/control") {
       let body = "";
       request.on("data", (chunk) => (body += chunk));
@@ -64,8 +90,55 @@ beforeAll(async () => {
           });
           return;
         }
+        if (parsed.op === "testUser.grantPlan") {
+          const status = parsed.args.status === "trialing" ? "trialing" : "active";
+          send(200, {
+            subscriptionId: "subscription-1",
+            planKey: parsed.args.planKey,
+            status,
+            currentPeriodEnd: "2030-01-15T00:00:00.000Z",
+          });
+          return;
+        }
         if (parsed.op === "config.plans") {
           send(200, [{ id: "p1", key: "pro", name: "Pro" }]);
+          return;
+        }
+        if (parsed.op === "config.topups") {
+          send(200, [{ id: "topup-1", key: "points", name: "Points" }]);
+          return;
+        }
+        if (parsed.op === "config.coupons") {
+          send(200, [
+            {
+              id: "coupon-1",
+              code: "SAVE25",
+              name: "Save 25%",
+              status: "active",
+              redemptionsUsed: 0,
+            },
+          ]);
+          return;
+        }
+        if (parsed.op === "coupon.reserve") {
+          send(200, {
+            reserved: true,
+            reservationId: "redemption-1",
+            code: "SAVE25",
+            reason: null,
+            blockers: [],
+            discountCents: 250,
+            totalCents: 750,
+            currency: "usd",
+            capped: false,
+          });
+          return;
+        }
+        if (
+          parsed.op === "testUser.setClock" ||
+          parsed.op === "testUser.advanceClock"
+        ) {
+          send(200, { offsetMs: 86_400_000, now: "2030-01-02T00:00:00.000Z" });
           return;
         }
         send(200, { ok: true });
@@ -89,6 +162,7 @@ afterAll(async () => {
 async function runSuite(source: string): Promise<RunEvent[]> {
   controlCalls = [];
   apiKeysSeen = [];
+  couponValidationBodies = [];
 
   const directory = await mkdtemp(join(tmpdir(), "rx-harness-"));
   try {
@@ -280,6 +354,93 @@ describe("the test harness", () => {
     `);
 
     expect(controlCalls.map((call) => call.op)).toEqual(["testUser.create"]);
+  }, 30_000);
+
+  it("grants trialing subscriptions and can transition them to active", async () => {
+    const events = await runSuite(`
+      suite("Trial periods", () => {
+        test("moves a subscriber from trial to paid", async () => {
+          const user = await rx.testUsers.create({ displayName: "Trial user" });
+
+          const trial = await rx.testUsers.grantPlan(user.rxlabUserId, "pro", {
+            status: "trialing",
+          });
+          expect(trial.status).toBe("trialing");
+          expect(trial.currentPeriodEnd).toBe("2030-01-15T00:00:00.000Z");
+
+          const paid = await rx.testUsers.grantPlan(user.rxlabUserId, "pro");
+          expect(paid.status).toBe("active");
+        });
+      });
+    `);
+
+    expect(find(events, "test:end")[0].status).toBe("passed");
+    expect(controlCalls).toMatchObject([
+      { op: "testUser.create" },
+      {
+        op: "testUser.grantPlan",
+        args: { rxlabUserId: "test:abc", planKey: "pro", status: "trialing" },
+      },
+      {
+        op: "testUser.grantPlan",
+        args: { rxlabUserId: "test:abc", planKey: "pro", status: "active" },
+      },
+      { op: "testUser.delete" },
+    ]);
+  }, 30_000);
+
+  it("validates and reserves coupons and moves persisted test time", async () => {
+    const events = await runSuite(`
+      suite("Coupons and time", () => {
+        test("exercises coupon limits and time windows", async () => {
+          const user = await rx.testUsers.create({ displayName: "Coupon user" });
+          const coupons = await rx.config.coupons();
+          const topups = await rx.config.topups();
+          const target = { kind: "topup" as const, id: topups[0].id };
+
+          const preview = await rx.coupons.validate(
+            user.rxlabUserId,
+            coupons[0].code,
+            target,
+          );
+          expect(preview.valid).toBe(true);
+          expect(preview.discountCents).toBe(250);
+
+          const held = await rx.coupons.reserve(
+            user.rxlabUserId,
+            coupons[0].code,
+            target,
+          );
+          expect(held.reserved).toBe(true);
+
+          const clock = await rx.testUsers.setTime(
+            user.rxlabUserId,
+            "2030-01-01T00:00:00.000Z",
+          );
+          expect(clock.now).toBe("2030-01-02T00:00:00.000Z");
+          await rx.testUsers.advanceClock(user.rxlabUserId, 86_400_000);
+        });
+      });
+    `);
+
+    expect(find(events, "test:end")[0].status).toBe("passed");
+    expect(couponValidationBodies).toEqual([
+      {
+        rxlabUserId: "test:abc",
+        code: "SAVE25",
+        topupId: "topup-1",
+      },
+    ]);
+    expect(controlCalls.map((call) => call.op)).toEqual([
+      "testUser.create",
+      "config.coupons",
+      "config.topups",
+      "coupon.reserve",
+      "testUser.setClock",
+      "testUser.advanceClock",
+      "testUser.delete",
+    ]);
+    expect(apiKeysSeen).toEqual(["rxs_testkey"]);
   }, 30_000);
 
   it("reports a suite that cannot even load as an error, not a silent pass", async () => {

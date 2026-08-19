@@ -204,6 +204,7 @@ async function main() {
         kind: "usage_limit",
         usageItemId,
         limitValue: 1000,
+        trialLimitValue: 1000,
         createdAt: now,
         updatedAt: now,
       },

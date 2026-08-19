@@ -12,6 +12,7 @@ import {
   createTopupCheckout,
   NotEligibleError,
 } from "@/lib/stripe/checkout";
+import { CouponNotApplicableError } from "@/lib/subscription/coupons";
 
 const schema = z.object({
   rxlabUserId: z.string().min(1),
@@ -20,6 +21,8 @@ const schema = z.object({
   kind: z.enum(["plan", "topup", "portal"]),
   planId: z.string().optional(),
   topupId: z.string().optional(),
+  /** A coupon code belonging to this application. Never another app's. */
+  couponCode: z.string().max(64).optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
   returnUrl: z.string().url().optional(),
@@ -60,6 +63,7 @@ export async function POST(request: Request) {
         applicationId: context.application.id,
         user,
         planId: parsed.data.planId,
+        couponCode: parsed.data.couponCode,
         successUrl: parsed.data.successUrl,
         cancelUrl: parsed.data.cancelUrl,
       });
@@ -73,11 +77,24 @@ export async function POST(request: Request) {
       applicationId: context.application.id,
       user,
       topupId: parsed.data.topupId,
+      couponCode: parsed.data.couponCode,
       successUrl: parsed.data.successUrl,
       cancelUrl: parsed.data.cancelUrl,
     });
     return Response.json(result, { headers: noStore });
   } catch (error) {
+    // A refused code is the buyer's problem to fix, not a server fault, so it
+    // comes back with the machine-readable blockers the app can act on.
+    if (error instanceof CouponNotApplicableError) {
+      return Response.json(
+        {
+          error: "coupon_not_applicable",
+          error_description: error.message,
+          blockers: error.blockers,
+        },
+        { status: 422, headers: noStore },
+      );
+    }
     if (error instanceof NotEligibleError) {
       return Response.json(
         {

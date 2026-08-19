@@ -102,7 +102,9 @@ export default async function PlansPage({ params }: PageProps<"/apps/[appId]">) 
                                 {entitlement.kind === "role"
                                   ? `role: ${labelFor.role(entitlement.roleId)}`
                                   : entitlement.kind === "usage_limit"
-                                    ? `${labelFor.usage(entitlement.usageItemId)}: ${entitlement.limitValue ?? "unlimited"}`
+                                    ? plan.trialDays > 0
+                                      ? `${labelFor.usage(entitlement.usageItemId)}: trial ${entitlement.trialLimitValue ?? "unlimited"}, non-trial ${entitlement.limitValue ?? "unlimited"}`
+                                      : `${labelFor.usage(entitlement.usageItemId)}: ${entitlement.limitValue ?? "unlimited"}`
                                     : entitlement.kind === "balance_grant"
                                       ? `${entitlement.amount} ${labelFor.unit(entitlement.unitId)}/period`
                                       : entitlement.kind === "permission"
@@ -313,7 +315,7 @@ export default async function PlansPage({ params }: PageProps<"/apps/[appId]">) 
                   ))}
                 </Select>
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 md:grid-cols-3">
                 <Field label="Usage item">
                   <Select name="usageItemId">
                     <option value="">—</option>
@@ -324,8 +326,11 @@ export default async function PlansPage({ params }: PageProps<"/apps/[appId]">) 
                     ))}
                   </Select>
                 </Field>
-                <Field label="Limit" hint="Blank = unlimited">
+                <Field label="Non-trial limit" hint="Blank = unlimited">
                   <Input name="limitValue" type="number" min="0" />
+                </Field>
+                <Field label="Trial limit" hint="Blank = unlimited">
+                  <Input name="trialLimitValue" type="number" min="0" />
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-3">

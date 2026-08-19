@@ -1,9 +1,23 @@
 import "server-only";
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { testRunCases, testRunEvents, testRuns } from "@/lib/db/schema";
 import { newId, NotFoundError } from "@/lib/subscription/shared";
 import type { RunEvent, TestOutline } from "./protocol";
+
+/** A whole suite, not one test — the harness enforces its own per-test limit. */
+export const RUN_TIMEOUT_MS = 4 * 60_000;
+
+/**
+ * How long a run may go without reporting before it is declared dead.
+ *
+ * Its own timeout plus enough slack that a run finishing at the wire is not
+ * mistaken for one that never will.
+ */
+const STALE_AFTER_MS = RUN_TIMEOUT_MS + 60_000;
+
+/** As many events as one read returns — a run is a few dozen, not a stream. */
+const EVENT_PAGE_SIZE = 500;
 
 /**
  * Run state, derived entirely from the event log.
@@ -204,7 +218,182 @@ export async function listRunEvents(runId: string, afterSeq: number) {
     .from(testRunEvents)
     .where(and(eq(testRunEvents.runId, runId), gt(testRunEvents.seq, afterSeq)))
     .orderBy(asc(testRunEvents.seq))
-    .limit(500);
+    .limit(EVENT_PAGE_SIZE);
+}
+
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "passed"
+  | "failed"
+  | "error"
+  | "canceled";
+
+export type CaseStatus = "running" | "passed" | "failed" | "skipped";
+
+/**
+ * Everything a viewer needs to draw a run, as one value.
+ *
+ * This is the shape the events endpoint returns, which is the point: the suite
+ * page renders it straight into the initial HTML, so reopening a suite paints
+ * the stored result immediately rather than showing an empty panel that fills
+ * in once the first poll lands. A finished run should look like something being
+ * read, not something being started.
+ */
+export interface RunSnapshot {
+  run: {
+    id: string;
+    suiteId: string;
+    status: RunStatus;
+    trigger: string;
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    durationMs: number | null;
+    error: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+  };
+  cases: {
+    suiteName: string;
+    name: string;
+    status: CaseStatus;
+    position: number;
+    durationMs: number | null;
+    error: string | null;
+    steps: { name: string; status: string; durationMs: number | null }[];
+  }[];
+  events: { seq: number; type: string; payload: Record<string, unknown> }[];
+  done: boolean;
+}
+
+function toSnapshot(
+  run: typeof testRuns.$inferSelect,
+  status: RunStatus,
+  cases: (typeof testRunCases.$inferSelect)[],
+  events: RunSnapshot["events"],
+): RunSnapshot {
+  return {
+    run: {
+      id: run.id,
+      suiteId: run.suiteId,
+      status,
+      trigger: run.trigger,
+      total: run.total,
+      passed: run.passed,
+      failed: run.failed,
+      skipped: run.skipped,
+      durationMs: run.durationMs,
+      error: run.error,
+      // Serialized here rather than at each caller: the API route hands this to
+      // `Response.json` and the page hands it to a client component, and only
+      // one of those would turn a `Date` into a string on its own.
+      startedAt: run.startedAt.toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? null,
+    },
+    cases: cases.map((entry) => ({
+      suiteName: entry.suiteName,
+      name: entry.name,
+      status: entry.status,
+      position: entry.position,
+      durationMs: entry.durationMs,
+      error: entry.error,
+      steps: entry.steps,
+    })),
+    events,
+    done: isTerminal(status),
+  };
+}
+
+export async function readRunSnapshot(
+  applicationId: string,
+  runId: string,
+  afterSeq = -1,
+): Promise<RunSnapshot> {
+  const { run, cases } = await requireRun(applicationId, runId);
+  const status = await reconcileStaleRun(run, STALE_AFTER_MS);
+  const events = await listRunEvents(runId, afterSeq);
+  return toSnapshot(run, status, cases, events);
+}
+
+/**
+ * Snapshots for a set of runs, keyed by id.
+ *
+ * Read in three queries rather than three per run: this runs while an
+ * application layout renders, which is a place that has to stay cheap. The
+ * transcript already contains every card we are reading, so every referenced
+ * run is seeded — otherwise opening a long history would still fan out one
+ * request per older card. Only the `run:start` event is needed here: it carries
+ * the workflow outline, while the durable case rows carry the finished result.
+ *
+ * An id that no longer resolves — another application's run, or one deleted
+ * with its suite — is simply absent, and its card falls back to asking for
+ * itself.
+ */
+export async function readRunSnapshots(
+  applicationId: string,
+  runIds: string[],
+): Promise<Record<string, RunSnapshot>> {
+  const wanted = [...new Set(runIds)];
+  if (wanted.length === 0) return {};
+
+  const runs = await db
+    .select()
+    .from(testRuns)
+    .where(and(eq(testRuns.applicationId, applicationId), inArray(testRuns.id, wanted)));
+  if (runs.length === 0) return {};
+
+  const ids = runs.map((run) => run.id);
+  const cases = await db
+    .select()
+    .from(testRunCases)
+    .where(inArray(testRunCases.runId, ids))
+    .orderBy(asc(testRunCases.runId), asc(testRunCases.position));
+  const events = await db
+    .select({
+      runId: testRunEvents.runId,
+      seq: testRunEvents.seq,
+      type: testRunEvents.type,
+      payload: testRunEvents.payload,
+    })
+    .from(testRunEvents)
+    .where(
+      and(
+        inArray(testRunEvents.runId, ids),
+        eq(testRunEvents.type, "run:start"),
+      ),
+    )
+    .orderBy(asc(testRunEvents.runId), asc(testRunEvents.seq));
+
+  const casesByRun = groupBy(cases, (entry) => entry.runId);
+  const eventsByRun = groupBy(events, (entry) => entry.runId);
+
+  const snapshots: Record<string, RunSnapshot> = {};
+  for (const run of runs) {
+    const status = await reconcileStaleRun(run, STALE_AFTER_MS);
+    snapshots[run.id] = toSnapshot(
+      run,
+      status,
+      casesByRun.get(run.id) ?? [],
+      (eventsByRun.get(run.id) ?? []).map(({ seq, type, payload }) => ({
+        seq,
+        type,
+        payload,
+      })),
+    );
+  }
+  return snapshots;
+}
+
+function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const bucket = grouped.get(key(row));
+    if (bucket) bucket.push(row);
+    else grouped.set(key(row), [row]);
+  }
+  return grouped;
 }
 
 export async function listRuns(
@@ -254,9 +443,9 @@ export function isTerminal(status: string): boolean {
  * where it could legitimately still be running is therefore closed on read.
  */
 export async function reconcileStaleRun(
-  run: { id: string; status: string; startedAt: Date },
+  run: { id: string; status: RunStatus; startedAt: Date },
   timeoutMs: number,
-): Promise<string> {
+): Promise<RunStatus> {
   if (isTerminal(run.status)) return run.status;
   if (Date.now() - run.startedAt.getTime() < timeoutMs) return run.status;
 

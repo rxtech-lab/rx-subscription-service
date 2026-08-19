@@ -12,7 +12,16 @@ import { listBalanceUnits, listPointRates } from "@/lib/subscription/units";
 import { listUsageItems } from "@/lib/subscription/usage-items";
 import { listEligibilityRules, listTopupProducts } from "@/lib/subscription/topups";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
+import {
+  couponTerms,
+  couponUsage,
+  listCoupons as listApplicationCoupons,
+  listCouponTargets,
+  listCouponUsers,
+} from "@/lib/subscription/coupons";
+import { describeCoupon } from "@/lib/subscription/coupon-rules";
 import { listTestUsers } from "@/lib/subscription/test-users";
+import { listAppUserOptions } from "@/lib/subscription/users";
 import {
   DEFAULT_ANALYTICS_DAYS,
   getApplicationAnalytics,
@@ -27,6 +36,8 @@ import {
 } from "@/lib/testing/suites";
 import { uiCatalogReference, uiSpecSchema, validateUiSpec } from "./ui-catalog";
 import { writeToolSchemas } from "./tool-schemas";
+import { USAGE_LIMIT_PROMPT_RULES } from "./subscription-prompt-rules";
+import { TEST_SUITE_EDIT_PROMPT_RULES } from "./test-suite-prompt-rules";
 
 /**
  * Read tools execute immediately — they cannot change anything, and making the
@@ -134,6 +145,77 @@ export function buildTools(applicationId: string, actor: Actor) {
       },
     }),
 
+    listCoupons: tool({
+      description:
+        "List this application's coupons, including target and user restrictions, usage, validity window, and status. Call this before editing or publishing a coupon.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const coupons = await listApplicationCoupons(applicationId, {
+          includeArchived: true,
+        });
+        return Promise.all(
+          coupons.map(async (coupon) => {
+            const [targets, users, usage] = await Promise.all([
+              listCouponTargets(coupon.id),
+              listCouponUsers(coupon.id),
+              couponUsage(coupon.id),
+            ]);
+            return {
+              couponId: coupon.id,
+              code: coupon.code,
+              name: coupon.name,
+              description: coupon.description,
+              discountType: coupon.discountType,
+              percentBasisPoints: coupon.percentBasisPoints,
+              amountOffCents: coupon.amountOffCents,
+              currency: coupon.currency,
+              maxDiscountCents: coupon.maxDiscountCents,
+              terms: describeCoupon(couponTerms(coupon)),
+              duration: coupon.duration,
+              durationInMonths: coupon.durationInMonths,
+              appliesTo: coupon.appliesTo,
+              planIds: targets
+                .map((target) => target.planId)
+                .filter((id): id is string => Boolean(id)),
+              topupProductIds: targets
+                .map((target) => target.topupProductId)
+                .filter((id): id is string => Boolean(id)),
+              restrictToUsers: coupon.restrictToUsers,
+              allowedUsers: users.map((user) => ({
+                appUserId: user.appUserId,
+                displayName: user.displayName,
+                email: user.email,
+              })),
+              maxRedemptions: coupon.maxRedemptions,
+              maxRedemptionsPerUser: coupon.maxRedemptionsPerUser,
+              minimumAmountCents: coupon.minimumAmountCents,
+              firstTimeOnly: coupon.firstTimeOnly,
+              startsAt: coupon.startsAt?.toISOString() ?? null,
+              redeemBy: coupon.redeemBy?.toISOString() ?? null,
+              status: coupon.status,
+              usage,
+            };
+          }),
+        );
+      },
+    }),
+
+    listCouponUserOptions: tool({
+      description:
+        "List users that can be placed on a coupon allow-list. This is read-only; it does not edit a subscriber.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const users = await listAppUserOptions(applicationId, { includeTest: true });
+        return users.map((user) => ({
+          appUserId: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          rxlabUserId: user.rxlabUserId,
+          isTest: user.isTest,
+        }));
+      },
+    }),
+
     listSubscriptions: tool({
       description: "List active and past subscriptions for this application.",
       inputSchema: z.object({}),
@@ -217,6 +299,7 @@ export function buildTools(applicationId: string, actor: Actor) {
           name: suite.name,
           description: suite.description,
           code: suite.code,
+          lineCount: suite.code.split("\n").length,
         };
       },
     }),
@@ -312,10 +395,17 @@ export function buildTools(applicationId: string, actor: Actor) {
     }),
     addPlanEntitlement: tool({
       description:
-        "Grant something through a plan: a role, a permission, a usage limit, a balance grant, or a feature flag. Use a role grant to connect a plan to role-gated topups.",
+        "Grant something through a plan: a role, a permission, a usage limit, a balance grant, or a feature flag. Usage limits can have distinct trial and non-trial allowances. Use a role grant to connect a plan to role-gated topups.",
       inputSchema: writeToolSchemas.addPlanEntitlement,
       needsApproval: true,
       execute: runWrite("addPlanEntitlement"),
+    }),
+    removePlanEntitlement: tool({
+      description:
+        "Remove one exact entitlement from a plan. Call getPlanEntitlements first and pass its entitlement id; use this to replace or deduplicate a grant.",
+      inputSchema: writeToolSchemas.removePlanEntitlement,
+      needsApproval: true,
+      execute: runWrite("removePlanEntitlement"),
     }),
     createRole: tool({
       description:
@@ -385,6 +475,34 @@ export function buildTools(applicationId: string, actor: Actor) {
       execute: runWrite("addTopupEligibilityRule"),
     }),
 
+    createCoupon: tool({
+      description:
+        "Create an app-scoped coupon as a draft. Supports percentage or fixed discounts, maximum discount, recurring duration, total and per-user limits, minimum order, first-purchase-only, validity dates, selected plans/topups, and an explicit user allow-list.",
+      inputSchema: writeToolSchemas.createCoupon,
+      needsApproval: true,
+      execute: runWrite("createCoupon"),
+    }),
+    updateCoupon: tool({
+      description:
+        "Update a coupon's terms or restrictions. Its code, discount type, and currency are immutable; create a new coupon to change those.",
+      inputSchema: writeToolSchemas.updateCoupon,
+      needsApproval: true,
+      execute: runWrite("updateCoupon"),
+    }),
+    setCouponStatus: tool({
+      description: "Publish (active), unpublish (draft), or archive a coupon.",
+      inputSchema: writeToolSchemas.setCouponStatus,
+      needsApproval: true,
+      execute: runWrite("setCouponStatus"),
+    }),
+    deleteCoupon: tool({
+      description:
+        "Delete an unused coupon. Coupons with active or completed redemptions must be archived instead.",
+      inputSchema: writeToolSchemas.deleteCoupon,
+      needsApproval: true,
+      execute: runWrite("deleteCoupon"),
+    }),
+
     createTestUser: tool({
       description:
         "Create a disposable test user, optionally already subscribed to a plan and holding a balance. Test users are hidden from the real user list and bill against the Stripe sandbox.",
@@ -407,7 +525,7 @@ export function buildTools(applicationId: string, actor: Actor) {
     }),
     grantTestSubscription: tool({
       description:
-        "Put a test user on a plan with no payment. The subscription gets the same entitlement snapshot and balance grants a real purchase would produce.",
+        "Put a test user on an active or trialing plan with no payment. A trialing grant uses the plan's configured trial period. The subscription gets the same entitlement snapshot and balance grants a real purchase would produce.",
       inputSchema: writeToolSchemas.grantTestSubscription,
       needsApproval: true,
       execute: runWrite("grantTestSubscription"),
@@ -428,10 +546,17 @@ export function buildTools(applicationId: string, actor: Actor) {
 
     saveTestSuite: tool({
       description:
-        "Write a test suite to the Test cases tab. Pass the whole file, not a patch. Omit suiteId to create a new one; pass it to replace an existing suite's source.",
+        "Create a test suite or intentionally replace its whole file. Pass complete source. For a focused change to an existing suite, use editTestSuite instead.",
       inputSchema: writeToolSchemas.saveTestSuite,
       needsApproval: true,
       execute: runWrite("saveTestSuite"),
+    }),
+    editTestSuite: tool({
+      description:
+        "Incrementally edit an existing test suite with exact replacement, line-range replacement or deletion, insertion before or after a line, or an append. Read the latest source with getTestSuite first. The complete result is type-checked before it is stored.",
+      inputSchema: writeToolSchemas.editTestSuite,
+      needsApproval: true,
+      execute: runWrite("editTestSuite"),
     }),
 
     runTestSuite: tool({
@@ -461,7 +586,12 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- Set `createTopup.eligibility` to `standalone` when anyone may buy it, `plan` when one specific subscribed plan is required, or `role` for an access tier shared by plans. The create tool persists that link atomically with the topup.",
     "- Use a role-gated topup only when the role represents a reusable access tier, especially when multiple plans should qualify. List roles and the relevant plan entitlements first. Reuse a matching role; create one only when the requested access model needs a new role.",
     "- A role-gated topup must be reachable: before creating the topup, ensure every qualifying plan grants that role with `addPlanEntitlement` kind `role`. Never create an orphan role or add a role gate without a granting plan unless the role is default.",
-    "- Plan entitlements are snapshotted when a subscription starts. Adding a role to an existing plan does not update older subscriptions, so use a direct `requires_active_plan` rule when current subscribers to that plan must qualify immediately.",
+    ...USAGE_LIMIT_PROMPT_RULES,
+    "- Coupons belong to this application even though Stripe coupons belong to the shared Stripe account. Never enable or suggest Stripe's account-wide promotion-code box; use these app coupon tools so checkout resolves the code inside the current app and pins the Stripe coupon to this app's products.",
+    "- Always call `listCoupons` before editing, publishing, archiving, or deleting a coupon. A new coupon starts as draft; publish it with `setCouponStatus` only when the user asked for it to become redeemable.",
+    "- Coupon percentages are hundredths of a percent: 2550 is 25.5%. Coupon amounts, caps, and minimums are integer cents. For a repeating coupon, set `duration` to `repeating` and provide `durationInMonths`.",
+    "- For `appliesTo: selected`, list plans and topups first and pass at least one id. For `restrictToUsers: true`, call `listCouponUserOptions` and pass at least one appUserId; an empty allow-list is invalid rather than meaning everyone.",
+    "- Coupon `startsAt` and `redeemBy` values are ISO 8601 instants with a timezone. `redeemBy` must be later than `startsAt` and no more than five years away.",
     "- Test users are disposable users on the Test tab, for trying out the subscriber experience. They are the only users whose balances, levels, and subscriptions you can change — there is no tool that edits a real subscriber, so if asked, say so and offer a test user instead. Call `listTestUsers` for their ids; `grantTestSubscription` skips payment entirely, and their checkouts run against the Stripe sandbox.",
     "",
     "",
@@ -478,11 +608,7 @@ export function systemPrompt(application: { id: string; name: string }): string 
     uiCatalogReference(),
     "",
     "Writing tests:",
-    "- The Test cases tab holds suites: TypeScript files that exercise this application end to end — subscribing, topping up, spending a balance, hitting a usage limit. `saveTestSuite` writes one, `runTestSuite` runs it, `getTestRun` reads the outcome.",
-    "- Always `listTestSuites` first. Update the suite that already covers an area instead of adding a near-duplicate.",
-    "- Identify a suite by its name, or by an id you got from a tool result in this conversation. Never retype an id from a URL or from memory — a mistyped UUID looks exactly like a suite that does not exist.",
-    "- `saveTestSuite` replaces the whole file. Send complete source every time, never a fragment or a diff.",
-    "- Every suite you save is type-checked against the declarations below before it is stored. A suite that does not compile is rejected and the errors come back with line numbers — fix them and send the whole file again. Nothing is saved until it compiles, so there is no half-written state to clean up.",
+    ...TEST_SUITE_EDIT_PROMPT_RULES,
     "- A suite has no imports. `suite`, `test`, `step`, `expect`, `sleep`, and `rx` are globals, declared exactly as in the reference below. Using anything not declared there fails at run time.",
     "- Wrap each meaningful phase in `step(\"...\")`. Steps are what the workflow diagram draws and what a watcher follows, so a test of three steps reads far better than one long body.",
     "- Tests must create their own users with `rx.testUsers.create()` and assert only against those. There is no way to touch a real subscriber, and a suite that depends on data someone else made will break.",

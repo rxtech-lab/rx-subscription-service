@@ -10,6 +10,11 @@ import {
   type SubscriptionStatus,
 } from "@/lib/db/schema";
 import { newId } from "@/lib/subscription/shared";
+import {
+  markRedemptionProcessing,
+  markRedemptionPaid,
+  releaseRedemptionBySession,
+} from "@/lib/subscription/coupons";
 import { checkTopupEligibility } from "@/lib/subscription/topups";
 import {
   grantPeriodBalances,
@@ -166,25 +171,76 @@ async function purchaseFor(session: Stripe.Checkout.Session) {
   return purchase ?? null;
 }
 
+/**
+ * Turn a checkout's reserved coupon use into a spent one.
+ *
+ * Shared with the storefront's return page, so a run without a webhook tunnel
+ * still settles the redemption. Conditional on the row still being a live hold,
+ * which is what keeps the two paths — and Stripe's retries — from counting the
+ * same use twice. The amount is taken from what Stripe actually discounted
+ * rather than from our quote, so a rounding difference is recorded honestly.
+ */
+export async function settleCouponRedemption(
+  session: Stripe.Checkout.Session,
+): Promise<boolean> {
+  if (!session.metadata?.couponId) return false;
+  if (
+    session.payment_status !== "paid" &&
+    session.payment_status !== "no_payment_required"
+  ) {
+    return false;
+  }
+  return markRedemptionPaid({
+    stripeCheckoutSessionId: session.id,
+    redemptionId: session.metadata.couponRedemptionId,
+    discountCents: session.total_details?.amount_discount ?? null,
+  });
+}
+
+/** A completed delayed payment keeps consuming its reserved coupon use. */
+export async function holdCouponRedemption(
+  session: Stripe.Checkout.Session,
+): Promise<boolean> {
+  if (
+    !session.metadata?.couponId ||
+    session.status !== "complete" ||
+    session.payment_status !== "unpaid"
+  ) {
+    return false;
+  }
+  return markRedemptionProcessing({
+    stripeCheckoutSessionId: session.id,
+    redemptionId: session.metadata.couponRedemptionId,
+  });
+}
+
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
   mode: StripeMode,
 ) {
-  if (session.payment_status !== "paid") return false;
+  if (
+    session.payment_status !== "paid" &&
+    session.payment_status !== "no_payment_required"
+  ) {
+    return holdCouponRedemption(session);
+  }
 
   // Subscriptions are reconciled from `customer.subscription.*`, which carries
-  // the authoritative period boundaries.
-  if (session.mode === "subscription") return false;
+  // the authoritative period boundaries — but the coupon use belongs to the
+  // session, which only this event carries.
+  if (session.mode === "subscription") return settleCouponRedemption(session);
 
   const purchaseId = session.metadata?.purchaseId ?? session.client_reference_id;
-  if (!purchaseId) return false;
+  if (!purchaseId) return settleCouponRedemption(session);
 
-  return fulfillPaidPurchase({
+  const fulfilled = await fulfillPaidPurchase({
     purchaseId,
     stripePaymentIntentId: referenceId(session.payment_intent),
     stripeInvoiceId: referenceId(session.invoice),
     mode,
   });
+  const redeemed = await settleCouponRedemption(session);
+  return fulfilled || redeemed;
 }
 
 /**
@@ -435,13 +491,34 @@ export async function processStripeWebhook(
         break;
 
       case "checkout.session.async_payment_failed": {
+        const released = await releaseRedemptionBySession(
+          event.data.object.id,
+          event.data.object.metadata?.couponRedemptionId,
+        );
         const purchase = await purchaseFor(event.data.object);
         if (purchase) {
           await db
             .update(purchases)
             .set({ status: "failed", updatedAt: new Date() })
-            .where(eq(purchases.id, purchase.id));
-        } else handled = false;
+            .where(and(eq(purchases.id, purchase.id), eq(purchases.status, "pending")));
+        } else handled = released;
+        break;
+      }
+
+      // An abandoned checkout must give its coupon use back, or a code limited
+      // to N redemptions would be spent by people who never paid.
+      case "checkout.session.expired": {
+        const released = await releaseRedemptionBySession(
+          event.data.object.id,
+          event.data.object.metadata?.couponRedemptionId,
+        );
+        const purchase = await purchaseFor(event.data.object);
+        if (purchase) {
+          await db
+            .update(purchases)
+            .set({ status: "failed", updatedAt: new Date() })
+            .where(and(eq(purchases.id, purchase.id), eq(purchases.status, "pending")));
+        } else handled = released;
         break;
       }
 

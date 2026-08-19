@@ -43,6 +43,20 @@
       "when": 1787108332798,
       "tag": "0005_abandoned_hellfire_club",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787114420115,
+      "tag": "0006_serious_swarm",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787116979819,
+      "tag": "0007_bitter_mephisto",
+      "breakpoints": true
     }
   ]
 }

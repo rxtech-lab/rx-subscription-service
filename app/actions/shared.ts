@@ -33,6 +33,7 @@ export function toActionState(error: unknown): ActionState {
   if (error instanceof Error) {
     if (
       error.name === "ValidationError" ||
+      error.name === "CouponNotApplicableError" ||
       error.name === "NotFoundError" ||
       error.name === "ApplicationAccessError" ||
       error.name === "InsufficientBalanceError"
@@ -97,4 +98,42 @@ export function moneyToCents(formData: FormData, key: string): number {
   if (value === "") return 0;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+}
+
+/** The same, for a field where "unset" and "zero" are different answers. */
+export function optionalMoneyToCents(
+  formData: FormData,
+  key: string,
+): number | null {
+  const value = text(formData, key);
+  if (value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
+}
+
+/** A percentage in the form, hundredths of a percent in the database. */
+export function percentToBasisPoints(
+  formData: FormData,
+  key: string,
+): number | null {
+  const value = text(formData, key);
+  if (value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
+}
+
+/** A `datetime-local` input plus the browser's `getTimezoneOffset()` value. */
+export function optionalDate(
+  formData: FormData,
+  key: string,
+  timezoneOffsetKey = "timezoneOffsetMinutes",
+): Date | null {
+  const value = text(formData, key);
+  if (value === "") return null;
+  const offset = Number(text(formData, timezoneOffsetKey));
+  const wallClock = new Date(`${value}Z`);
+  const parsed = Number.isFinite(offset)
+    ? new Date(wallClock.getTime() + offset * 60_000)
+    : wallClock;
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

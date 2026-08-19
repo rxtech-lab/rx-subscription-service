@@ -12,6 +12,7 @@ import {
   RefreshCcw,
   Settings2,
   ShieldCheck,
+  TicketPercent,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -28,6 +29,7 @@ const SECTIONS: NavigationItem[] = [
   { href: "", label: "Overview", icon: LayoutDashboard },
   { href: "/plans", label: "Plans", icon: BadgeDollarSign },
   { href: "/topups", label: "Topups", icon: CircleDollarSign },
+  { href: "/coupons", label: "Coupons", icon: TicketPercent },
   { href: "/roles", label: "Roles", icon: IdCard },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
   { href: "/usage-items", label: "Usage", icon: Gauge },

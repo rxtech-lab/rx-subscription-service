@@ -111,6 +111,72 @@ describe("checkSuiteTypes", () => {
     expect(errors).toEqual([]);
   });
 
+  it("accepts coupon reservations and deterministic time travel", () => {
+    const errors = checkSuiteTypes(`
+      suite("Coupon limits", () => {
+        test("a scheduled code reaches its per-user limit", async () => {
+          const user = await rx.testUsers.create();
+          const coupons = await rx.config.coupons();
+          const topups = await rx.config.topups();
+          const coupon = coupons[0];
+          const topup = topups[0];
+          if (!coupon || !topup) return;
+
+          if (coupon.startsAt) {
+            await rx.testUsers.setTime(
+              user.rxlabUserId,
+              Date.parse(coupon.startsAt) + 60_000,
+            );
+          }
+
+          const target: RxCouponTargetInput = { kind: "topup", id: topup.id };
+          const preview = await rx.coupons.validate(
+            user.rxlabUserId,
+            coupon.code,
+            target,
+          );
+          expect(preview.valid).toBe(true);
+
+          const reservation = await rx.coupons.reserve(
+            user.rxlabUserId,
+            coupon.code,
+            target,
+          );
+          expect(reservation.reserved).toBe(true);
+          await rx.testUsers.advanceClock(user.rxlabUserId, 86_400_000);
+        });
+      });
+    `);
+
+    expect(errors).toEqual([]);
+  });
+
+  it("accepts trial grants and explicit trial-to-paid transitions", () => {
+    const errors = checkSuiteTypes(`
+      suite("Trial limits", () => {
+        test("uses separate trial and paid allowances", async () => {
+          const user = await rx.testUsers.create();
+          const plans = await rx.config.plans();
+          const plan = plans.find((entry) => entry.trialDays > 0);
+          if (!plan) return;
+
+          const trial = await rx.testUsers.grantPlan(user.rxlabUserId, plan.key, {
+            status: "trialing",
+          });
+          expect(trial.status).toBe("trialing");
+          expect(trial.currentPeriodEnd).not.toBeNull();
+
+          const paid = await rx.testUsers.grantPlan(user.rxlabUserId, plan.key, {
+            status: "active",
+          });
+          expect(paid.status).toBe("active");
+        });
+      });
+    `);
+
+    expect(errors).toEqual([]);
+  });
+
   it("holds the compiler under strict mode", () => {
     // A suite that ignores a null is a suite that fails at run time with a
     // message about undefined rather than an assertion.

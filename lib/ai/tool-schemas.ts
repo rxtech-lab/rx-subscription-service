@@ -15,6 +15,59 @@ export const resetPolicySchema = z.enum([
 ]);
 export const resetUnitSchema = z.enum(["hour", "day", "week", "month"]);
 export const statusSchema = z.enum(["draft", "active", "archived"]);
+export const couponDurationSchema = z.enum(["once", "repeating", "forever"]);
+
+const couponRestrictionSchemas = {
+  maxDiscountCents: z.number().int().positive().nullable().optional(),
+  duration: couponDurationSchema.default("once"),
+  durationInMonths: z.number().int().positive().nullable().optional(),
+  appliesTo: z.enum(["all", "selected"]).default("all"),
+  planIds: z.array(z.string()).default([]),
+  topupProductIds: z.array(z.string()).default([]),
+  restrictToUsers: z.boolean().default(false),
+  appUserIds: z.array(z.string()).default([]),
+  maxRedemptions: z.number().int().positive().nullable().optional(),
+  maxRedemptionsPerUser: z.number().int().positive().nullable().optional(),
+  minimumAmountCents: z.number().int().nonnegative().nullable().optional(),
+  firstTimeOnly: z.boolean().default(false),
+  startsAt: z.string().datetime({ offset: true }).nullable().optional(),
+  redeemBy: z.string().datetime({ offset: true }).nullable().optional(),
+};
+
+const suiteLineSchema = z.number().int().positive().describe("1-based line number");
+const suiteSourceEditSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("replace"),
+    oldCode: z.string().min(1).describe("Exact current source fragment"),
+    newCode: z.string().describe("Replacement source; empty deletes the fragment"),
+    all: z.boolean().optional().default(false),
+  }),
+  z.object({
+    type: z.literal("replace_lines"),
+    startLine: suiteLineSchema,
+    endLine: suiteLineSchema,
+    code: z.string().describe("Replacement source for the inclusive line range"),
+  }),
+  z.object({
+    type: z.literal("insert_after"),
+    line: suiteLineSchema,
+    code: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("insert_before"),
+    line: suiteLineSchema,
+    code: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("delete_lines"),
+    startLine: suiteLineSchema,
+    endLine: suiteLineSchema,
+  }),
+  z.object({
+    type: z.literal("append"),
+    code: z.string().min(1).describe("Source to append at the end of the file"),
+  }),
+]);
 
 export const writeToolSchemas = {
   createPlan: z.object({
@@ -38,6 +91,95 @@ export const writeToolSchemas = {
 
   setPlanStatus: z.object({ planId: z.string(), status: statusSchema }),
 
+  createCoupon: z
+    .object({
+      code: z
+        .string()
+        .min(3)
+        .max(64)
+        .describe("Customer-facing app-local code, such as LAUNCH25"),
+      name: z.string().min(1).max(120),
+      description: z.string().optional(),
+      discountType: z.enum(["percent", "amount"]),
+      percentBasisPoints: z
+        .number()
+        .int()
+        .min(1)
+        .max(10_000)
+        .nullable()
+        .optional()
+        .describe("Hundredths of one percent: 25.5% is 2550"),
+      amountOffCents: z.number().int().positive().nullable().optional(),
+      currency: z.string().length(3).default("usd"),
+      ...couponRestrictionSchemas,
+    })
+    .superRefine((coupon, context) => {
+      if (coupon.discountType === "percent" && coupon.percentBasisPoints == null) {
+        context.addIssue({
+          code: "custom",
+          path: ["percentBasisPoints"],
+          message: "percentBasisPoints is required for a percentage coupon",
+        });
+      }
+      if (coupon.discountType === "amount" && coupon.amountOffCents == null) {
+        context.addIssue({
+          code: "custom",
+          path: ["amountOffCents"],
+          message: "amountOffCents is required for a fixed-amount coupon",
+        });
+      }
+      if (coupon.duration === "repeating" && coupon.durationInMonths == null) {
+        context.addIssue({
+          code: "custom",
+          path: ["durationInMonths"],
+          message: "durationInMonths is required for a repeating coupon",
+        });
+      }
+      if (
+        coupon.appliesTo === "selected" &&
+        coupon.planIds.length + coupon.topupProductIds.length === 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["appliesTo"],
+          message: "a selected coupon needs at least one plan or topup",
+        });
+      }
+      if (coupon.restrictToUsers && coupon.appUserIds.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["appUserIds"],
+          message: "a user-restricted coupon needs at least one user",
+        });
+      }
+    }),
+
+  updateCoupon: z.object({
+    couponId: z.string(),
+    name: z.string().min(1).max(120).optional(),
+    description: z.string().nullable().optional(),
+    percentBasisPoints: z.number().int().min(1).max(10_000).nullable().optional(),
+    amountOffCents: z.number().int().positive().nullable().optional(),
+    maxDiscountCents: couponRestrictionSchemas.maxDiscountCents,
+    duration: couponDurationSchema.optional(),
+    durationInMonths: couponRestrictionSchemas.durationInMonths,
+    appliesTo: z.enum(["all", "selected"]).optional(),
+    planIds: z.array(z.string()).optional(),
+    topupProductIds: z.array(z.string()).optional(),
+    restrictToUsers: z.boolean().optional(),
+    appUserIds: z.array(z.string()).optional(),
+    maxRedemptions: couponRestrictionSchemas.maxRedemptions,
+    maxRedemptionsPerUser: couponRestrictionSchemas.maxRedemptionsPerUser,
+    minimumAmountCents: couponRestrictionSchemas.minimumAmountCents,
+    firstTimeOnly: z.boolean().optional(),
+    startsAt: couponRestrictionSchemas.startsAt,
+    redeemBy: couponRestrictionSchemas.redeemBy,
+  }),
+
+  setCouponStatus: z.object({ couponId: z.string(), status: statusSchema }),
+
+  deleteCoupon: z.object({ couponId: z.string() }),
+
   addPlanEntitlement: z.object({
     planId: z.string(),
     kind: z.enum(["role", "permission", "usage_limit", "balance_grant", "feature"]),
@@ -52,11 +194,27 @@ export const writeToolSchemas = {
       .nonnegative()
       .nullable()
       .optional()
-      .describe("Null means unlimited"),
+      .describe("Non-trial allowance. Null means unlimited"),
+    trialLimitValue: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .optional()
+      .describe(
+        "Allowance while trialing. Omit to use limitValue; null means unlimited",
+      ),
     unitId: z.string().optional(),
     amount: z.number().int().positive().optional(),
     featureKey: z.string().optional(),
     featureValue: z.string().optional(),
+  }),
+
+  removePlanEntitlement: z.object({
+    planId: z.string().describe("Plan id returned by listPlans"),
+    entitlementId: z
+      .string()
+      .describe("Exact entitlement id returned by getPlanEntitlements"),
   }),
 
   createRole: z.object({
@@ -196,12 +354,18 @@ export const writeToolSchemas = {
   grantTestSubscription: z.object({
     appUserId: z.string(),
     planId: z.string(),
+    status: z
+      .enum(["active", "trialing"])
+      .default("active")
+      .describe("Use trialing to exercise the plan's configured trial period"),
     periodDays: z
       .number()
       .int()
       .positive()
       .optional()
-      .describe("How long the period runs. Defaults to 30 days."),
+      .describe(
+        "How long the period runs. Defaults to the plan's trialDays for trialing, otherwise 30 days.",
+      ),
   }),
 
   cancelTestSubscription: z.object({
@@ -231,6 +395,19 @@ export const writeToolSchemas = {
       .string()
       .describe(
         "The whole file. TypeScript using the ambient suite/test/step/expect/rx globals — no imports.",
+      ),
+  }),
+
+  editTestSuite: z.object({
+    suiteId: z
+      .string()
+      .describe("Suite id or exact name returned by listTestSuites/getTestSuite"),
+    edits: z
+      .array(suiteSourceEditSchema)
+      .min(1)
+      .max(20)
+      .describe(
+        "Ordered source edits. Line numbers are 1-based and each edit sees the result of earlier edits.",
       ),
   }),
 

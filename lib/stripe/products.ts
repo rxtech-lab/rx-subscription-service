@@ -7,6 +7,7 @@ import {
   idempotencyScope as scope,
   stripePointerColumns,
   stripePointers,
+  stripeProductColumns,
   type StripeMode,
 } from "./accounts";
 import { stripe } from "./client";
@@ -26,7 +27,7 @@ export async function ensurePlanPrice(
   const pointers = stripePointers(plan, mode);
   if (pointers.priceId) return pointers.priceId;
 
-  const productId = pointers.productId ?? (await createProduct(plan, mode));
+  const productId = await ensurePlanProduct(plan, mode);
   const recurring = stripeRecurring(plan.billingInterval, plan.intervalCount);
 
   const price = await stripe(mode).prices.create(
@@ -50,7 +51,19 @@ export async function ensurePlanPrice(
   return price.id;
 }
 
-async function createProduct(plan: Plan, mode: StripeMode): Promise<string> {
+/**
+ * The plan's Stripe Product, minted and stored on first need.
+ *
+ * Separate from the Price because a coupon needs the Product id — that is what
+ * `applies_to` pins a discount to — without caring what anything costs.
+ */
+export async function ensurePlanProduct(
+  plan: Plan,
+  mode: StripeMode = "live",
+): Promise<string> {
+  const pointers = stripePointers(plan, mode);
+  if (pointers.productId) return pointers.productId;
+
   const product = await stripe(mode).products.create(
     {
       name: plan.name,
@@ -63,7 +76,40 @@ async function createProduct(plan: Plan, mode: StripeMode): Promise<string> {
     },
     { idempotencyKey: `plan-product:${scope(mode)}${plan.id}` },
   );
+
+  await db
+    .update(plans)
+    .set({ ...stripeProductColumns(mode, product.id), updatedAt: new Date() })
+    .where(eq(plans.id, plan.id));
   return product.id;
+}
+
+/** The topup's Stripe Product. See `ensurePlanProduct`. */
+export async function ensureTopupProduct(
+  product: TopupProduct,
+  mode: StripeMode = "live",
+): Promise<string> {
+  const pointers = stripePointers(product, mode);
+  if (pointers.productId) return pointers.productId;
+
+  const created = await stripe(mode).products.create(
+    {
+      name: product.name,
+      description: product.description ?? undefined,
+      metadata: {
+        applicationId: product.applicationId,
+        topupProductId: product.id,
+        topupKey: product.key,
+      },
+    },
+    { idempotencyKey: `topup-product:${scope(mode)}${product.id}` },
+  );
+
+  await db
+    .update(topupProducts)
+    .set({ ...stripeProductColumns(mode, created.id), updatedAt: new Date() })
+    .where(eq(topupProducts.id, product.id));
+  return created.id;
 }
 
 export async function ensureTopupPrice(
@@ -73,22 +119,7 @@ export async function ensureTopupPrice(
   const pointers = stripePointers(product, mode);
   if (pointers.priceId) return pointers.priceId;
 
-  const productId =
-    pointers.productId ??
-    (
-      await stripe(mode).products.create(
-        {
-          name: product.name,
-          description: product.description ?? undefined,
-          metadata: {
-            applicationId: product.applicationId,
-            topupProductId: product.id,
-            topupKey: product.key,
-          },
-        },
-        { idempotencyKey: `topup-product:${scope(mode)}${product.id}` },
-      )
-    ).id;
+  const productId = await ensureTopupProduct(product, mode);
 
   const price = await stripe(mode).prices.create(
     {

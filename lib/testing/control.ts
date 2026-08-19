@@ -1,6 +1,14 @@
 import "server-only";
 import { z } from "zod";
 import { adjustBalance, getAppUserByRxlabId } from "@/lib/subscription/users";
+import { normalizeCouponCode } from "@/lib/subscription/coupon-rules";
+import {
+  CouponNotApplicableError,
+  couponUsage,
+  listCoupons,
+  reserveRedemption,
+  type CouponTarget,
+} from "@/lib/subscription/coupons";
 import {
   advanceTestUserClock,
   createTestUser,
@@ -14,12 +22,17 @@ import {
   setTestUserUsageLimit,
 } from "@/lib/subscription/test-users";
 import { cancelSubscription, listSubscriptions } from "@/lib/subscription/subscriptions";
-import { listPlans } from "@/lib/subscription/plans";
+import { listPlans, requirePlan } from "@/lib/subscription/plans";
 import { listRoles } from "@/lib/subscription/roles";
 import { listBalanceUnits, getBalanceUnitByKey } from "@/lib/subscription/units";
 import { getUsageItemByKey, listUsageItems } from "@/lib/subscription/usage-items";
-import { checkTopupEligibility, listTopupProducts } from "@/lib/subscription/topups";
+import {
+  checkTopupEligibility,
+  listTopupProducts,
+  requireTopupProduct,
+} from "@/lib/subscription/topups";
 import { NotFoundError, ValidationError, type Actor } from "@/lib/subscription/shared";
+import { simulatedNow } from "@/lib/subscription/test-clock";
 
 /**
  * The operations a running suite may perform that the public API does not
@@ -35,10 +48,15 @@ import { NotFoundError, ValidationError, type Actor } from "@/lib/subscription/s
  */
 
 const userRef = z.object({ rxlabUserId: z.string().min(1) });
+const couponTarget = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("plan"), id: z.string().min(1) }),
+  z.object({ kind: z.literal("topup"), id: z.string().min(1) }),
+]);
 
 const schemas = {
   "config.plans": z.object({}),
   "config.topups": z.object({}),
+  "config.coupons": z.object({}),
   "config.roles": z.object({}),
   "config.units": z.object({}),
   "config.usageItems": z.object({}),
@@ -56,7 +74,10 @@ const schemas = {
   }),
   "testUser.list": z.object({}),
   "testUser.delete": userRef,
-  "testUser.grantPlan": userRef.extend({ planKey: z.string().min(1) }),
+  "testUser.grantPlan": userRef.extend({
+    planKey: z.string().min(1),
+    status: z.enum(["active", "trialing"]).default("active"),
+  }),
   "testUser.cancelPlan": userRef.extend({
     planKey: z.string().min(1),
     immediately: z.boolean().default(true),
@@ -74,6 +95,10 @@ const schemas = {
   "testUser.buyTopup": userRef.extend({ topupKey: z.string().min(1) }),
   "testUser.setClock": userRef.extend({ offsetMs: z.number().int() }),
   "testUser.advanceClock": userRef.extend({ ms: z.number().int() }),
+  "coupon.reserve": userRef.extend({
+    code: z.string().min(1).max(64),
+    target: couponTarget,
+  }),
 } as const;
 
 export type ControlOp = keyof typeof schemas;
@@ -100,6 +125,18 @@ async function requireUnitByKey(applicationId: string, key: string) {
   const unit = await getBalanceUnitByKey(applicationId, key);
   if (!unit) throw new NotFoundError("balance unit", key);
   return unit;
+}
+
+async function resolveCouponTarget(
+  applicationId: string,
+  target: z.infer<typeof couponTarget>,
+): Promise<CouponTarget> {
+  return target.kind === "plan"
+    ? { kind: "plan", plan: await requirePlan(applicationId, target.id) }
+    : {
+        kind: "topup",
+        product: await requireTopupProduct(applicationId, target.id),
+      };
 }
 
 function publicUser(user: {
@@ -169,6 +206,39 @@ export async function runControlOp(input: {
       }));
     }
 
+    case "config.coupons": {
+      const entries = await listCoupons(applicationId);
+      return Promise.all(
+        entries.map(async (coupon) => {
+          const usage = await couponUsage(coupon.id);
+          return {
+            id: coupon.id,
+            code: coupon.code,
+            name: coupon.name,
+            description: coupon.description,
+            discountType: coupon.discountType,
+            percentBasisPoints: coupon.percentBasisPoints,
+            amountOffCents: coupon.amountOffCents,
+            currency: coupon.currency,
+            maxDiscountCents: coupon.maxDiscountCents,
+            duration: coupon.duration,
+            durationInMonths: coupon.durationInMonths,
+            appliesTo: coupon.appliesTo,
+            restrictToUsers: coupon.restrictToUsers,
+            maxRedemptions: coupon.maxRedemptions,
+            maxRedemptionsPerUser: coupon.maxRedemptionsPerUser,
+            minimumAmountCents: coupon.minimumAmountCents,
+            firstTimeOnly: coupon.firstTimeOnly,
+            startsAt: coupon.startsAt?.toISOString() ?? null,
+            redeemBy: coupon.redeemBy?.toISOString() ?? null,
+            status: coupon.status,
+            redemptionsUsed: usage.used,
+            redemptionsRedeemed: usage.redeemed,
+          };
+        }),
+      );
+    }
+
     case "config.roles": {
       const roles = await listRoles(applicationId);
       return roles.map((role) => ({ id: role.id, key: role.key, title: role.title }));
@@ -187,6 +257,8 @@ export async function runControlOp(input: {
         name: item.name,
         defaultLimit: item.defaultLimit,
         resetPolicy: item.resetPolicy,
+        resetIntervalCount: item.resetIntervalCount,
+        resetIntervalUnit: item.resetIntervalUnit,
       }));
     }
 
@@ -257,8 +329,14 @@ export async function runControlOp(input: {
         actor,
         appUserId: user.id,
         planId: plan.id,
+        status: input_.status,
       });
-      return { subscriptionId: subscription.id, planKey: plan.key };
+      return {
+        subscriptionId: subscription.id,
+        planKey: plan.key,
+        status: subscription.status,
+        currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
+      };
     }
 
     case "testUser.cancelPlan": {
@@ -394,7 +472,10 @@ export async function runControlOp(input: {
         appUserId: user.id,
         offsetMs: input_.offsetMs,
       });
-      return { offsetMs: updated.testClockOffsetMs };
+      return {
+        offsetMs: updated.testClockOffsetMs,
+        now: simulatedNow(updated.testClockOffsetMs).toISOString(),
+      };
     }
 
     case "testUser.advanceClock": {
@@ -408,7 +489,50 @@ export async function runControlOp(input: {
         appUserId: user.id,
         byMs: input_.ms,
       });
-      return { offsetMs: updated.testClockOffsetMs };
+      return {
+        offsetMs: updated.testClockOffsetMs,
+        now: simulatedNow(updated.testClockOffsetMs).toISOString(),
+      };
+    }
+
+    case "coupon.reserve": {
+      const input_ = args as unknown as z.infer<(typeof schemas)["coupon.reserve"]>;
+      const user = await resolveTestUser(applicationId, input_.rxlabUserId);
+      const target = await resolveCouponTarget(applicationId, input_.target);
+      const code = normalizeCouponCode(input_.code);
+
+      try {
+        const reservation = await reserveRedemption({
+          applicationId,
+          appUserId: user.id,
+          code,
+          target,
+        });
+        return {
+          reserved: true,
+          reservationId: reservation.redemption.id,
+          code: reservation.coupon.code,
+          reason: null,
+          blockers: [],
+          discountCents: reservation.evaluation.discountCents,
+          totalCents: reservation.evaluation.totalCents,
+          currency: reservation.evaluation.currency,
+          capped: reservation.evaluation.capped,
+        };
+      } catch (error) {
+        if (!(error instanceof CouponNotApplicableError)) throw error;
+        return {
+          reserved: false,
+          reservationId: null,
+          code,
+          reason: error.message,
+          blockers: error.blockers,
+          discountCents: 0,
+          totalCents: null,
+          currency: null,
+          capped: false,
+        };
+      }
     }
   }
 }

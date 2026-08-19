@@ -15,6 +15,7 @@ import {
   parsePermissionList,
   serializePermissionList,
 } from "@/lib/permissions/expression";
+import { usageLimitForSubscriptionStatus } from "./entitlement-rules";
 import { getRolePermissions, listRoles } from "./roles";
 
 const ACTIVE_STATUSES = ["trialing", "active", "past_due"] as const;
@@ -196,13 +197,17 @@ export async function resolveEntitlements(input: {
         case "usage_limit": {
           if (!entitlement.usageItemId) break;
           const current = usageLimits[entitlement.usageItemId];
+          const applicableLimit = usageLimitForSubscriptionStatus(
+            entitlement,
+            row.status,
+          );
           // Null means unlimited, which always wins over any finite allowance.
-          if (entitlement.limitValue === null || current === null) {
+          if (applicableLimit === null || current === null) {
             usageLimits[entitlement.usageItemId] = null;
           } else {
             usageLimits[entitlement.usageItemId] = Math.max(
               current ?? 0,
-              entitlement.limitValue ?? 0,
+              applicableLimit,
             );
           }
           break;

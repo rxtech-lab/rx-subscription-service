@@ -108,6 +108,7 @@ export async function addPlanEntitlementAction(
             .filter(Boolean) ?? null,
         usageItemId: optionalText(formData, "usageItemId"),
         limitValue: optionalInteger(formData, "limitValue"),
+        trialLimitValue: optionalInteger(formData, "trialLimitValue"),
         unitId: optionalText(formData, "unitId"),
         amount: optionalInteger(formData, "amount"),
         featureKey: optionalText(formData, "featureKey"),
