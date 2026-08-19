@@ -57,6 +57,13 @@
       "when": 1787116979819,
       "tag": "0007_bitter_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787119712489,
+      "tag": "0008_test_automation",
+      "breakpoints": true
     }
   ]
 }

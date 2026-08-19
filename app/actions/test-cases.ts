@@ -2,12 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import {
   createTestSuite,
   deleteTestSuite,
   updateTestSuite,
 } from "@/lib/testing/suites";
-import { queueTestRun } from "@/lib/testing/runner";
+import { executeRun, queueTestRun } from "@/lib/testing/runner";
 import { STARTER_SUITE } from "@/lib/testing/sdk-types";
 import { optionalText, text, toActionState, withApplication, type ActionState } from "./shared";
 
@@ -117,8 +118,9 @@ export async function saveTestSuiteAction(input: {
 /**
  * Queue a run and hand back its id.
  *
- * The run is not executed here — whoever displays it starts it. See
- * `app/api/testing/runs/[runId]/execute/route.ts` for why that split exists.
+ * Queue the run, then execute it after the action response. Live viewers still
+ * make the same idempotent execute request as a fallback, so closing the page
+ * after pressing Run cannot leave the row queued forever.
  */
 export async function startTestRunAction(input: {
   applicationId: string;
@@ -132,6 +134,8 @@ export async function startTestRunAction(input: {
         trigger: "console",
         triggeredBy: actor.id,
       });
+      revalidate(input.applicationId, input.suiteId);
+      after(() => executeRun(run.id));
       return { runId: run.id };
     });
   } catch (error) {

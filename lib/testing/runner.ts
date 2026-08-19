@@ -97,7 +97,7 @@ function baseUrl(driver: RunDriver): string {
 export async function queueTestRun(input: {
   applicationId: string;
   suiteId: string;
-  trigger: "console" | "ai";
+  trigger: "console" | "ai" | "automatic";
   triggeredBy: string | null;
   conversationId?: string | null;
 }) {

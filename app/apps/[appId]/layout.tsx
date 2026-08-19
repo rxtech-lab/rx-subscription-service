@@ -14,6 +14,9 @@ import {
 } from "@/lib/console/session";
 import { readRunSnapshots } from "@/lib/testing/runs";
 
+// Automatic suites run in `after()`, and the harness allows a four-minute run.
+export const maxDuration = 300;
+
 export default async function ApplicationLayout({
   children,
   params,
@@ -45,6 +48,7 @@ export default async function ApplicationLayout({
           <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/"
+              prefetch={false}
               className="flex shrink-0 items-center gap-3 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               aria-label="All applications"
             >
@@ -66,6 +70,7 @@ export default async function ApplicationLayout({
 
           <Link
             href="/"
+            prefetch={false}
             className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             <ArrowLeft className="size-3.5" aria-hidden="true" />

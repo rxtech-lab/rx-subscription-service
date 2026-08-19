@@ -33,7 +33,7 @@ export async function createRun(input: {
   applicationId: string;
   suiteId: string;
   code: string;
-  trigger: "console" | "ai";
+  trigger: "console" | "ai" | "automatic";
   triggeredBy: string | null;
   conversationId?: string | null;
   driver: string;

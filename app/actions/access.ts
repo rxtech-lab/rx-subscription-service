@@ -17,7 +17,7 @@ import {
   revalidateApp,
   text,
   toActionState,
-  withApplication,
+  withConfigurationUpdate,
   type ActionState,
 } from "./shared";
 
@@ -27,7 +27,7 @@ export async function createRoleAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createRole({
         applicationId,
         key: text(formData, "key"),
@@ -51,7 +51,7 @@ export async function updateRoleAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updateRole({
         applicationId,
         roleId: text(formData, "roleId"),
@@ -70,7 +70,7 @@ export async function updateRoleAction(
 
 export async function deleteRoleAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await deleteRole({ applicationId, roleId: text(formData, "roleId"), actor });
   });
   revalidateApp(applicationId, "roles");
@@ -101,7 +101,7 @@ export async function setRolePermissionsAction(
   }
 
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await setRolePermissions({ applicationId, roleId, grants, actor });
     });
   } catch (error) {
@@ -117,7 +117,7 @@ export async function createPermissionAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createPermission({
         applicationId,
         key: text(formData, "key"),
@@ -141,7 +141,7 @@ export async function updatePermissionAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updatePermission({
         applicationId,
         permissionId: text(formData, "permissionId"),
@@ -161,7 +161,7 @@ export async function updatePermissionAction(
 
 export async function deletePermissionAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await deletePermission({
       applicationId,
       permissionId: text(formData, "permissionId"),

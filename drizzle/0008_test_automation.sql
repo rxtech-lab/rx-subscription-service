@@ -1,0 +1,1 @@
+ALTER TABLE `applications` ADD `run_tests_on_change` integer DEFAULT false NOT NULL;

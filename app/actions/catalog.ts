@@ -29,7 +29,7 @@ import {
   revalidateApp,
   text,
   toActionState,
-  withApplication,
+  withConfigurationUpdate,
   type ActionState,
 } from "./shared";
 
@@ -39,7 +39,7 @@ export async function createBalanceUnitAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createBalanceUnit({
         applicationId,
         key: text(formData, "key"),
@@ -63,7 +63,7 @@ export async function updateBalanceUnitAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updateBalanceUnit({
         applicationId,
         unitId: text(formData, "unitId"),
@@ -81,7 +81,7 @@ export async function updateBalanceUnitAction(
 
 export async function deleteBalanceUnitAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await deleteBalanceUnit({ applicationId, unitId: text(formData, "unitId"), actor });
   });
   revalidateApp(applicationId, "units");
@@ -94,7 +94,7 @@ export async function setPointRateAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await setPointRate({
         applicationId,
         unitId: text(formData, "unitId"),
@@ -117,7 +117,7 @@ export async function createUsageItemAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createUsageItem({
         applicationId,
         key: text(formData, "key"),
@@ -150,7 +150,7 @@ export async function updateUsageItemAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updateUsageItem({
         applicationId,
         usageItemId: text(formData, "usageItemId"),
@@ -179,7 +179,7 @@ export async function updateUsageItemAction(
 
 export async function deleteUsageItemAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await deleteUsageItem({
       applicationId,
       usageItemId: text(formData, "usageItemId"),
@@ -195,7 +195,7 @@ export async function createTopupAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await createTopupProduct({
         applicationId,
         key: text(formData, "key"),
@@ -231,7 +231,7 @@ export async function updateTopupAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await updateTopupProduct({
         applicationId,
         topupId: text(formData, "topupId"),
@@ -253,7 +253,7 @@ export async function updateTopupAction(
 
 export async function setTopupStatusAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await updateTopupProduct({
       applicationId,
       topupId: text(formData, "topupId"),
@@ -266,7 +266,7 @@ export async function setTopupStatusAction(formData: FormData): Promise<void> {
 
 export async function deleteTopupAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await deleteTopupProduct({
       applicationId,
       topupId: text(formData, "topupId"),
@@ -282,7 +282,7 @@ export async function addEligibilityRuleAction(
 ): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
   try {
-    await withApplication(applicationId, async ({ actor }) => {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
       await addEligibilityRule({
         applicationId,
         topupId: text(formData, "topupId"),
@@ -301,7 +301,7 @@ export async function addEligibilityRuleAction(
 
 export async function removeEligibilityRuleAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
-  await withApplication(applicationId, async ({ actor }) => {
+  await withConfigurationUpdate(applicationId, async ({ actor }) => {
     await removeEligibilityRule({
       applicationId,
       topupId: text(formData, "topupId"),
