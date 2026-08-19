@@ -178,17 +178,34 @@ export function EmptyState({
   );
 }
 
-export function Table({ children }: { children: ReactNode }) {
+export function Table({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">{children}</table>
+      <table className={cn("w-full text-sm", className)}>{children}</table>
     </div>
   );
 }
 
-export function Th({ children }: { children?: ReactNode }) {
+export function Th({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
   return (
-    <th className="border-b border-slate-200 bg-slate-50/80 px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+    <th
+      className={cn(
+        "border-b border-slate-200 bg-slate-50/80 px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500",
+        className,
+      )}
+    >
       {children}
     </th>
   );

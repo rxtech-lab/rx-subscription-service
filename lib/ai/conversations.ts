@@ -5,6 +5,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiConversations, aiMessages } from "@/lib/db/schema";
 import { newId } from "@/lib/subscription/shared";
+import type { CompactionState } from "./compaction";
 
 function conversationTitle(messages: UIMessage[]): string | null {
   const firstUserMessage = messages.find((message) => message.role === "user");
@@ -15,13 +16,13 @@ function conversationTitle(messages: UIMessage[]): string | null {
   return value ? value.slice(0, 120) : null;
 }
 
-/** Load the most recent assistant conversation for one admin in one application. */
-export async function getAssistantMessages(
-  applicationId: string,
-  rxlabUserId: string,
-): Promise<UIMessage[]> {
+async function latestConversation(applicationId: string, rxlabUserId: string) {
   const [conversation] = await db
-    .select({ id: aiConversations.id })
+    .select({
+      id: aiConversations.id,
+      summary: aiConversations.summary,
+      summaryMessageCount: aiConversations.summaryMessageCount,
+    })
     .from(aiConversations)
     .where(
       and(
@@ -31,6 +32,16 @@ export async function getAssistantMessages(
     )
     .orderBy(desc(aiConversations.updatedAt))
     .limit(1);
+
+  return conversation ?? null;
+}
+
+/** Load the most recent assistant conversation for one admin in one application. */
+export async function getAssistantMessages(
+  applicationId: string,
+  rxlabUserId: string,
+): Promise<UIMessage[]> {
+  const conversation = await latestConversation(applicationId, rxlabUserId);
 
   if (!conversation) return [];
 
@@ -116,6 +127,39 @@ export async function saveAssistantMessages(
       })),
     );
   });
+}
+
+/**
+ * The compaction summary for the live conversation, if one has been made. It
+ * covers the first `messageCount` model messages of the stored history, so it
+ * only holds while that history is append-only — the compactor re-summarizes
+ * from scratch whenever the anchor no longer fits.
+ */
+export async function getConversationCompaction(
+  applicationId: string,
+  rxlabUserId: string,
+): Promise<CompactionState | null> {
+  const conversation = await latestConversation(applicationId, rxlabUserId);
+  if (!conversation?.summary) return null;
+  return {
+    summary: conversation.summary,
+    messageCount: conversation.summaryMessageCount,
+  };
+}
+
+/** Store a fresh compaction so later turns reuse it instead of paying for it again. */
+export async function saveConversationCompaction(
+  applicationId: string,
+  rxlabUserId: string,
+  state: CompactionState,
+): Promise<void> {
+  const conversation = await latestConversation(applicationId, rxlabUserId);
+  if (!conversation) return;
+
+  await db
+    .update(aiConversations)
+    .set({ summary: state.summary, summaryMessageCount: state.messageCount })
+    .where(eq(aiConversations.id, conversation.id));
 }
 
 /** Delete every conversation for this admin/application pair and its messages. */

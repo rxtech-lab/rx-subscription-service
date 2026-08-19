@@ -6,7 +6,12 @@ import {
   streamText,
   type UIMessage,
 } from "ai";
-import { saveAssistantMessages } from "@/lib/ai/conversations";
+import { createContextCompactor } from "@/lib/ai/compaction";
+import {
+  getConversationCompaction,
+  saveAssistantMessages,
+  saveConversationCompaction,
+} from "@/lib/ai/conversations";
 import { dropIncompleteToolCalls } from "@/lib/ai/messages";
 import { buildTools, systemPrompt } from "@/lib/ai/tools";
 import { requireApplicationAccess, requireConsoleUser } from "@/lib/console/session";
@@ -50,12 +55,25 @@ export async function POST(request: Request) {
   // not lost if the model request fails before it can produce a response.
   await saveAssistantMessages(application.id, user.id, messages);
 
+  // Long sessions are compacted before each model call: the transcript above
+  // keeps every message, while the model gets a summary of the older turns plus
+  // the recent ones verbatim. Reusing the stored summary keeps a settled
+  // conversation from paying for a new one every turn.
+  const compaction = await getConversationCompaction(application.id, user.id);
+
   const result = streamText({
     model: DEFAULT_MODEL,
     system: systemPrompt(application),
     messages: await convertToModelMessages(messages),
     tools: buildTools(application.id, { type: "ai", id: user.id }),
     stopWhen: stepCountIs(12),
+    prepareStep: createContextCompactor({
+      chatModel: DEFAULT_MODEL,
+      state: compaction,
+      abortSignal: request.signal,
+      onCompacted: (state) =>
+        saveConversationCompaction(application.id, user.id, state),
+    }),
     // Stop the model run when the browser stops the response instead of paying
     // for tokens nobody will read.
     abortSignal: request.signal,

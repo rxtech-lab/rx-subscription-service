@@ -1,8 +1,9 @@
-import { createApiKeyAction, revokeApiKeyAction } from "@/app/actions/users";
+import Link from "next/link";
+import { createApiKeyAction, deleteApiKeyAction } from "@/app/actions/users";
 import { ApiKeyForm, InlineActionButton } from "@/components/forms/action-form";
+import { SearchField } from "@/components/forms/search-field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
-  Badge,
   Card,
   CardHeader,
   EmptyState,
@@ -16,10 +17,31 @@ import { listApiKeys } from "@/lib/api/keys";
 import { requireApplicationAccess } from "@/lib/console/session";
 import { formatDate } from "@/lib/utils";
 
-export default async function SettingsPage({ params }: PageProps<"/apps/[appId]">) {
+function first(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function SettingsPage({
+  params,
+  searchParams,
+}: PageProps<"/apps/[appId]/settings">) {
   const { appId } = await params;
+  const { page, q } = await searchParams;
   const application = await requireApplicationAccess(appId);
-  const keys = await listApiKeys(appId);
+
+  const query = first(q)?.trim() ?? "";
+  const { keys, pagination } = await listApiKeys(appId, {
+    page: Number(first(page)) || 1,
+    query,
+  });
+
+  function pageHref(target: number) {
+    const search = new URLSearchParams();
+    if (query) search.set("q", query);
+    if (target > 1) search.set("page", String(target));
+    const suffix = search.toString();
+    return `/apps/${appId}/settings${suffix ? `?${suffix}` : ""}`;
+  }
 
   return (
     <div className="space-y-6">
@@ -44,56 +66,89 @@ export default async function SettingsPage({ params }: PageProps<"/apps/[appId]"
         <CardHeader
           title="API keys"
           description="Server-to-server credentials for the /api/v1 endpoints. Only the hash is stored, so a key is shown once."
+          action={
+            <SearchField
+              label="Search API keys"
+              placeholder="Search by name or prefix"
+              className="w-56"
+            />
+          }
         />
         {keys.length === 0 ? (
-          <EmptyState title="No API keys" description="Create one below." />
+          <EmptyState
+            title={query ? "No matching API keys" : "No API keys"}
+            description={
+              query
+                ? `Nothing matches “${query}”. Try a different name or prefix.`
+                : "Create one below."
+            }
+          />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Name</Th>
-                <Th>Key</Th>
-                <Th>Last used</Th>
-                <Th>Status</Th>
-                <Th>Actions</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {keys.map((key) => (
-                <tr key={key.id}>
-                  <Td>{key.name}</Td>
-                  <Td>
-                    <code className="text-xs">{key.keyPrefix}…</code>
-                  </Td>
-                  <Td>
-                    <span className="text-xs text-neutral-500">
-                      {key.lastUsedAt ? formatDate(key.lastUsedAt) : "never"}
-                    </span>
-                  </Td>
-                  <Td>
-                    {key.revokedAt ? (
-                      <Badge tone="red">revoked</Badge>
-                    ) : (
-                      <Badge tone="green">active</Badge>
-                    )}
-                  </Td>
-                  <Td>
-                    {key.revokedAt ? null : (
+          <>
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Key</Th>
+                  <Th>Last used</Th>
+                  <Th>Actions</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map((key) => (
+                  <tr key={key.id}>
+                    <Td>{key.name}</Td>
+                    <Td>
+                      <code className="text-xs">{key.keyPrefix}…</code>
+                    </Td>
+                    <Td>
+                      <span className="text-xs text-neutral-500">
+                        {key.lastUsedAt ? formatDate(key.lastUsedAt) : "never"}
+                      </span>
+                    </Td>
+                    <Td>
                       <InlineActionButton
-                        action={revokeApiKeyAction}
-                        label="Revoke"
+                        action={deleteApiKeyAction}
+                        label="Delete"
                         variant="danger"
-                        confirmMessage="Revoke this key? Any app using it stops working immediately."
+                        confirmMessage="Delete this key? Any app using it stops working immediately."
                       >
                         <input type="hidden" name="applicationId" value={appId} />
                         <input type="hidden" name="keyId" value={key.id} />
                       </InlineActionButton>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+
+            {pagination.totalPages > 1 ? (
+              <div className="flex items-center justify-between px-5 py-3 text-xs text-neutral-500">
+                <span>
+                  Page {pagination.page} of {pagination.totalPages} ·{" "}
+                  {pagination.totalCount.toLocaleString("en-US")} keys
+                </span>
+                <div className="flex gap-3">
+                  {pagination.page > 1 ? (
+                    <Link
+                      href={pageHref(pagination.page - 1)}
+                      className="underline hover:text-neutral-900"
+                    >
+                      Previous
+                    </Link>
+                  ) : null}
+                  {pagination.page < pagination.totalPages ? (
+                    <Link
+                      href={pageHref(pagination.page + 1)}
+                      className="underline hover:text-neutral-900"
+                    >
+                      Next
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
 
         <div className="flex justify-end border-t border-slate-100 px-5 py-4">

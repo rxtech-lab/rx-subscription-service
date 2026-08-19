@@ -4,6 +4,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
 import { recordTestUsageAction } from "@/app/actions/test-usage";
 import { FormDialog, useCloseFormDialog } from "@/components/ui/form-dialog";
 import { Button, Field, Input } from "@/components/ui/primitives";
+import { FormPendingToast } from "@/components/ui/toast";
 
 /** What a click spends until you say otherwise. */
 const DEFAULT_AMOUNT = 1;
@@ -121,6 +122,7 @@ export function UsageAmountActions({
         <Button type="submit" size="sm" variant="secondary">
           Use {amount.toLocaleString()}
         </Button>
+        <FormPendingToast message={`Recording ${amount.toLocaleString()} of ${itemName}…`} />
       </form>
       <FormDialog
         triggerLabel="Set amount"

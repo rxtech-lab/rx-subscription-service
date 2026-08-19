@@ -18,6 +18,13 @@ import {
   getApplicationAnalytics,
   listRecentPurchases,
 } from "@/lib/subscription/analytics";
+import { getRun, isTerminal } from "@/lib/testing/runs";
+import { SDK_TYPES } from "@/lib/testing/sdk-types";
+import {
+  describeMissingSuite,
+  listTestSuites,
+  resolveTestSuite,
+} from "@/lib/testing/suites";
 import { uiCatalogReference, uiSpecSchema, validateUiSpec } from "./ui-catalog";
 import { writeToolSchemas } from "./tool-schemas";
 
@@ -179,6 +186,67 @@ export function buildTools(applicationId: string, actor: Actor) {
       }),
       execute: async ({ limit, includeTest }) =>
         listRecentPurchases(applicationId, { limit, includeTest }),
+    }),
+
+    listTestSuites: tool({
+      description:
+        "List the automated test suites on the Test cases tab, with each one's latest result. Call this before writing or running a suite so an existing file is updated rather than duplicated.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const suites = await listTestSuites(applicationId);
+        return suites.map((suite) => ({
+          suiteId: suite.id,
+          name: suite.name,
+          description: suite.description,
+          updatedBy: suite.updatedBy,
+          lastRun: suite.lastRun,
+        }));
+      },
+    }),
+
+    getTestSuite: tool({
+      description:
+        "Read one test suite's source. Accepts its id or its name; a name is matched ignoring case.",
+      inputSchema: z.object({ suiteId: z.string() }),
+      execute: async ({ suiteId }) => {
+        const suite = await resolveTestSuite(applicationId, suiteId);
+        if (!suite) return describeMissingSuite(applicationId, suiteId);
+        return {
+          ok: true,
+          suiteId: suite.id,
+          name: suite.name,
+          description: suite.description,
+          code: suite.code,
+        };
+      },
+    }),
+
+    getTestRun: tool({
+      description:
+        "Read the outcome of a run: totals plus every test with its status and failure message. Use it after runTestSuite to report what happened.",
+      inputSchema: z.object({ runId: z.string() }),
+      execute: async ({ runId }) => {
+        const found = await getRun(applicationId, runId);
+        if (!found) return { ok: false, error: `No test run "${runId}"` };
+        return {
+          ok: true,
+          status: found.run.status,
+          total: found.run.total,
+          passed: found.run.passed,
+          failed: found.run.failed,
+          skipped: found.run.skipped,
+          durationMs: found.run.durationMs,
+          error: found.run.error,
+          finished: isTerminal(found.run.status),
+          tests: found.cases.map((entry) => ({
+            suite: entry.suiteName,
+            name: entry.name,
+            status: entry.status,
+            durationMs: entry.durationMs,
+            error: entry.error,
+          })),
+        };
+      },
     }),
   };
 
@@ -357,6 +425,22 @@ export function buildTools(applicationId: string, actor: Actor) {
       needsApproval: true,
       execute: runWrite("adjustTestUserBalance"),
     }),
+
+    saveTestSuite: tool({
+      description:
+        "Write a test suite to the Test cases tab. Pass the whole file, not a patch. Omit suiteId to create a new one; pass it to replace an existing suite's source.",
+      inputSchema: writeToolSchemas.saveTestSuite,
+      needsApproval: true,
+      execute: runWrite("saveTestSuite"),
+    }),
+
+    runTestSuite: tool({
+      description:
+        "Run a test suite. The run appears live in the chat; it does not block, so call getTestRun afterwards to read the result.",
+      inputSchema: writeToolSchemas.runTestSuite,
+      needsApproval: true,
+      execute: runWrite("runTestSuite"),
+    }),
   };
 
   return { ...readTools, ...displayTools, ...confirmationTools, ...writeTools };
@@ -392,6 +476,22 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "",
     "Component catalog for `renderUI` (props are shown as TypeScript-style signatures; `?` marks an optional prop):",
     uiCatalogReference(),
+    "",
+    "Writing tests:",
+    "- The Test cases tab holds suites: TypeScript files that exercise this application end to end — subscribing, topping up, spending a balance, hitting a usage limit. `saveTestSuite` writes one, `runTestSuite` runs it, `getTestRun` reads the outcome.",
+    "- Always `listTestSuites` first. Update the suite that already covers an area instead of adding a near-duplicate.",
+    "- Identify a suite by its name, or by an id you got from a tool result in this conversation. Never retype an id from a URL or from memory — a mistyped UUID looks exactly like a suite that does not exist.",
+    "- `saveTestSuite` replaces the whole file. Send complete source every time, never a fragment or a diff.",
+    "- Every suite you save is type-checked against the declarations below before it is stored. A suite that does not compile is rejected and the errors come back with line numbers — fix them and send the whole file again. Nothing is saved until it compiles, so there is no half-written state to clean up.",
+    "- A suite has no imports. `suite`, `test`, `step`, `expect`, `sleep`, and `rx` are globals, declared exactly as in the reference below. Using anything not declared there fails at run time.",
+    "- Wrap each meaningful phase in `step(\"...\")`. Steps are what the workflow diagram draws and what a watcher follows, so a test of three steps reads far better than one long body.",
+    "- Tests must create their own users with `rx.testUsers.create()` and assert only against those. There is no way to touch a real subscriber, and a suite that depends on data someone else made will break.",
+    "- Every user a run creates is deleted when it ends. Do not write cleanup code.",
+    "- Read the configuration rather than assuming it: `rx.config.plans()` and friends return what this application actually has. Skip a test gracefully when the thing it needs does not exist yet.",
+    "- After `runTestSuite`, the run is queued and streams into the chat on its own. Do not describe results you have not read — call `getTestRun` and report what it says, or say the run is still going.",
+    "",
+    "The testing API, in full (these declarations are exactly what the editor and the runtime provide):",
+    SDK_TYPES.trim(),
     "",
     "When you need the user to confirm a proposed setup or plan before proceeding, call the `confirmation` tool with only a short title and plain-language description. Never ask for confirmation in normal chat text or wait for a typed reply.",
     "The `confirmation` tool is only a simple decision prompt. It does not replace or change any write tool's own approval; after confirmation, call write tools normally and let their existing approvals work as before.",

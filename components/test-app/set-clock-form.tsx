@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { setTestClockAction } from "@/app/actions/test-usage";
 import { Button, Input } from "@/components/ui/primitives";
+import { FormPendingToast } from "@/components/ui/toast";
 
 /** `datetime-local` text ("2026-08-20T09:30") as epoch milliseconds, or null. */
 function toEpochMs(value: string): number | null {
@@ -40,6 +41,7 @@ export function SetClockForm() {
       <Button type="submit" size="sm" variant="secondary" disabled={atMs === null}>
         Set time
       </Button>
+      <FormPendingToast message="Setting the clock…" />
     </form>
   );
 }
