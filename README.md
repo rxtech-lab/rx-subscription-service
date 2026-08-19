@@ -87,6 +87,14 @@ Your applications talk to `/api/v1` with an application API key
 | `GET /api/v1/entitlements` | Plans, roles, permission expressions, balances, and usage in one call |
 | `GET/POST /api/v1/usage` | Read or report metered usage |
 | `GET/POST /api/v1/balances` | Read, credit, or debit a balance |
+| `POST /api/v1/balances/reserve` | Atomically hold available balance for an in-flight operation |
+| `GET /api/v1/balances/reservations` | Recover a reservation by its caller idempotency key |
+| `GET /api/v1/balances/reservations/:id` | Read a reservation and its running settlement totals |
+| `POST /api/v1/balances/reservations/:id/increase` | Grow an open hold and renew its TTL |
+| `POST /api/v1/balances/reservations/:id/settle` | Incrementally charge a hold; optionally close it with `final: true` |
+| `POST /api/v1/balances/reservations/:id/release` | Close an operation and release its remaining hold |
+| `GET /api/v1/balances/ledger` | Paginated, application-scoped balance history |
+| `GET /api/v1/purchases` | Paginated purchase history with persisted Stripe receipt URLs |
 | `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility |
 | `POST /api/v1/coupons/validate` | Validate an app-local coupon for a user and plan or topup before checkout |
 | `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, with an optional `couponCode`, or the billing portal |
@@ -108,6 +116,14 @@ curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $KEY"
 Credits, debits, and topup fulfillment are idempotent on a caller-supplied key,
 so a retried request or a replayed webhook can never double-charge. Balance
 debits are a single conditional update, so concurrent spends cannot overdraw.
+
+Reservations use the same conditional-update discipline. They default to a
+30-minute TTL (overridable up to 24 hours), expire lazily on balance or
+reservation access, and renew their original TTL after every partial settlement
+or increase. Each settlement writes one `usage` ledger row and leaves the hold
+open unless `final: true`; releasing closes it without another charge. A late
+settlement against an expired hold becomes a capped debit of currently available
+funds and reports its shortfall with `status: "expired"`.
 
 ## Stripe
 

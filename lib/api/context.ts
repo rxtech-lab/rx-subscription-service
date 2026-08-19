@@ -15,6 +15,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -76,7 +77,7 @@ export async function resolveRequestUser(
 export function apiError(error: unknown): Response {
   if (error instanceof ApiError) {
     return Response.json(
-      { error: error.code, error_description: error.message },
+      { error: error.code, error_description: error.message, ...error.details },
       { status: error.status, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -95,8 +96,40 @@ export function apiError(error: unknown): Response {
     );
   }
   if (name === "InsufficientBalanceError") {
+    const balanceError = error as Error & {
+      available: number;
+      requested: number;
+    };
     return Response.json(
-      { error: "insufficient_balance", error_description: (error as Error).message },
+      {
+        error: "insufficient_balance",
+        error_description: balanceError.message,
+        available: balanceError.available,
+        required: balanceError.requested,
+      },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (name === "IdempotencyConflictError") {
+    return Response.json(
+      { error: "idempotency_conflict", error_description: (error as Error).message },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (name === "ReservationNotFoundError") {
+    return Response.json(
+      { error: "reservation_not_found", error_description: (error as Error).message },
+      { status: 404, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (name === "ReservationStateError") {
+    const stateError = error as Error & { status: string };
+    return Response.json(
+      {
+        error: "reservation_not_open",
+        error_description: stateError.message,
+        status: stateError.status,
+      },
       { status: 409, headers: { "Cache-Control": "no-store" } },
     );
   }

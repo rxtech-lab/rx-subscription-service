@@ -8,6 +8,7 @@ import {
 } from "@/lib/api/context";
 import { getBalanceUnitByKey } from "@/lib/subscription/units";
 import { creditBalance, debitBalance, getBalances } from "@/lib/subscription/users";
+import { apiBalanceKey } from "@/lib/api/idempotency";
 
 export async function GET(request: Request) {
   try {
@@ -78,7 +79,10 @@ export async function POST(request: Request) {
       amount: parsed.data.amount,
       kind: parsed.data.operation === "credit" ? ("adjustment" as const) : ("usage" as const),
       description: parsed.data.description,
-      idempotencyKey: `api:${context.application.id}:${parsed.data.idempotencyKey}`,
+      idempotencyKey: apiBalanceKey(
+        context.application.id,
+        parsed.data.idempotencyKey,
+      ),
       referenceType: "api",
       referenceId: context.keyId,
       metadata: parsed.data.metadata ?? null,

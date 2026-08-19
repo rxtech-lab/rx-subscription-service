@@ -16,16 +16,10 @@ import {
   ValidationError,
   type Actor,
 } from "./shared";
+import { ensureBalanceRow, InsufficientBalanceError } from "./balance-core";
+import { expireBalanceReservations } from "./balance-reservations";
 
-export class InsufficientBalanceError extends Error {
-  constructor(
-    readonly available: number,
-    readonly requested: number,
-  ) {
-    super(`Insufficient balance: ${available} available, ${requested} requested`);
-    this.name = "InsufficientBalanceError";
-  }
-}
+export { InsufficientBalanceError } from "./balance-core";
 
 export async function createAppUser(input: {
   applicationId: string;
@@ -259,6 +253,7 @@ export async function setUserLevel(input: {
 }
 
 export async function getBalances(appUserId: string) {
+  await expireBalanceReservations({ appUserId });
   return db
     .select({
       balanceId: balances.id,
@@ -274,39 +269,6 @@ export async function getBalances(appUserId: string) {
     .innerJoin(balanceUnits, eq(balances.unitId, balanceUnits.id))
     .where(eq(balances.appUserId, appUserId))
     .orderBy(asc(balanceUnits.key));
-}
-
-/** Create the balance row on demand so callers never have to pre-provision one. */
-async function ensureBalanceRow(appUserId: string, unitId: string) {
-  const [existing] = await db
-    .select()
-    .from(balances)
-    .where(and(eq(balances.appUserId, appUserId), eq(balances.unitId, unitId)))
-    .limit(1);
-  if (existing) return existing;
-
-  const now = new Date();
-  const [created] = await db
-    .insert(balances)
-    .values({
-      id: newId(),
-      appUserId,
-      unitId,
-      amount: 0,
-      reserved: 0,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
-    .returning();
-  if (created) return created;
-
-  const [raced] = await db
-    .select()
-    .from(balances)
-    .where(and(eq(balances.appUserId, appUserId), eq(balances.unitId, unitId)))
-    .limit(1);
-  return raced;
 }
 
 async function findLedgerEntry(idempotencyKey: string) {
@@ -391,6 +353,10 @@ export async function debitBalance(input: BalanceMutation) {
   const existing = await findLedgerEntry(input.idempotencyKey);
   if (existing) return { entry: existing, duplicate: true as const };
 
+  await expireBalanceReservations({
+    appUserId: input.appUserId,
+    unitId: input.unitId,
+  });
   await ensureBalanceRow(input.appUserId, input.unitId);
   const now = new Date();
 
@@ -481,6 +447,54 @@ export async function getLedger(appUserId: string, page = 1) {
       totalCount: count,
       totalPages: Math.max(1, Math.ceil(count / LEDGER_PAGE_SIZE)),
     },
+  };
+}
+
+/** Application API ledger history with caller-controlled, bounded pagination. */
+export async function getLedgerHistory(input: {
+  appUserId: string;
+  unitId?: string | null;
+  page: number;
+  pageSize: number;
+}) {
+  await expireBalanceReservations({
+    appUserId: input.appUserId,
+    unitId: input.unitId ?? undefined,
+  });
+  const where = and(
+    eq(ledgerEntries.appUserId, input.appUserId),
+    input.unitId ? eq(ledgerEntries.unitId, input.unitId) : undefined,
+  );
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(ledgerEntries)
+    .where(where);
+  const entries = await db
+    .select({
+      id: ledgerEntries.id,
+      kind: ledgerEntries.kind,
+      unit: balanceUnits.key,
+      delta: ledgerEntries.delta,
+      balanceAfter: ledgerEntries.balanceAfter,
+      description: ledgerEntries.description,
+      referenceType: ledgerEntries.referenceType,
+      referenceId: ledgerEntries.referenceId,
+      createdAt: ledgerEntries.createdAt,
+      metadata: ledgerEntries.metadata,
+    })
+    .from(ledgerEntries)
+    .innerJoin(balanceUnits, eq(ledgerEntries.unitId, balanceUnits.id))
+    .where(where)
+    .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
+    .limit(input.pageSize)
+    .offset((input.page - 1) * input.pageSize);
+
+  return {
+    entries,
+    total: count,
+    page: input.page,
+    pageSize: input.pageSize,
+    pageCount: Math.ceil(count / input.pageSize),
   };
 }
 
