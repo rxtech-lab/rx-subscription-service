@@ -219,6 +219,24 @@ export const writeToolSchemas = {
     delta: z.number().int().describe("Units to add; negative to remove"),
     reason: z.string().default("Test adjustment"),
   }),
+
+  saveTestSuite: z.object({
+    suiteId: z
+      .string()
+      .optional()
+      .describe("Omit to create a new suite; pass an id to replace an existing one"),
+    name: z.string().describe("Shown in the Test cases tab, e.g. Topup eligibility"),
+    description: z.string().optional().describe("One line on what the suite covers"),
+    code: z
+      .string()
+      .describe(
+        "The whole file. TypeScript using the ambient suite/test/step/expect/rx globals — no imports.",
+      ),
+  }),
+
+  runTestSuite: z.object({
+    suiteId: z.string().describe("The suite to run. Its name also resolves."),
+  }),
 } as const;
 
 export type WriteToolName = keyof typeof writeToolSchemas;

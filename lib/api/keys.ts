@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { applicationApiKeys } from "@/lib/db/schema";
 import { newId, NotFoundError, recordAudit, ValidationError, type Actor } from "@/lib/subscription/shared";
@@ -17,19 +17,69 @@ export async function hashApiKey(value: string): Promise<string> {
   return sha256(value);
 }
 
-export async function listApiKeys(applicationId: string) {
-  return db
+export const API_KEYS_PAGE_SIZE = 10;
+
+/**
+ * Live keys only, newest first. Revoked keys — the ephemeral ones a test run
+ * mints and throws away — are never listed, so the console shows nothing but
+ * credentials that still work.
+ */
+export async function listApiKeys(
+  applicationId: string,
+  options: { page?: number; query?: string } = {},
+) {
+  const requestedPage = Math.max(1, options.page ?? 1);
+  const needle = options.query?.trim() ?? "";
+
+  const filters: SQL[] = [
+    eq(applicationApiKeys.applicationId, applicationId),
+    isNull(applicationApiKeys.revokedAt),
+  ];
+  if (needle) {
+    // SQLite's LIKE is case-insensitive for ASCII, and `_`/`%` in a search box
+    // are meant literally rather than as wildcards.
+    const pattern = `%${needle.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+    const matches = or(
+      like(applicationApiKeys.name, sql`${pattern} ESCAPE '\\'`),
+      like(applicationApiKeys.keyPrefix, sql`${pattern} ESCAPE '\\'`),
+    );
+    if (matches) filters.push(matches);
+  }
+  const where = and(...filters);
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(applicationApiKeys)
+    .where(where);
+
+  // Deleting the last key on the last page would otherwise leave the reader on
+  // an out-of-range page staring at an empty table.
+  const totalPages = Math.max(1, Math.ceil(count / API_KEYS_PAGE_SIZE));
+  const safePage = Math.min(requestedPage, totalPages);
+
+  const keys = await db
     .select({
       id: applicationApiKeys.id,
       name: applicationApiKeys.name,
       keyPrefix: applicationApiKeys.keyPrefix,
       lastUsedAt: applicationApiKeys.lastUsedAt,
-      revokedAt: applicationApiKeys.revokedAt,
       createdAt: applicationApiKeys.createdAt,
     })
     .from(applicationApiKeys)
-    .where(eq(applicationApiKeys.applicationId, applicationId))
-    .orderBy(asc(applicationApiKeys.createdAt));
+    .where(where)
+    .orderBy(desc(applicationApiKeys.createdAt))
+    .limit(API_KEYS_PAGE_SIZE)
+    .offset((safePage - 1) * API_KEYS_PAGE_SIZE);
+
+  return {
+    keys,
+    pagination: {
+      page: safePage,
+      pageSize: API_KEYS_PAGE_SIZE,
+      totalCount: count,
+      totalPages,
+    },
+  };
 }
 
 /**
@@ -71,6 +121,43 @@ export async function createApiKey(input: {
   return { id: row.id, name: row.name, keyPrefix, secret };
 }
 
+/**
+ * Remove a key outright. Console-facing deletes drop the row rather than
+ * flagging it, so the list only ever holds keys that still work; the audit log
+ * keeps the record of what was removed.
+ */
+export async function deleteApiKey(input: {
+  applicationId: string;
+  keyId: string;
+  actor: Actor;
+}) {
+  const [before] = await db
+    .select()
+    .from(applicationApiKeys)
+    .where(
+      and(
+        eq(applicationApiKeys.id, input.keyId),
+        eq(applicationApiKeys.applicationId, input.applicationId),
+      ),
+    )
+    .limit(1);
+  if (!before) throw new NotFoundError("api key", input.keyId);
+
+  await db
+    .delete(applicationApiKeys)
+    .where(eq(applicationApiKeys.id, input.keyId));
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "api_key.delete",
+    entityType: "application_api_key",
+    entityId: input.keyId,
+    before: { id: before.id, name: before.name, keyPrefix: before.keyPrefix },
+  });
+}
+
+/** Soft-revoke, used for the ephemeral keys a test run mints for itself. */
 export async function revokeApiKey(input: {
   applicationId: string;
   keyId: string;

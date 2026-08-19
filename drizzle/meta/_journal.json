@@ -29,6 +29,20 @@
       "when": 1787046293438,
       "tag": "0003_heavy_sebastian_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787107261062,
+      "tag": "0004_mute_purple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787108332798,
+      "tag": "0005_abandoned_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

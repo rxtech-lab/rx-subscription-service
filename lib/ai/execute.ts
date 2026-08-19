@@ -28,6 +28,13 @@ import {
   updateTestUser,
 } from "@/lib/subscription/test-users";
 import { adjustBalance } from "@/lib/subscription/users";
+import { queueTestRun } from "@/lib/testing/runner";
+import {
+  createTestSuite,
+  describeMissingSuite,
+  resolveTestSuite,
+  updateTestSuite,
+} from "@/lib/testing/suites";
 import { writeToolSchemas, type WriteToolName } from "./tool-schemas";
 
 /**
@@ -215,6 +222,69 @@ export async function executeWriteTool(input: {
         return {
           ok: true,
           result: await adjustBalance({ applicationId, actor, ...args }),
+        };
+      }
+
+      case "saveTestSuite": {
+        const args = parsed.data as typeof writeToolSchemas.saveTestSuite._output;
+        if (args.suiteId) {
+          const updated = await updateTestSuite({
+            applicationId,
+            actor,
+            suiteId: args.suiteId,
+            name: args.name,
+            description: args.description ?? null,
+            code: args.code,
+          });
+          return { ok: true, result: { suiteId: updated.id, name: updated.name } };
+        }
+        const created = await createTestSuite({
+          applicationId,
+          actor,
+          name: args.name,
+          description: args.description ?? null,
+          code: args.code,
+        });
+        return { ok: true, result: { suiteId: created.id, name: created.name } };
+      }
+
+      case "runTestSuite": {
+        const args = parsed.data as typeof writeToolSchemas.runTestSuite._output;
+        // The model works in names as readily as ids, and refusing a name it
+        // just read back from `listTestSuites` would be pointless friction.
+        const suite = await resolveTestSuite(applicationId, args.suiteId);
+        if (!suite) {
+          const missing = await describeMissingSuite(applicationId, args.suiteId);
+          return {
+            ok: false,
+            error: `${missing.error}${
+              missing.available.length > 0
+                ? ` Available: ${missing.available
+                    .map((entry) => `${entry.name} (${entry.suiteId})`)
+                    .join(", ")}`
+                : ""
+            }`,
+          };
+        }
+
+        const run = await queueTestRun({
+          applicationId,
+          suiteId: suite.id,
+          trigger: "ai",
+          triggeredBy: actor.id,
+          conversationId: actor.conversationId ?? null,
+        });
+        // Only queued: the card rendered in the chat starts it and follows it,
+        // so the model is not holding a turn open for the length of a run.
+        return {
+          ok: true,
+          result: {
+            runId: run.id,
+            suiteId: suite.id,
+            suiteName: suite.name,
+            status: "queued",
+            note: "The run is shown live in the chat. Call getTestRun for the outcome once it finishes.",
+          },
         };
       }
     }

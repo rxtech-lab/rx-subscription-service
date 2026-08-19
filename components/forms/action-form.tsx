@@ -1,10 +1,17 @@
 "use client";
 
 import { Check, Copy, KeyRound } from "lucide-react";
-import { useActionState, useEffect, useState, type ReactNode } from "react";
+import {
+  useActionState,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/primitives";
 import { useCloseFormDialog } from "@/components/ui/form-dialog";
+import { FormPendingToast, withActionToast } from "@/components/ui/toast";
 import type { ActionState } from "@/app/actions/shared";
 
 type CopyStatus = "idle" | "copied" | "error";
@@ -71,7 +78,17 @@ export function ActionForm({
   className?: string;
   autoComplete?: "on" | "off";
 }) {
-  const [state, formAction] = useActionState(action, {});
+  // The toast carries the outcome once the dialog has closed itself, so the
+  // wrapper has to sit between the form and the action rather than in an effect.
+  const toastedAction = useMemo(
+    () =>
+      withActionToast(action, {
+        pending: pendingLabel ?? "Saving…",
+        success: "Saved.",
+      }),
+    [action, pendingLabel],
+  );
+  const [state, formAction] = useActionState(toastedAction, {});
   const closeDialog = useCloseFormDialog();
 
   useEffect(() => {
@@ -111,7 +128,15 @@ export function ApiKeyForm({
   ) => Promise<{ error?: string; success?: string; secret?: string }>;
   children: ReactNode;
 }) {
-  const [state, formAction] = useActionState(action, {});
+  const toastedAction = useMemo(
+    () =>
+      withActionToast(action, {
+        pending: "Creating API key…",
+        success: "API key created.",
+      }),
+    [action],
+  );
+  const [state, formAction] = useActionState(toastedAction, {});
   const closeDialog = useCloseFormDialog();
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
 
@@ -219,6 +244,7 @@ export function InlineActionButton({
   label,
   variant = "ghost",
   confirmMessage,
+  pendingLabel,
   children,
 }: {
   action: (formData: FormData) => Promise<void>;
@@ -231,6 +257,7 @@ export function InlineActionButton({
     | "menu"
     | "menuDanger";
   confirmMessage?: string;
+  pendingLabel?: string;
   children?: ReactNode;
 }) {
   return (
@@ -247,6 +274,9 @@ export function InlineActionButton({
       <Button type="submit" size="sm" variant={variant}>
         {label}
       </Button>
+      {/* These actions return nothing and usually redirect, so the spinner is
+          tied to the form's own pending state and the page reports the rest. */}
+      <FormPendingToast message={pendingLabel ?? `${label}…`} />
     </form>
   );
 }

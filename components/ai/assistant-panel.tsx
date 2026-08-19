@@ -10,6 +10,7 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   Send,
   Square,
@@ -45,6 +46,7 @@ import {
   calculatePinnedBottomSpacing,
   shouldReleasePinnedMessage,
 } from "@/components/ai/pinned-message-layout";
+import { TestRunCard } from "@/components/testing/test-run-card";
 import { Button } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +66,17 @@ interface ConfirmationInput {
 const PINNED_MESSAGE_TOP_INSET = 16;
 const PANEL_WIDTH_STORAGE_KEY = "assistant-panel-width";
 const PANEL_WIDTH_KEYBOARD_STEP = 24;
+/** Slack in pixels before the transcript counts as scrolled away from the end. */
+const SCROLL_TO_BOTTOM_THRESHOLD = 48;
+const SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
 
 /** Turn `createPlan` into `Create plan` for the approval card. */
 function humanizeTool(name: string): string {
@@ -81,14 +94,31 @@ function ArgumentList({ input }: { input: unknown }) {
 
   return (
     <dl className="mt-2 space-y-1">
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex gap-2 text-xs">
-          <dt className="shrink-0 text-neutral-500">{key}</dt>
-          <dd className="min-w-0 flex-1 break-words font-mono text-neutral-800">
-            {typeof value === "object" ? JSON.stringify(value) : String(value)}
-          </dd>
-        </div>
-      ))}
+      {entries.map(([key, value]) => {
+        const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+        // A whole test suite is a legitimate argument, and inlining it would
+        // push the approve button off the screen.
+        if (text.length > 200) {
+          return (
+            <div key={key} className="text-xs">
+              <dt className="text-neutral-500">{key}</dt>
+              <dd className="mt-1">
+                <pre className="max-h-48 overflow-auto rounded-lg bg-white/70 p-2 font-mono text-[11px] leading-4 text-neutral-800">
+                  {text}
+                </pre>
+              </dd>
+            </div>
+          );
+        }
+        return (
+          <div key={key} className="flex gap-2 text-xs">
+            <dt className="shrink-0 text-neutral-500">{key}</dt>
+            <dd className="min-w-0 flex-1 break-words font-mono text-neutral-800">
+              {text}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -329,11 +359,14 @@ export function AssistantPanel({
       : DEFAULT_ASSISTANT_PANEL_WIDTH;
   });
   const [resizing, setResizing] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  // Set once the reader scrolls by hand, so streaming never yanks the
+  // transcript back under them.
+  const readerScrolledRef = useRef(false);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const pinnedUserMessageRef = useRef<HTMLDivElement>(null);
   const bottomSpacerRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
     messages,
@@ -408,8 +441,17 @@ export function AssistantPanel({
     setBottomSpacing((currentSpacing) =>
       currentSpacing === requiredSpacing ? currentSpacing : requiredSpacing,
     );
-    viewport.scrollTo({ top: targetScrollTop });
+    if (!readerScrolledRef.current) viewport.scrollTo({ top: targetScrollTop });
   }, [messages, open, pinnedUserMessageId]);
+
+  const updateScrollAffordance = useCallback(() => {
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+
+    const distanceFromBottom =
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    setShowScrollToBottom(distanceFromBottom > SCROLL_TO_BOTTOM_THRESHOLD);
+  }, []);
 
   useLayoutEffect(() => {
     updatePinnedLayout();
@@ -425,7 +467,11 @@ export function AssistantPanel({
     let animationFrame = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(animationFrame);
-      animationFrame = requestAnimationFrame(updatePinnedLayout);
+      animationFrame = requestAnimationFrame(() => {
+        updatePinnedLayout();
+        // Streaming grows the transcript without firing a scroll event.
+        updateScrollAffordance();
+      });
     });
     observer.observe(viewport);
     observer.observe(content);
@@ -434,12 +480,25 @@ export function AssistantPanel({
       cancelAnimationFrame(animationFrame);
       observer.disconnect();
     };
-  }, [open, updatePinnedLayout]);
+  }, [open, updatePinnedLayout, updateScrollAffordance]);
 
-  useEffect(() => {
-    if (!open || pinnedUserMessageId) return;
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, open, pinnedUserMessageId, status]);
+  // Opening lands on the latest message; after that the transcript only moves
+  // when the reader asks it to.
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    readerScrolledRef.current = false;
+    const jumpToEnd = () => {
+      const viewport = messagesViewportRef.current;
+      if (!viewport) return;
+      viewport.scrollTop = viewport.scrollHeight;
+      updateScrollAffordance();
+    };
+    jumpToEnd();
+    // Markdown and tool cards settle a frame later, changing the end position.
+    const animationFrame = requestAnimationFrame(jumpToEnd);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [open, updateScrollAffordance]);
 
   useEffect(() => {
     const unseenWrites = completedWriteToolCallIds(messages).filter(
@@ -515,12 +574,45 @@ export function AssistantPanel({
     storePanelWidth(next);
   }
 
+  /** Any hand-driven scroll hands control of the transcript to the reader. */
+  function noteReaderScroll() {
+    readerScrolledRef.current = true;
+  }
+
+  function noteReaderScrollKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (SCROLL_KEYS.has(event.key)) readerScrolledRef.current = true;
+  }
+
+  function noteReaderScrollbarDrag(event: PointerEvent<HTMLDivElement>) {
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+    // Only a press in the scrollbar gutter scrolls; clicks on cards do not.
+    const offsetX = event.clientX - viewport.getBoundingClientRect().left;
+    if (offsetX > viewport.clientWidth) readerScrolledRef.current = true;
+  }
+
+  function scrollToBottom() {
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+
+    // The spacer only exists to hold a pinned message at the top, so drop it
+    // rather than scrolling the reader into blank space.
+    setPinnedUserMessageId(null);
+    setBottomSpacing(0);
+    readerScrolledRef.current = true;
+    requestAnimationFrame(() => {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+    });
+  }
+
   function submit() {
     const text = draft.trim();
     if (!text || busy || pendingApproval) return;
     const messageId = crypto.randomUUID();
     setDraft("");
     setBottomSpacing(0);
+    // Sending is an explicit request to see the new turn.
+    readerScrolledRef.current = false;
     setPinnedUserMessageId(messageId);
     void sendMessage({
       id: messageId,
@@ -659,6 +751,11 @@ export function AssistantPanel({
         ref={messagesViewportRef}
         className="flex-1 overflow-y-auto px-4 pb-32 pt-4"
         aria-live="polite"
+        onScroll={updateScrollAffordance}
+        onWheel={noteReaderScroll}
+        onTouchMove={noteReaderScroll}
+        onKeyDown={noteReaderScrollKey}
+        onPointerDown={noteReaderScrollbarDrag}
       >
         <div ref={messagesContentRef} className="space-y-4">
           {messages.length === 0 ? (
@@ -729,6 +826,30 @@ export function AssistantPanel({
                   if (!output?.ok) return null;
                   const input = toolPart.input as { spec?: unknown } | null;
                   return <GeneratedUi key={index} spec={input?.spec} />;
+                }
+
+                // An approved run replaces its "Applied" card with the live run
+                // itself — the point of the call is watching it, not being told
+                // it started.
+                if (
+                  part.type === "tool-runTestSuite" &&
+                  toolPart.state === "output-available"
+                ) {
+                  const output = toolPart.output as {
+                    ok?: boolean;
+                    result?: { runId?: string; suiteName?: string };
+                  } | null;
+                  if (output?.ok && output.result?.runId) {
+                    return (
+                      <TestRunCard
+                        key={index}
+                        runId={output.result.runId}
+                        suiteName={output.result.suiteName}
+                        applicationId={applicationId}
+                        compact
+                      />
+                    );
+                  }
                 }
 
                 if (part.type === "tool-confirmation" && toolPart.approval) {
@@ -836,7 +957,6 @@ export function AssistantPanel({
               {clearError}
             </p>
           ) : null}
-          <div ref={messagesEndRef} />
         </div>
         <div
           ref={bottomSpacerRef}
@@ -844,6 +964,17 @@ export function AssistantPanel({
           aria-hidden="true"
         />
       </div>
+
+      {showScrollToBottom ? (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          aria-label="Scroll to latest message"
+          className="absolute bottom-28 left-1/2 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-md transition hover:bg-neutral-50 hover:text-neutral-900"
+        >
+          <ChevronDown className="size-4" aria-hidden="true" />
+        </button>
+      ) : null}
 
       <form
         className="absolute inset-x-3 bottom-3 z-10 flex items-end gap-2 rounded-2xl border border-slate-200/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(241,245,249,0.42))] p-2 backdrop-blur-2xl backdrop-saturate-150"

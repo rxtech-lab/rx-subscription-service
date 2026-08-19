@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { BrandMark } from "@/components/console/brand-mark";
 import { Button, Card } from "@/components/ui/primitives";
+import { ToastForm } from "@/components/ui/toast";
 import { authStatus, signIn } from "@/lib/auth";
 import { getConsoleUser } from "@/lib/console/session";
 
@@ -41,13 +42,17 @@ export default async function LoginPage() {
         </div>
 
         {authStatus.configured ? (
-          <form action={startSignIn} className="mt-8">
+          <ToastForm
+            action={startSignIn}
+            pendingMessage="Signing in…"
+            className="mt-8"
+          >
             <Button type="submit" className="w-full justify-between px-4">
               <span />
               Sign in with RxLab
               <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
-          </form>
+          </ToastForm>
         ) : (
           <p className="mt-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             RxLab auth is not configured on this deployment.

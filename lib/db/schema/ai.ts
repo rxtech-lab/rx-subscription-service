@@ -10,6 +10,11 @@ export const aiConversations = sqliteTable(
     }),
     rxlabUserId: text("rxlab_user_id").notNull(),
     title: text("title"),
+    // Context compaction. The messages themselves are never deleted; this is the
+    // summary that stands in for the first `summaryMessageCount` model messages
+    // when the conversation is sent to the model.
+    summary: text("summary"),
+    summaryMessageCount: integer("summary_message_count").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

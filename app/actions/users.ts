@@ -1,6 +1,6 @@
 "use server";
 
-import { createApiKey, revokeApiKey } from "@/lib/api/keys";
+import { createApiKey, deleteApiKey } from "@/lib/api/keys";
 import { requireConsoleUser } from "@/lib/console/session";
 import {
   isPermissionError,
@@ -157,10 +157,10 @@ export async function createApiKeyAction(
   }
 }
 
-export async function revokeApiKeyAction(formData: FormData): Promise<void> {
+export async function deleteApiKeyAction(formData: FormData): Promise<void> {
   const applicationId = text(formData, "applicationId");
   await withApplication(applicationId, async ({ actor }) => {
-    await revokeApiKey({ applicationId, keyId: text(formData, "keyId"), actor });
+    await deleteApiKey({ applicationId, keyId: text(formData, "keyId"), actor });
   });
   revalidateApp(applicationId, "settings");
 }

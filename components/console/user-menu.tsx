@@ -4,6 +4,7 @@ import { LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { signOutAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/primitives";
+import { FormPendingToast } from "@/components/ui/toast";
 
 export function UserMenu({
   displayName,
@@ -80,6 +81,7 @@ export function UserMenu({
               <LogOut className="size-4" aria-hidden="true" />
               Sign out
             </Button>
+            <FormPendingToast message="Signing out…" />
           </form>
         </div>
       ) : null}

@@ -137,11 +137,81 @@ Point the sandbox account's webhook at `/api/stripe/webhook/sandbox`, which uses
 Checkout session directly, so purchases still settle without a webhook tunnel;
 both paths are idempotent.
 
+It can also write and run suites: `listTestSuites`, `getTestSuite`,
+`saveTestSuite`, `runTestSuite`, and `getTestRun`. A run it starts appears in
+the chat as a live card — the same diagram the Test cases tab shows — and the
+model reads the outcome with `getTestRun` rather than reporting a result it has
+not seen.
+
 The assistant can manage test users (`listTestUsers`, `createTestUser`,
 `grantTestSubscription`, `adjustTestUserBalance`, …). Test users are the only
 users whose balances and subscriptions it can change — every write resolves the
 id through `requireTestUser`, so an approved call naming a real subscriber is
 refused server-side.
+
+## Test cases
+
+The Test tab's second half holds **suites**: TypeScript files that exercise this
+application end to end — subscribe, buy a topup, spend a balance, cross a usage
+limit — written in the console and run on demand. The tab lists them with their
+latest result; opening one gives you the editor, the flow, and the Run button.
+
+A suite has no imports. `suite`, `test`, `step`, `expect`, `sleep`, and `rx` are
+globals, declared in `lib/testing/sdk-types.ts`; that one string is loaded into
+Monaco as an ambient library *and* embedded in the assistant's prompt, so the
+editor, the runtime, and the model all work from the same declarations.
+
+```ts
+suite("Topup eligibility", () => {
+  test("a free user cannot buy the pro-only pack", async () => {
+    const user = await step("create a user", () => rx.testUsers.create());
+    const catalog = await rx.catalog(user.rxlabUserId);
+    expect(catalog.topups.find((t) => t.key === "pro_pack")?.eligible).toBe(false);
+  });
+});
+```
+
+The panel beside the editor is a diagram of the file, scanned from the source as
+you type (`lib/testing/outline.ts`) and taken over by live status once a run
+starts — the same component the assistant's chat card renders.
+
+Suites are type-checked on save (`lib/testing/typecheck.ts`), against those same
+declarations. The rule is asymmetric on purpose: a human already has the errors
+in front of them, so the save goes through and reports a count, while the
+assistant — which never sees a squiggle — has the write refused and gets the
+diagnostics back as the tool result to retry from.
+
+### How a run executes
+
+A suite is arbitrary code, so it never runs in the request process. The runner
+ships it plus `lib/testing/harness/runner.js` into a **Vercel Sandbox** and
+speaks a line protocol back over stdout (`lib/testing/protocol.ts`). Off Vercel
+there are no sandbox credentials, so it runs as a child process of the dev
+server instead — a convenience, not isolation, and `TEST_RUNNER=local` is
+refused in a deployment.
+
+| Variable | Purpose |
+|---|---|
+| `TEST_RUNNER` | `sandbox` or `local`. Defaults to `sandbox` on Vercel, `local` off it. |
+| `TEST_RUNNER_BASE_URL` | The URL a run calls back on; defaults to `NEXT_PUBLIC_SITE_URL`. A sandbox is a separate machine, so exercising that driver from a laptop needs a tunnel — pointing it at `localhost` fails before the run starts rather than during it. |
+
+The sandbox holds two credentials, both minted for one run and dead when it
+ends: an application API key for `/api/v1`, and a signed token for
+`/api/testing/control`, which covers what the public API deliberately does not —
+creating a test user, granting a plan without paying, moving a clock. Every
+control operation resolves its target through `requireTestUser`, so a suite
+naming a real subscriber is refused server-side. Users a run creates are deleted
+when it finishes unless it calls `rx.keepTestUsers()`.
+
+Starting a run and watching one are separate: the server action queues it and
+whoever displays it claims it with a conditional update, so the tab, the chat
+card, and a reload all follow the same event log without racing to execute it.
+
+Events carry a sequence number assigned by the single claiming executor, not
+derived from `max(seq) + 1` per write. A run emits its lines in bursts, and
+deriving the number per call is a read-modify-write that two concurrent appends
+both win — which collides on the unique index and, before this was fixed, left
+the run sitting at "running" forever.
 
 ## The assistant
 
