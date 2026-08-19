@@ -383,6 +383,120 @@ declare global {
     name: string;
     /** The allowance when no plan or override says otherwise. null is unlimited. */
     defaultLimit: number | null;
+    /** One of never, rolling_window, calendar_period, billing_period. */
+    resetPolicy: string;
+    /** Size of a rolling or calendar window. null for other policies. */
+    resetIntervalCount: number | null;
+    /** hour, day, week, or month. null for policies without an interval. */
+    resetIntervalUnit: string | null;
+  }
+
+  /** One application coupon and the restrictions a suite can exercise. */
+  interface RxCatalogCoupon {
+    /** Coupon database id. */
+    id: string;
+    /** Normalized code a buyer enters. */
+    code: string;
+    /** Display name. */
+    name: string;
+    /** Longer copy, if configured. */
+    description: string | null;
+    /** percent or amount. */
+    discountType: string;
+    /** Hundredths of a percent. null for amount coupons. */
+    percentBasisPoints: number | null;
+    /** Fixed discount in minor units. null for percentage coupons. */
+    amountOffCents: number | null;
+    /** Lowercase ISO currency code. */
+    currency: string;
+    /** Maximum discount per charge in minor units, or null. */
+    maxDiscountCents: number | null;
+    /** once, repeating, or forever. */
+    duration: string;
+    /** Number of discounted months for a repeating coupon. */
+    durationInMonths: number | null;
+    /** all or selected catalog items. */
+    appliesTo: string;
+    /** Whether only explicitly selected users may redeem it. */
+    restrictToUsers: boolean;
+    /** Total allowed uses, or null when unlimited. */
+    maxRedemptions: number | null;
+    /** Uses allowed per user, or null when unlimited. */
+    maxRedemptionsPerUser: number | null;
+    /** Required order subtotal in minor units, or null. */
+    minimumAmountCents: number | null;
+    /** Whether the user must have no prior purchase. */
+    firstTimeOnly: boolean;
+    /** ISO timestamp when redemption starts, or null. */
+    startsAt: string | null;
+    /** ISO timestamp after which redemption is refused, or null. */
+    redeemBy: string | null;
+    /** draft or active. Archived coupons are omitted. */
+    status: string;
+    /** Live reservations plus completed redemptions. */
+    redemptionsUsed: number;
+    /** Completed redemptions only. */
+    redemptionsRedeemed: number;
+  }
+
+  /** A plan or topup passed to coupon validation and reservation. */
+  interface RxCouponTargetInput {
+    /** Which catalog collection owns the id. */
+    kind: "plan" | "topup";
+    /** Id from 'rx.config.plans()' or 'rx.config.topups()'. */
+    id: string;
+  }
+
+  /** The public coupon validator's stable result shape. */
+  interface RxCouponValidation {
+    /** Whether the code can be used by this user on this target now. */
+    valid: boolean;
+    /** Normalized coupon code, or null when it was not found. */
+    code: string | null;
+    /** Coupon display name, or null when it was not found. */
+    name: string | null;
+    /** Coupon description, or null. */
+    description: string | null;
+    /** Human-readable discount and duration. */
+    terms: string | null;
+    /** once, repeating, or forever, or null when not found. */
+    duration: string | null;
+    /** Discounted months for a repeating coupon. */
+    durationInMonths: number | null;
+    /** Discount on the first charge in minor units. 0 when refused. */
+    discountCents: number;
+    /** Price after discount, or null when the code was not found. */
+    totalCents: number | null;
+    /** Lowercase ISO currency code, or null when not found. */
+    currency: string | null;
+    /** Whether the configured maximum, rather than the percent, set the discount. */
+    capped: boolean;
+    /** Buyer-facing refusal reason, or null when valid. */
+    reason: string | null;
+    /** Machine-readable reasons such as expired or user_limit_reached. */
+    blockers: string[];
+  }
+
+  /** A test-only checkout hold used to exercise redemption limits without Stripe. */
+  interface RxCouponReservation {
+    /** Whether a use was held. */
+    reserved: boolean;
+    /** Redemption id when held, otherwise null. */
+    reservationId: string | null;
+    /** Normalized code. */
+    code: string;
+    /** Buyer-facing refusal reason, or null when reserved. */
+    reason: string | null;
+    /** Machine-readable reasons such as fully_redeemed. */
+    blockers: string[];
+    /** Discount on the first charge in minor units. */
+    discountCents: number;
+    /** Price after discount, or null when the code could not be evaluated. */
+    totalCents: number | null;
+    /** Lowercase ISO currency code, or null when the code was not found. */
+    currency: string | null;
+    /** Whether the coupon's maximum discount capped a percentage. */
+    capped: boolean;
   }
 
   /** A disposable user. Pass its 'rxlabUserId' to everything else. */
@@ -495,12 +609,25 @@ declare global {
     blockedBy: RxBlockedBy[] | null;
   }
 
-  /** The subscription a plan grant created. */
+  /** Options for granting a test subscription. */
+  interface RxPlanGrantOptions {
+    /**
+     * Subscription state to create. Defaults to active. A trialing grant uses
+     * the plan's configured trial length and fails when trialDays is zero.
+     */
+    status?: "active" | "trialing";
+  }
+
+  /** The subscription a plan grant created or updated. */
   interface RxPlanGrant {
-    /** Id of the new subscription. */
+    /** Id of the synthetic subscription. */
     subscriptionId: string;
     /** Key of the plan granted. */
     planKey: string;
+    /** The state applied to the subscription. */
+    status: "active" | "trialing";
+    /** ISO timestamp when this active period or trial ends. */
+    currentPeriodEnd: string | null;
   }
 
   /** Confirmation that a subscription was cancelled. */
@@ -537,6 +664,8 @@ declare global {
   interface RxClock {
     /** Milliseconds ahead of real time. Negative is in the past. */
     offsetMs: number;
+    /** ISO timestamp for the user's simulated current time. */
+    now: string;
   }
 
   /**
@@ -551,6 +680,8 @@ declare global {
     plans(): Promise<RxCatalogPlan[]>;
     /** Active topup packs. */
     topups(): Promise<RxCatalogTopup[]>;
+    /** Draft and active coupons, including current usage counts. */
+    coupons(): Promise<RxCatalogCoupon[]>;
     /** Subscription roles. */
     roles(): Promise<RxRole[]>;
     /** Balance units. */
@@ -588,6 +719,41 @@ declare global {
       amount?: number,
       options?: RxUsageOptions,
     ): Promise<RxUsageResult>;
+  }
+
+  /** Coupon preview and test-only reservation operations. */
+  interface RxCouponsApi {
+    /**
+     * Validate a code through the public API without consuming a use.
+     *
+     * The test user's simulated clock is honored, so moving it can exercise a
+     * future start or expiry without waiting.
+     *
+     * @param rxlabUserId The test user trying the code.
+     * @param code The coupon code, case-insensitive.
+     * @param target A plan or topup id from 'rx.config'.
+     */
+    validate(
+      rxlabUserId: string,
+      code: string,
+      target: RxCouponTargetInput,
+    ): Promise<RxCouponValidation>;
+
+    /**
+     * Atomically hold one use as opening Checkout would, without calling Stripe.
+     *
+     * Reservations count against total and per-user limits. The created row is
+     * deleted with the test user at run cleanup.
+     *
+     * @param rxlabUserId The test user reserving the code.
+     * @param code The coupon code, case-insensitive.
+     * @param target A plan or topup id from 'rx.config'.
+     */
+    reserve(
+      rxlabUserId: string,
+      code: string,
+      target: RxCouponTargetInput,
+    ): Promise<RxCouponReservation>;
   }
 
   /** Reading and moving balances. */
@@ -677,8 +843,13 @@ declare global {
      *
      * @param rxlabUserId The user to subscribe.
      * @param planKey From 'rx.config.plans()'.
+     * @param options Use trialing to exercise the plan's trial allowance.
      */
-    grantPlan(rxlabUserId: string, planKey: string): Promise<RxPlanGrant>;
+    grantPlan(
+      rxlabUserId: string,
+      planKey: string,
+      options?: RxPlanGrantOptions,
+    ): Promise<RxPlanGrant>;
 
     /**
      * Cancel an active subscription.
@@ -765,6 +936,20 @@ declare global {
     setClock(rxlabUserId: string, offsetMs: number): Promise<RxClock>;
 
     /**
+     * Put this user's clock at an absolute time.
+     *
+     * Useful with a coupon's 'startsAt' or 'redeemBy'. Prefer a point safely on
+     * one side of the boundary rather than the exact millisecond.
+     *
+     * @param rxlabUserId The user whose clock moves.
+     * @param at An ISO timestamp, epoch milliseconds, or Date.
+     */
+    setTime(
+      rxlabUserId: string,
+      at: string | number | Date,
+    ): Promise<RxClock>;
+
+    /**
      * Jump the clock forward from wherever it is. Negative goes back.
      *
      * @param rxlabUserId The user whose clock moves.
@@ -808,6 +993,9 @@ declare global {
 
     /** Reading and reporting metered usage. */
     usage: RxUsageApi;
+
+    /** Coupon validation and deterministic redemption-limit testing. */
+    coupons: RxCouponsApi;
 
     /** Reading and moving balances. */
     balances: RxBalancesApi;

@@ -46,6 +46,13 @@ export function idempotencyScope(mode: StripeMode): string {
   return mode === "sandbox" ? "sandbox:" : "";
 }
 
+/** The column holding a coupon's mirrored Stripe Coupon id for `mode`. */
+export function stripeCouponColumns(mode: StripeMode, couponId: string) {
+  return mode === "sandbox"
+    ? { stripeSandboxCouponId: couponId }
+    : { stripeCouponId: couponId };
+}
+
 type StripePointers = Pick<
   Plan | TopupProduct,
   "stripeProductId" | "stripePriceId" | "stripeSandboxProductId" | "stripeSandboxPriceId"
@@ -56,6 +63,13 @@ export function stripePointers(row: StripePointers, mode: StripeMode) {
   return mode === "sandbox"
     ? { productId: row.stripeSandboxProductId, priceId: row.stripeSandboxPriceId }
     : { productId: row.stripeProductId, priceId: row.stripePriceId };
+}
+
+/** The column update that stores a Product before its Price exists. */
+export function stripeProductColumns(mode: StripeMode, productId: string) {
+  return mode === "sandbox"
+    ? { stripeSandboxProductId: productId }
+    : { stripeProductId: productId };
 }
 
 /** The column update that stores a freshly minted pair for `mode`. */

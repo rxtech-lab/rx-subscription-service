@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { startTestPlanCheckoutAction } from "@/app/actions/test-checkout";
 import { ActionForm } from "@/components/forms/action-form";
-import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/primitives";
+import { Badge, Card, CardHeader, EmptyState, Input } from "@/components/ui/primitives";
 import { sandboxConfigured } from "@/lib/stripe/client";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
 import { listPurchasablePlans } from "@/lib/subscription/subscriptions";
@@ -79,6 +79,12 @@ export default async function TestPlansPage({
                     className="shrink-0"
                   >
                     <input type="hidden" name="planId" value={plan.id} />
+                    <Input
+                      name="couponCode"
+                      placeholder="Coupon code"
+                      aria-label={`Coupon code for ${plan.name}`}
+                      className="w-40 uppercase"
+                    />
                   </ActionForm>
                 )}
               </li>

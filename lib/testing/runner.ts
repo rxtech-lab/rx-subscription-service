@@ -10,12 +10,10 @@ import { localDriver } from "./drivers/local";
 import { sandboxDriver } from "./drivers/sandbox";
 import type { RunDriver } from "./drivers/types";
 import { parseRunLine } from "./protocol";
-import { createRun, failRun, recordEvent } from "./runs";
+import { createRun, failRun, recordEvent, RUN_TIMEOUT_MS } from "./runs";
 import { requireTestSuite } from "./suites";
 import { signControlToken } from "./token";
 
-/** A whole suite, not one test — the harness enforces its own per-test limit. */
-export const RUN_TIMEOUT_MS = 4 * 60_000;
 const TEST_TIMEOUT_MS = 30_000;
 
 let harnessCache: string | null = null;

@@ -41,6 +41,7 @@ export async function startTestSubscriptionAction(
         applicationId,
         user,
         planId: plan.id,
+        couponCode: text(formData, "couponCode"),
         successUrl: urls.successUrl,
         cancelUrl: urls.cancelUrl,
       });

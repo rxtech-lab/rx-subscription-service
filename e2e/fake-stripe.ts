@@ -3,6 +3,7 @@ import { E2E_STRIPE_URL } from "./fixtures";
 
 const port = Number(new URL(E2E_STRIPE_URL).port);
 let sequence = 0;
+const coupons = new Map<string, Record<string, unknown>>();
 
 const invoices = Array.from({ length: 12 }, (_, index) => {
   const ordinal = index + 1;
@@ -70,11 +71,49 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  request.resume();
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const form = new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 
   sequence += 1;
   const url = new URL(request.url ?? "/", E2E_STRIPE_URL);
   const path = url.pathname;
+  const couponId = path.startsWith("/v1/coupons/")
+    ? decodeURIComponent(path.slice("/v1/coupons/".length))
+    : null;
+  const couponMetadata = Object.fromEntries(
+    [...form.entries()]
+      .filter(([key]) => key.startsWith("metadata[") && key.endsWith("]"))
+      .map(([key, value]) => [key.slice(9, -1), value]),
+  );
+  let couponPayload: Record<string, unknown> | null = null;
+  if (request.method === "POST" && path === "/v1/coupons") {
+    const id = form.get("id") ?? `coupon_e2e_${sequence}`;
+    couponPayload = {
+      id,
+      object: "coupon",
+      name: form.get("name"),
+      metadata: couponMetadata,
+    };
+    coupons.set(id, couponPayload);
+  } else if (couponId && request.method === "GET") {
+    couponPayload = coupons.get(couponId) ?? null;
+  } else if (couponId && request.method === "POST") {
+    const existing = coupons.get(couponId) ?? {
+      id: couponId,
+      object: "coupon",
+    };
+    couponPayload = {
+      ...existing,
+      ...(form.has("name") ? { name: form.get("name") } : {}),
+      ...(Object.keys(couponMetadata).length > 0
+        ? { metadata: couponMetadata }
+        : {}),
+    };
+    coupons.set(couponId, couponPayload);
+  }
   const payload =
     request.method === "GET" && path === "/v1/invoices"
       ? invoicePage(url)
@@ -84,6 +123,8 @@ const server = createServer(async (request, response) => {
         ? { id: `price_e2e_${sequence}`, object: "price" }
         : request.method === "POST" && path === "/v1/customers"
           ? { id: `cus_e2e_${sequence}`, object: "customer" }
+        : couponPayload
+          ? couponPayload
         : request.method === "POST" && path === "/v1/checkout/sessions"
           ? {
               id: `cs_test_e2e_${sequence}`,
@@ -97,7 +138,15 @@ const server = createServer(async (request, response) => {
 
   if (!payload) {
     response.writeHead(404, { "content-type": "application/json" });
-    response.end(JSON.stringify({ error: { message: "Unhandled E2E Stripe route" } }));
+    response.end(
+      JSON.stringify({
+        error: {
+          type: "invalid_request_error",
+          code: couponId ? "resource_missing" : undefined,
+          message: "Unhandled E2E Stripe route",
+        },
+      }),
+    );
     return;
   }
 

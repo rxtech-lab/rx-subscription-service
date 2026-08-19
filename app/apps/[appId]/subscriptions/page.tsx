@@ -12,6 +12,7 @@ import {
   CardHeader,
   EmptyState,
   Field,
+  Input,
   Select,
   Table,
   Td,
@@ -141,6 +142,13 @@ export default async function SubscriptionsPage({
                           </option>
                         ))}
                       </Select>
+                    </Field>
+                    <Field label="Coupon code" hint="Optional; belongs to this app.">
+                      <Input
+                        name="couponCode"
+                        placeholder="LAUNCH25"
+                        className="uppercase"
+                      />
                     </Field>
                     <p className="text-xs leading-5 text-slate-500">
                       {mode === "test"

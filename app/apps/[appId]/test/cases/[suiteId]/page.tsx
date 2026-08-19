@@ -7,7 +7,8 @@ import { SuiteDetail } from "@/components/testing/suite-detail";
 import { FormDialog } from "@/components/ui/form-dialog";
 import { Field, Input } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
-import { listRuns } from "@/lib/testing/runs";
+import { NotFoundError } from "@/lib/subscription/shared";
+import { listRuns, readRunSnapshot, type RunSnapshot } from "@/lib/testing/runs";
 import { getTestSuite } from "@/lib/testing/suites";
 import { formatDate } from "@/lib/utils";
 
@@ -24,9 +25,23 @@ export default async function TestSuitePage({
   const query = await searchParams;
   const requestedRun = typeof query.run === "string" ? query.run : undefined;
 
-  // Reopening a suite should show where it last got to, not an empty panel.
+  // Reopening a suite should show where it last got to, not an empty panel —
+  // so the run is read here rather than fetched again from the browser. A
+  // finished one is then on screen in the first paint, which is the difference
+  // between reading a result and appearing to start one.
   const [latest] = requestedRun ? [] : await listRuns(appId, { suiteId, limit: 1 });
   const runId = requestedRun ?? latest?.id;
+  let initialRun: RunSnapshot | null = null;
+  if (runId) {
+    // `?run=` is whatever was in the URL; a stale link is not an error page.
+    try {
+      const snapshot = await readRunSnapshot(appId, runId);
+      // A valid run from another suite in the same app is stale here too.
+      initialRun = snapshot.run.suiteId === suite.id ? snapshot : null;
+    } catch (error) {
+      if (!(error instanceof NotFoundError)) throw error;
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -89,7 +104,7 @@ export default async function TestSuitePage({
         suiteId={suite.id}
         suiteName={suite.name}
         initialCode={suite.code}
-        initialRunId={runId}
+        initialRun={initialRun}
       />
     </div>
   );

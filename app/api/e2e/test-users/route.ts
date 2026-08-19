@@ -4,6 +4,7 @@ import { e2eNotFound, isAuthorizedE2ERequest } from "@/lib/e2e/request";
 import { mintTestSession } from "@/lib/test-session";
 import {
   createTestUser,
+  setTestUserClock,
   setTestUserRoles,
   setTestUserUsageLimit,
 } from "@/lib/subscription/test-users";
@@ -17,6 +18,7 @@ const schema = z.object({
       limitValue: z.number().int().nonnegative().nullable(),
     })
     .optional(),
+  clockOffsetMs: z.number().int().optional(),
 });
 
 /**
@@ -53,6 +55,15 @@ export async function POST(request: Request) {
         appUserId: user.id,
         usageItemId: input.usageLimit.usageItemId,
         limitValue: input.usageLimit.limitValue,
+        actor,
+      });
+    }
+
+    if (input.clockOffsetMs !== undefined) {
+      await setTestUserClock({
+        applicationId: context.application.id,
+        appUserId: user.id,
+        offsetMs: input.clockOffsetMs,
         actor,
       });
     }

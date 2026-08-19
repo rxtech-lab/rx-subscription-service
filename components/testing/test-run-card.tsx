@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2, Loader2, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import type { TestOutline } from "@/lib/testing/protocol";
+import type { RunSnapshot } from "@/lib/testing/runs";
 import { cn } from "@/lib/utils";
 import { WorkflowDiagram } from "./workflow-diagram";
 import { useTestRun, type TestRunView } from "./use-test-run";
@@ -14,6 +15,11 @@ import { useTestRun, type TestRunView } from "./use-test-run";
  * triggered from chat is not a different kind of run, and watching it should
  * not look like a different feature. `compact` only trims the chrome for the
  * narrower panel.
+ *
+ * Drawing and following are separate — `TestRunCardView` takes a view, and
+ * `TestRunCard` fetches one — because the suite editor already follows the run
+ * for its output panel. One `useTestRun` per run means one poll loop, not one
+ * per component that happens to show it.
  */
 
 function summaryTone(status: string) {
@@ -52,15 +58,22 @@ function headline(view: TestRunView, suiteName?: string): string {
   }`;
 }
 
+/** Follows the run itself. For a caller that already has a view, see below. */
 export function TestRunCard({
   runId,
-  suiteName,
-  applicationId,
-  compact = false,
-  outlineFallback,
-  onDismiss,
-}: {
+  initial,
+  ...rest
+}: Omit<TestRunCardViewProps, "view"> & {
   runId: string;
+  /** A run already read on the server, so a finished one needs no request. */
+  initial?: RunSnapshot | null;
+}) {
+  const view = useTestRun(runId, { initial });
+  return <TestRunCardView view={view} {...rest} />;
+}
+
+interface TestRunCardViewProps {
+  view: TestRunView;
   suiteName?: string;
   /** When given, the card links through to the suite in the console. */
   applicationId?: string;
@@ -77,8 +90,16 @@ export function TestRunCard({
    * for the second it takes a sandbox to boot.
    */
   outlineFallback?: TestOutline;
-}) {
-  const view = useTestRun(runId);
+}
+
+export function TestRunCardView({
+  view,
+  suiteName,
+  applicationId,
+  compact = false,
+  outlineFallback,
+  onDismiss,
+}: TestRunCardViewProps) {
   const run = view.run;
   const status = run?.status ?? "queued";
   const failures = view.cases.filter((entry) => entry.status === "failed");

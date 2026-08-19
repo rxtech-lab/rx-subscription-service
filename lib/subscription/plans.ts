@@ -240,6 +240,7 @@ type EntitlementFields = {
   permissionTargetIds?: string[] | null;
   usageItemId?: string | null;
   limitValue?: number | null;
+  trialLimitValue?: number | null;
   unitId?: string | null;
   amount?: number | null;
   featureKey?: string | null;
@@ -293,6 +294,7 @@ function entitlementColumnsForKind(input: EntitlementFields) {
     permissionTargetIds: null,
     usageItemId: null,
     limitValue: null,
+    trialLimitValue: null,
     unitId: null,
     amount: null,
     featureKey: null,
@@ -316,6 +318,12 @@ function entitlementColumnsForKind(input: EntitlementFields) {
         ...empty,
         usageItemId: blankToNull(input.usageItemId),
         limitValue: input.limitValue ?? null,
+        // Existing callers only know about one allowance. Keep their trial
+        // behavior unchanged unless they explicitly provide a trial value.
+        trialLimitValue:
+          input.trialLimitValue === undefined
+            ? (input.limitValue ?? null)
+            : input.trialLimitValue,
       };
     case "balance_grant":
       return {
@@ -379,6 +387,9 @@ async function assertEntitlementShape(input: EntitlementFields) {
       }
       if (input.limitValue !== null && input.limitValue !== undefined) {
         assertNonNegativeInteger(input.limitValue, "limitValue");
+      }
+      if (input.trialLimitValue !== null && input.trialLimitValue !== undefined) {
+        assertNonNegativeInteger(input.trialLimitValue, "trialLimitValue");
       }
       return;
     }

@@ -46,9 +46,14 @@ and AI tool re-checks that before touching anything.
 | **Balance unit** | What you meter — points, credits, anything. Integer amounts, with an exact integer conversion to money. |
 | **Plan** | Monthly, quarterly, yearly, or one-time. Grants roles, permissions, usage allowances, and balances. |
 | **Topup** | A purchasable bundle of units, optionally gated behind a plan or role. |
+| **Coupon** | An application-scoped discount code for selected plans or topups, with optional user and redemption restrictions. |
 | **Subscription role** | What a subscriber *bought* — distinct from rxlab-auth's `oauth_client_roles`, which describe who someone *is*. |
 | **Permission** | A customizable action, serialized as `read:a:all` or `read:a:id1,id2` — the same syntax rxlab-auth uses. |
 | **Usage item** | Something counted per user, with its own reset schedule and overage policy. |
+
+Plan usage grants can set separate trial and non-trial allowances. The trial
+allowance applies only while the subscription status is `trialing`; existing
+grants continue to use their regular allowance for both states.
 
 ### Usage resets
 
@@ -83,7 +88,8 @@ Your applications talk to `/api/v1` with an application API key
 | `GET/POST /api/v1/usage` | Read or report metered usage |
 | `GET/POST /api/v1/balances` | Read, credit, or debit a balance |
 | `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility |
-| `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, or the billing portal |
+| `POST /api/v1/coupons/validate` | Validate an app-local coupon for a user and plan or topup before checkout |
+| `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, with an optional `couponCode`, or the billing portal |
 
 ```bash
 curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $KEY"
@@ -115,6 +121,20 @@ Two accounts run side by side: `live` for real subscribers and `sandbox` for
 test users. Stripe ids are per-account, so plans and topups store a second
 product/price pair for the sandbox; `lib/stripe/accounts.ts` owns which account
 a call belongs to and which columns go with it.
+
+### Coupons
+
+Coupon codes belong to one application even when several applications share a
+Stripe account. Checkout resolves a submitted `couponCode` against the calling
+application and applies the resulting Stripe Coupon directly; Stripe's
+account-wide promotion-code entry is intentionally not enabled.
+
+Coupons support fixed or percentage discounts, an optional maximum discount,
+one-time or repeating durations, selected plans/topups, user allow-lists,
+first-purchase and minimum-order rules, total/per-user redemption limits, and
+start/end dates. Uses are reserved atomically before Stripe Checkout is created,
+released when an uncompleted session expires, and settled idempotently from
+webhooks. The console and assistant use the same service-layer validation.
 
 ## Test users
 
@@ -170,6 +190,18 @@ suite("Topup eligibility", () => {
   });
 });
 ```
+
+Coupon suites can discover configured codes with `rx.config.coupons()`, preview
+one through the public API with `rx.coupons.validate()`, and atomically hold a
+use with `rx.coupons.reserve()`. The reservation follows Checkout's real limit
+logic without creating a Stripe session, so total and per-user redemption limits
+stay deterministic and the row disappears with the disposable test user.
+
+Test-user time is persisted in the database. `rx.testUsers.setTime()` moves to
+an absolute timestamp and `advanceClock()` jumps by milliseconds; both usage
+reset periods and coupon start/expiry windows read that simulated time. Leaving
+the suite detail page and reconnecting therefore reads the same clock and the
+same saved run/event history rather than restarting a timer in the browser.
 
 The panel beside the editor is a diagram of the file, scanned from the source as
 you type (`lib/testing/outline.ts`) and taken over by live status once a run

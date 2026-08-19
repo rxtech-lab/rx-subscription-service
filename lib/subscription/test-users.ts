@@ -180,6 +180,7 @@ export async function grantTestSubscription(input: {
   applicationId: string;
   appUserId: string;
   planId: string;
+  status?: "active" | "trialing";
   periodDays?: number;
   actor: Actor;
 }) {
@@ -192,7 +193,13 @@ export async function grantTestSubscription(input: {
     .limit(1);
   if (!plan) throw new NotFoundError("plan", input.planId);
 
-  const periodDays = input.periodDays ?? DEFAULT_PERIOD_DAYS;
+  const status = input.status ?? "active";
+  if (status === "trialing" && plan.trialDays <= 0) {
+    throw new ValidationError(`${plan.name} has no configured trial period`);
+  }
+
+  const periodDays =
+    input.periodDays ?? (status === "trialing" ? plan.trialDays : DEFAULT_PERIOD_DAYS);
   if (!Number.isSafeInteger(periodDays) || periodDays <= 0) {
     throw new ValidationError("periodDays must be a positive integer");
   }
@@ -204,7 +211,7 @@ export async function grantTestSubscription(input: {
     planId: plan.id,
     stripeSubscriptionId: `sub_test_${user.id}_${plan.id}`,
     stripeCustomerId: `cus_test_${user.id}`,
-    status: "active",
+    status,
     currentPeriodStart: now,
     currentPeriodEnd: new Date(now.getTime() + periodDays * 86_400_000),
     cancelAtPeriodEnd: false,
@@ -431,8 +438,8 @@ export async function increaseTestUserUsageLimit(input: {
  * Move a test user's clock, in milliseconds relative to real time.
  *
  * Nothing else moves: their subscription dates, ledger and audit rows stay on
- * the real timeline. What changes is which usage period `now` falls in, which
- * is exactly what a reset policy is made of.
+ * the real timeline. What changes is which usage period or coupon validity
+ * window `now` falls in.
  */
 export async function setTestUserClock(input: {
   applicationId: string;

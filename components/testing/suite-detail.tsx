@@ -6,9 +6,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveTestSuiteAction, startTestRunAction } from "@/app/actions/test-cases";
 import { Button } from "@/components/ui/primitives";
 import { parseOutline } from "@/lib/testing/outline";
+import type { RunSnapshot } from "@/lib/testing/runs";
 import { cn } from "@/lib/utils";
 import { SuiteEditor } from "./suite-editor";
-import { TestRunCard } from "./test-run-card";
+import { TestRunCardView } from "./test-run-card";
 import { useTestRun } from "./use-test-run";
 import { WorkflowDiagram } from "./workflow-diagram";
 
@@ -19,24 +20,28 @@ import { WorkflowDiagram } from "./workflow-diagram";
  * and the live state of the run once you press Run — deliberately the same
  * panel, because the thing worth watching during a run is the thing you were
  * just editing.
+ *
+ * The run shown on arrival comes in as `initialRun`, already read from the
+ * database by the page. Reopening a suite therefore paints the last result
+ * outright; only a run still in flight is followed over the network.
  */
 export function SuiteDetail({
   applicationId,
   suiteId,
   suiteName,
   initialCode,
-  initialRunId,
+  initialRun,
 }: {
   applicationId: string;
   suiteId: string;
   suiteName: string;
   initialCode: string;
-  initialRunId?: string;
+  initialRun?: RunSnapshot | null;
 }) {
   const router = useRouter();
   const [code, setCode] = useState(initialCode);
   const [saved, setSaved] = useState(initialCode);
-  const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
+  const [runId, setRunId] = useState<string | null>(initialRun?.run.id ?? null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{
     tone: "error" | "warn" | "ok";
@@ -44,7 +49,7 @@ export function SuiteDetail({
   } | null>(null);
   const [showLogs, setShowLogs] = useState(false);
 
-  const view = useTestRun(runId);
+  const view = useTestRun(runId, { initial: initialRun });
   const running = Boolean(view.run && !view.done);
   const dirty = code !== saved;
 
@@ -100,8 +105,10 @@ export function SuiteDetail({
   }, []);
 
   // The suites table shows each suite's latest outcome, so it is stale the
-  // moment a run finishes here.
-  const settled = useRef<string | null>(null);
+  // moment a run finishes here. The run the page arrived with is already
+  // accounted for — seeding the ref with it stops every reload from spending a
+  // round trip re-rendering the server component that just rendered.
+  const settled = useRef<string | null>(initialRun?.done ? initialRun.run.id : null);
   useEffect(() => {
     if (!view.done || !runId || settled.current === runId) return;
     settled.current = runId;
@@ -154,8 +161,8 @@ export function SuiteDetail({
 
         <aside className="flex w-80 shrink-0 flex-col overflow-y-auto bg-slate-50/50 p-3">
           {runId ? (
-            <TestRunCard
-              runId={runId}
+            <TestRunCardView
+              view={view}
               suiteName={suiteName}
               outlineFallback={staticOutline}
               onDismiss={dismissRun}

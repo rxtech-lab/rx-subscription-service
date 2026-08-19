@@ -3,6 +3,7 @@ import type { Actor } from "@/lib/subscription/shared";
 import {
   addPlanEntitlement,
   createPlan,
+  removePlanEntitlement,
   setPlanStatus,
   updatePlan,
 } from "@/lib/subscription/plans";
@@ -11,6 +12,12 @@ import {
   createRole,
   setRolePermissions,
 } from "@/lib/subscription/roles";
+import {
+  createCoupon,
+  deleteCoupon,
+  setCouponStatus,
+  updateCoupon,
+} from "@/lib/subscription/coupons";
 import { createBalanceUnit, setPointRate } from "@/lib/subscription/units";
 import { createUsageItem, updateUsageItem } from "@/lib/subscription/usage-items";
 import {
@@ -32,6 +39,7 @@ import { queueTestRun } from "@/lib/testing/runner";
 import {
   createTestSuite,
   describeMissingSuite,
+  editTestSuite,
   resolveTestSuite,
   updateTestSuite,
 } from "@/lib/testing/suites";
@@ -77,11 +85,68 @@ export async function executeWriteTool(input: {
           result: await setPlanStatus({ applicationId, actor, ...args }),
         };
       }
+      case "createCoupon": {
+        const args = parsed.data as typeof writeToolSchemas.createCoupon._output;
+        return {
+          ok: true,
+          result: await createCoupon({
+            applicationId,
+            actor,
+            ...args,
+            startsAt: args.startsAt ? new Date(args.startsAt) : null,
+            redeemBy: args.redeemBy ? new Date(args.redeemBy) : null,
+          }),
+        };
+      }
+      case "updateCoupon": {
+        const args = parsed.data as typeof writeToolSchemas.updateCoupon._output;
+        return {
+          ok: true,
+          result: await updateCoupon({
+            applicationId,
+            actor,
+            ...args,
+            startsAt:
+              args.startsAt === undefined
+                ? undefined
+                : args.startsAt === null
+                  ? null
+                  : new Date(args.startsAt),
+            redeemBy:
+              args.redeemBy === undefined
+                ? undefined
+                : args.redeemBy === null
+                  ? null
+                  : new Date(args.redeemBy),
+          }),
+        };
+      }
+      case "setCouponStatus": {
+        const args = parsed.data as typeof writeToolSchemas.setCouponStatus._output;
+        return {
+          ok: true,
+          result: await setCouponStatus({ applicationId, actor, ...args }),
+        };
+      }
+      case "deleteCoupon": {
+        const args = parsed.data as typeof writeToolSchemas.deleteCoupon._output;
+        await deleteCoupon({ applicationId, actor, ...args });
+        return { ok: true, result: { deleted: true, couponId: args.couponId } };
+      }
       case "addPlanEntitlement": {
         const args = parsed.data as typeof writeToolSchemas.addPlanEntitlement._output;
         return {
           ok: true,
           result: await addPlanEntitlement({ applicationId, actor, ...args }),
+        };
+      }
+      case "removePlanEntitlement": {
+        const args =
+          parsed.data as typeof writeToolSchemas.removePlanEntitlement._output;
+        await removePlanEntitlement({ applicationId, actor, ...args });
+        return {
+          ok: true,
+          result: { removed: true, entitlementId: args.entitlementId },
         };
       }
       case "createRole": {
@@ -246,6 +311,39 @@ export async function executeWriteTool(input: {
           code: args.code,
         });
         return { ok: true, result: { suiteId: created.id, name: created.name } };
+      }
+
+      case "editTestSuite": {
+        const args = parsed.data as typeof writeToolSchemas.editTestSuite._output;
+        const suite = await resolveTestSuite(applicationId, args.suiteId);
+        if (!suite) {
+          const missing = await describeMissingSuite(applicationId, args.suiteId);
+          return {
+            ok: false,
+            error: `${missing.error}${
+              missing.available.length > 0
+                ? ` Available: ${missing.available
+                    .map((entry) => `${entry.name} (${entry.suiteId})`)
+                    .join(", ")}`
+                : ""
+            }`,
+          };
+        }
+        const updated = await editTestSuite({
+          applicationId,
+          actor,
+          suiteId: suite.id,
+          edits: args.edits,
+        });
+        return {
+          ok: true,
+          result: {
+            suiteId: updated.id,
+            name: updated.name,
+            appliedEdits: args.edits.length,
+            lineCount: updated.code.split("\n").length,
+          },
+        };
       }
 
       case "runTestSuite": {

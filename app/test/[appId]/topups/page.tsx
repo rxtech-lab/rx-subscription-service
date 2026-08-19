@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { startTestTopupCheckoutAction } from "@/app/actions/test-checkout";
 import { ActionForm } from "@/components/forms/action-form";
-import { Badge, Card, CardHeader, EmptyState } from "@/components/ui/primitives";
+import { Badge, Card, CardHeader, EmptyState, Input } from "@/components/ui/primitives";
 import { sandboxConfigured } from "@/lib/stripe/client";
 import {
   checkTopupEligibility,
@@ -105,6 +105,12 @@ export default async function TestTopupsPage({
                     className="shrink-0"
                   >
                     <input type="hidden" name="topupId" value={product.id} />
+                    <Input
+                      name="couponCode"
+                      placeholder="Coupon code"
+                      aria-label={`Coupon code for ${product.name}`}
+                      className="w-40 uppercase"
+                    />
                   </ActionForm>
                 )}
               </li>

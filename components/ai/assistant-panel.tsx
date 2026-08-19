@@ -48,6 +48,7 @@ import {
 } from "@/components/ai/pinned-message-layout";
 import { TestRunCard } from "@/components/testing/test-run-card";
 import { Button } from "@/components/ui/primitives";
+import type { RunSnapshot } from "@/lib/testing/runs";
 import { cn } from "@/lib/utils";
 
 interface DisplayToolPart {
@@ -330,10 +331,18 @@ export function AssistantPanel({
   applicationId,
   applicationName,
   initialMessages,
+  runSnapshots,
 }: {
   applicationId: string;
   applicationName: string;
   initialMessages: UIMessage[];
+  /**
+   * The runs already mentioned in the stored transcript, read on the server.
+   * A card for a run that had finished by then draws itself from this and
+   * asks for nothing — the alternative being that opening the panel reopens
+   * every run in the history at once.
+   */
+  runSnapshots?: Record<string, RunSnapshot>;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -844,6 +853,7 @@ export function AssistantPanel({
                       <TestRunCard
                         key={index}
                         runId={output.result.runId}
+                        initial={runSnapshots?.[output.result.runId] ?? null}
                         suiteName={output.result.suiteName}
                         applicationId={applicationId}
                         compact

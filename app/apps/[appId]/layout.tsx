@@ -6,11 +6,13 @@ import { AssistantPanel } from "@/components/ai/assistant-panel";
 import { ApplicationNavigation } from "@/components/console/application-navigation";
 import { BrandMark } from "@/components/console/brand-mark";
 import { getAssistantMessages } from "@/lib/ai/conversations";
+import { testRunIdsInMessages } from "@/lib/ai/test-run-parts";
 import {
   ApplicationAccessError,
   requireApplicationAccess,
   requireConsoleUser,
 } from "@/lib/console/session";
+import { readRunSnapshots } from "@/lib/testing/runs";
 
 export default async function ApplicationLayout({
   children,
@@ -28,6 +30,13 @@ export default async function ApplicationLayout({
   }
 
   const initialAssistantMessages = await getAssistantMessages(appId, user.id);
+  // The transcript replays every run it ever triggered. Reading them here means
+  // a finished one is drawn from what is already on the page rather than from a
+  // request each card makes for itself every time the panel is opened.
+  const assistantRunSnapshots = await readRunSnapshots(
+    appId,
+    testRunIdsInMessages(initialAssistantMessages),
+  );
 
   return (
     <div className="min-h-full bg-[#f7f8fc]">
@@ -104,6 +113,7 @@ export default async function ApplicationLayout({
         applicationId={appId}
         applicationName={application.name}
         initialMessages={initialAssistantMessages}
+        runSnapshots={assistantRunSnapshots}
       />
     </div>
   );

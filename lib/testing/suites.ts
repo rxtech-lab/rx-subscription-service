@@ -10,6 +10,11 @@ import {
   type Actor,
 } from "@/lib/subscription/shared";
 import { enforceSuiteTypes, type SuiteDiagnostic } from "./typecheck";
+import {
+  applySuiteSourceEdits,
+  SuiteSourceEditError,
+  type SuiteSourceEdit,
+} from "./source-edits";
 
 /** A suite file is source text, so the only real limit is a sane one. */
 const MAX_CODE_LENGTH = 100_000;
@@ -187,6 +192,32 @@ export async function updateTestSuite(input: {
   });
 
   return { ...row, typeErrors };
+}
+
+/** Apply a compact source edit, then validate and persist the complete result. */
+export async function editTestSuite(input: {
+  applicationId: string;
+  actor: Actor;
+  suiteId: string;
+  edits: readonly SuiteSourceEdit[];
+}) {
+  const suite = await requireTestSuite(input.applicationId, input.suiteId);
+  let code: string;
+  try {
+    code = applySuiteSourceEdits(suite.code, input.edits);
+  } catch (error) {
+    if (error instanceof SuiteSourceEditError) {
+      throw new ValidationError(error.message);
+    }
+    throw error;
+  }
+
+  return updateTestSuite({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    suiteId: suite.id,
+    code,
+  });
 }
 
 export async function deleteTestSuite(input: {
