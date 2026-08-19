@@ -1,7 +1,7 @@
 export const DEFAULT_ASSISTANT_PANEL_WIDTH = 420;
 export const MIN_ASSISTANT_PANEL_WIDTH = 320;
-/** Leave enough of the page visible that the panel never covers the app. */
-const VIEWPORT_MARGIN = 96;
+/** Reserve room for the navigation column and a useful page-content column. */
+const WORKSPACE_RESERVED_WIDTH = 720;
 
 /** Keep the dragged width usable on both narrow laptops and wide displays. */
 export function clampAssistantPanelWidth(
@@ -12,7 +12,7 @@ export function clampAssistantPanelWidth(
 
   const maximum = Math.max(
     MIN_ASSISTANT_PANEL_WIDTH,
-    viewportWidth - VIEWPORT_MARGIN,
+    viewportWidth - WORKSPACE_RESERVED_WIDTH,
   );
   return Math.round(
     Math.min(maximum, Math.max(MIN_ASSISTANT_PANEL_WIDTH, width)),
