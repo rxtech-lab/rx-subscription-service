@@ -4,6 +4,8 @@ export const E2E_DATABASE_URL = "file:/tmp/rx-subscription-playwright.db";
 export const E2E_SECRET = "rx-subscription-playwright-only";
 export const E2E_API_KEY =
   "rxs_e2e000000000000000000000000000000000000000000000000000000000000";
+export const E2E_SANDBOX_API_KEY =
+  "rxs_sandbox_e2e000000000000000000000000000000000000000000000000000000000000";
 
 export const E2E_APPLICATION_ID = "e2e-app";
 export const E2E_UNIT_ID = "e2e-points";

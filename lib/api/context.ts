@@ -1,13 +1,20 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { applications, type Application } from "@/lib/db/schema";
+import {
+  applications,
+  appUsers,
+  balanceReservations,
+  type ApiEnvironment,
+  type Application,
+} from "@/lib/db/schema";
 import { ensureAppUser } from "@/lib/subscription/users";
 import { resolveApiKey } from "./keys";
 
 export interface ApiContext {
   application: Application;
   keyId: string;
+  environment: ApiEnvironment;
 }
 
 export class ApiError extends Error {
@@ -50,7 +57,11 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     throw new ApiError(403, "application_disabled", "Application is disabled");
   }
 
-  return { application, keyId: resolved.keyId };
+  return {
+    application,
+    keyId: resolved.keyId,
+    environment: resolved.environment,
+  };
 }
 
 /**
@@ -71,7 +82,38 @@ export async function resolveRequestUser(
     rxlabUserId,
     email: input.email ?? null,
     displayName: input.displayName ?? null,
+    isTest: context.environment === "sandbox",
   });
+}
+
+/**
+ * Reservation ids are opaque but still need an environment ownership check.
+ * This prevents a sandbox key from reading or mutating a production hold (and
+ * vice versa) when both environments belong to the same application.
+ */
+export async function requireApiReservation(
+  context: ApiContext,
+  reservationId: string,
+) {
+  const [reservation] = await db
+    .select({ id: balanceReservations.id })
+    .from(balanceReservations)
+    .innerJoin(appUsers, eq(balanceReservations.appUserId, appUsers.id))
+    .where(
+      and(
+        eq(balanceReservations.id, reservationId),
+        eq(balanceReservations.applicationId, context.application.id),
+        eq(appUsers.isTest, context.environment === "sandbox"),
+      ),
+    )
+    .limit(1);
+  if (!reservation) {
+    throw new ApiError(
+      404,
+      "reservation_not_found",
+      `Balance reservation not found: ${reservationId}`,
+    );
+  }
 }
 
 export function apiError(error: unknown): Response {

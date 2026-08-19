@@ -30,7 +30,11 @@ export async function GET(request: Request) {
 
     const reservation = await getBalanceReservationByIdempotencyKey(
       context.application.id,
-      apiReservationKey(context.application.id, parsed.data.idempotencyKey),
+      apiReservationKey(
+        context.application.id,
+        context.environment,
+        parsed.data.idempotencyKey,
+      ),
     );
     return Response.json({ reservation }, { headers: noStore });
   } catch (error) {

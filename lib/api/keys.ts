@@ -1,10 +1,22 @@
 import "server-only";
 import { and, desc, eq, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { applicationApiKeys } from "@/lib/db/schema";
+import {
+  API_ENVIRONMENTS,
+  applicationApiKeys,
+  type ApiEnvironment,
+} from "@/lib/db/schema";
 import { newId, NotFoundError, recordAudit, ValidationError, type Actor } from "@/lib/subscription/shared";
 
 const PREFIX = "rxs_";
+
+export function isApiEnvironment(value: string): value is ApiEnvironment {
+  return API_ENVIRONMENTS.some((environment) => environment === value);
+}
+
+export function apiKeySecretPrefix(environment: ApiEnvironment) {
+  return `${PREFIX}${environment}_`;
+}
 
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -20,7 +32,7 @@ export async function hashApiKey(value: string): Promise<string> {
 export const API_KEYS_PAGE_SIZE = 10;
 
 /**
- * Live keys only, newest first. Revoked keys — the ephemeral ones a test run
+ * Active keys only, newest first. Revoked keys — the ephemeral ones a test run
  * mints and throws away — are never listed, so the console shows nothing but
  * credentials that still work.
  */
@@ -42,6 +54,7 @@ export async function listApiKeys(
     const matches = or(
       like(applicationApiKeys.name, sql`${pattern} ESCAPE '\\'`),
       like(applicationApiKeys.keyPrefix, sql`${pattern} ESCAPE '\\'`),
+      like(applicationApiKeys.environment, sql`${pattern} ESCAPE '\\'`),
     );
     if (matches) filters.push(matches);
   }
@@ -61,6 +74,7 @@ export async function listApiKeys(
     .select({
       id: applicationApiKeys.id,
       name: applicationApiKeys.name,
+      environment: applicationApiKeys.environment,
       keyPrefix: applicationApiKeys.keyPrefix,
       lastUsedAt: applicationApiKeys.lastUsedAt,
       createdAt: applicationApiKeys.createdAt,
@@ -89,13 +103,18 @@ export async function listApiKeys(
 export async function createApiKey(input: {
   applicationId: string;
   name: string;
+  environment: ApiEnvironment;
   actor: Actor;
 }) {
   if (!input.name.trim()) throw new ValidationError("name is required");
+  if (!isApiEnvironment(input.environment)) {
+    throw new ValidationError("environment must be sandbox or production");
+  }
 
-  const secret = `${PREFIX}${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+  const secretPrefix = apiKeySecretPrefix(input.environment);
+  const secret = `${secretPrefix}${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
   const hashedKey = await hashApiKey(secret);
-  const keyPrefix = secret.slice(0, PREFIX.length + 8);
+  const keyPrefix = secret.slice(0, secretPrefix.length + 8);
 
   const [row] = await db
     .insert(applicationApiKeys)
@@ -103,6 +122,7 @@ export async function createApiKey(input: {
       id: newId(),
       applicationId: input.applicationId,
       name: input.name.trim(),
+      environment: input.environment,
       keyPrefix,
       hashedKey,
       createdAt: new Date(),
@@ -115,10 +135,21 @@ export async function createApiKey(input: {
     action: "api_key.create",
     entityType: "application_api_key",
     entityId: row.id,
-    after: { id: row.id, name: row.name, keyPrefix },
+    after: {
+      id: row.id,
+      name: row.name,
+      environment: row.environment,
+      keyPrefix,
+    },
   });
 
-  return { id: row.id, name: row.name, keyPrefix, secret };
+  return {
+    id: row.id,
+    name: row.name,
+    environment: row.environment,
+    keyPrefix,
+    secret,
+  };
 }
 
 /**
@@ -153,7 +184,12 @@ export async function deleteApiKey(input: {
     action: "api_key.delete",
     entityType: "application_api_key",
     entityId: input.keyId,
-    before: { id: before.id, name: before.name, keyPrefix: before.keyPrefix },
+    before: {
+      id: before.id,
+      name: before.name,
+      environment: before.environment,
+      keyPrefix: before.keyPrefix,
+    },
   });
 }
 
@@ -215,5 +251,9 @@ export async function resolveApiKey(secret: string) {
     .where(eq(applicationApiKeys.id, row.id))
     .catch(() => {});
 
-  return { applicationId: row.applicationId, keyId: row.id };
+  return {
+    applicationId: row.applicationId,
+    keyId: row.id,
+    environment: row.environment,
+  };
 }

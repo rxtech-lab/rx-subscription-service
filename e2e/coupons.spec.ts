@@ -9,6 +9,7 @@ import {
   E2E_BASE_URL,
   E2E_PLAN_ID,
   E2E_PLAN_USER,
+  E2E_SANDBOX_API_KEY,
   E2E_SECRET,
   E2E_STANDALONE_USER,
   E2E_UNIT_ID,
@@ -16,6 +17,7 @@ import {
 
 test.describe.serial("app-scoped coupons", () => {
   let api: APIRequestContext;
+  let sandboxApi: APIRequestContext;
   let topupId: string;
 
   test.beforeAll(async () => {
@@ -26,10 +28,17 @@ test.describe.serial("app-scoped coupons", () => {
         "X-E2E-Secret": E2E_SECRET,
       },
     });
+    sandboxApi = await createRequest.newContext({
+      baseURL: E2E_BASE_URL,
+      extraHTTPHeaders: {
+        "X-Api-Key": E2E_SANDBOX_API_KEY,
+        "X-E2E-Secret": E2E_SECRET,
+      },
+    });
   });
 
   test.afterAll(async () => {
-    await api.dispose();
+    await Promise.all([api.dispose(), sandboxApi.dispose()]);
   });
 
   test("creates an active code with target, audience, cap, and usage restrictions", async () => {
@@ -164,7 +173,7 @@ test.describe.serial("app-scoped coupons", () => {
       blockers: expect.arrayContaining(["not_started"]),
     });
 
-    const user = await api.post("/api/e2e/test-users", {
+    const user = await sandboxApi.post("/api/e2e/test-users", {
       data: {
         displayName: "Future coupon user",
         clockOffsetMs: 2 * 24 * 60 * 60_000,
@@ -173,7 +182,7 @@ test.describe.serial("app-scoped coupons", () => {
     expect(user.ok()).toBe(true);
     const { rxlabUserId } = (await user.json()) as { rxlabUserId: string };
 
-    const futureTime = await validate(api, {
+    const futureTime = await validate(sandboxApi, {
       rxlabUserId,
       code: "FUTURE20",
       topupId,
@@ -184,7 +193,7 @@ test.describe.serial("app-scoped coupons", () => {
       blockers: [],
     });
 
-    const expiredUser = await api.post("/api/e2e/test-users", {
+    const expiredUser = await sandboxApi.post("/api/e2e/test-users", {
       data: {
         displayName: "Expired coupon user",
         clockOffsetMs: 4 * 24 * 60 * 60_000,
@@ -195,7 +204,7 @@ test.describe.serial("app-scoped coupons", () => {
       (await expiredUser.json()) as { rxlabUserId: string }
     ).rxlabUserId;
 
-    const expired = await validate(api, {
+    const expired = await validate(sandboxApi, {
       rxlabUserId: expiredRxlabUserId,
       code: "FUTURE20",
       topupId,

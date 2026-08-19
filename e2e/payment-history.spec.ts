@@ -5,9 +5,9 @@ import {
   type Browser,
 } from "@playwright/test";
 import {
-  E2E_API_KEY,
   E2E_APPLICATION_ID,
   E2E_BASE_URL,
+  E2E_SANDBOX_API_KEY,
   E2E_SECRET,
   E2E_UNIT_ID,
 } from "./fixtures";
@@ -18,7 +18,7 @@ test("a test user can page through Stripe invoices and open one", async ({
   const api = await createRequest.newContext({
     baseURL: E2E_BASE_URL,
     extraHTTPHeaders: {
-      "X-Api-Key": E2E_API_KEY,
+      "X-Api-Key": E2E_SANDBOX_API_KEY,
       "X-E2E-Secret": E2E_SECRET,
     },
   });

@@ -8,6 +8,7 @@ import {
 } from "@/lib/api/context";
 import { getUsageItemByKey } from "@/lib/subscription/usage-items";
 import { getUsageStatus, recordUsage } from "@/lib/subscription/usage";
+import { apiUsageKey } from "@/lib/api/idempotency";
 
 const schema = z.object({
   rxlabUserId: z.string().min(1),
@@ -41,10 +42,15 @@ export async function POST(request: Request) {
 
     // Without a caller-supplied key each retry is a distinct event, which is the
     // correct default for fire-and-forget metering.
-    const idempotencyKey =
+    const callerIdempotencyKey =
       parsed.data.idempotencyKey ??
       request.headers.get("idempotency-key") ??
       `usage:${user.id}:${item.id}:${crypto.randomUUID()}`;
+    const idempotencyKey = apiUsageKey(
+      context.application.id,
+      context.environment,
+      callerIdempotencyKey,
+    );
 
     const result = await recordUsage({
       applicationId: context.application.id,

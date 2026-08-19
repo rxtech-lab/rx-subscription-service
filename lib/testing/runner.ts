@@ -156,6 +156,7 @@ export async function executeRun(runId: string): Promise<void> {
   const key = await createApiKey({
     applicationId: run.applicationId,
     name: `Test run ${runId.slice(0, 8)}`,
+    environment: "sandbox",
     actor,
   });
 

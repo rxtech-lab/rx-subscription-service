@@ -14,6 +14,7 @@ import {
   E2E_PLAN_USER,
   E2E_ROLE_ID,
   E2E_ROLE_KEY,
+  E2E_SANDBOX_API_KEY,
   E2E_STANDALONE_USER,
   E2E_UNIT_ID,
   E2E_USAGE_DEFAULT_LIMIT,
@@ -69,14 +70,26 @@ await db.insert(schema.applications).values({
   updatedAt: now,
 });
 
-await db.insert(schema.applicationApiKeys).values({
-  id: "e2e-api-key",
-  applicationId: E2E_APPLICATION_ID,
-  name: "Playwright",
-  keyPrefix: E2E_API_KEY.slice(0, 12),
-  hashedKey: await sha256(E2E_API_KEY),
-  createdAt: now,
-});
+await db.insert(schema.applicationApiKeys).values([
+  {
+    id: "e2e-api-key",
+    applicationId: E2E_APPLICATION_ID,
+    name: "Playwright production",
+    environment: "production",
+    keyPrefix: E2E_API_KEY.slice(0, 12),
+    hashedKey: await sha256(E2E_API_KEY),
+    createdAt: now,
+  },
+  {
+    id: "e2e-sandbox-api-key",
+    applicationId: E2E_APPLICATION_ID,
+    name: "Playwright sandbox",
+    environment: "sandbox",
+    keyPrefix: E2E_SANDBOX_API_KEY.slice(0, 21),
+    hashedKey: await sha256(E2E_SANDBOX_API_KEY),
+    createdAt: now,
+  },
+]);
 
 await db.insert(schema.balanceUnits).values({
   id: E2E_UNIT_ID,
