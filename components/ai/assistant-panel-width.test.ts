@@ -14,8 +14,12 @@ describe("clampAssistantPanelWidth", () => {
     expect(clampAssistantPanelWidth(120, 1440)).toBe(MIN_ASSISTANT_PANEL_WIDTH);
   });
 
-  it("leaves part of the page visible on wide drags", () => {
-    expect(clampAssistantPanelWidth(1400, 1440)).toBe(1344);
+  it("leaves room for navigation and useful page content on wide drags", () => {
+    expect(clampAssistantPanelWidth(1400, 1440)).toBe(720);
+  });
+
+  it("allows a wider agent column when the workspace has room", () => {
+    expect(clampAssistantPanelWidth(1400, 1920)).toBe(1200);
   });
 
   it("prefers the minimum when the viewport is smaller than it", () => {

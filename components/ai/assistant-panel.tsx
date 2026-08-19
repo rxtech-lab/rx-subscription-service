@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   ChevronDown,
   Loader2,
+  PanelRightClose,
   Send,
+  Sparkles,
   Square,
   Trash2,
   X,
@@ -67,6 +69,8 @@ interface ConfirmationInput {
 const PINNED_MESSAGE_TOP_INSET = 16;
 const PANEL_WIDTH_STORAGE_KEY = "assistant-panel-width";
 const PANEL_WIDTH_KEYBOARD_STEP = 24;
+const DESKTOP_PANEL_MEDIA_QUERY = "(min-width: 80rem)";
+const MAX_WORKSPACE_WIDTH = 1920;
 /** Slack in pixels before the transcript counts as scrolled away from the end. */
 const SCROLL_TO_BOTTOM_THRESHOLD = 48;
 const SCROLL_KEYS = new Set([
@@ -345,7 +349,9 @@ export function AssistantPanel({
   runSnapshots?: Record<string, RunSnapshot>;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(true);
+  const [desktopViewport, setDesktopViewport] = useState(false);
   const [draft, setDraft] = useState("");
   const [clearing, setClearing] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
@@ -353,20 +359,14 @@ export function AssistantPanel({
     null,
   );
   const [bottomSpacing, setBottomSpacing] = useState(0);
-  // The panel is closed on first render, so reading the stored width here
-  // cannot desync hydration.
   // Writes already in the stored conversation shaped the page that just
   // rendered, so only later ones should trigger a refresh.
   const [refreshedToolCalls] = useState(
     () => new Set(completedWriteToolCallIds(initialMessages)),
   );
-  const [panelWidth, setPanelWidth] = useState(() => {
-    if (typeof window === "undefined") return DEFAULT_ASSISTANT_PANEL_WIDTH;
-    const stored = window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
-    return stored
-      ? clampAssistantPanelWidth(Number(stored), window.innerWidth)
-      : DEFAULT_ASSISTANT_PANEL_WIDTH;
-  });
+  // Restore the stored width after hydration so local storage never affects
+  // the server-rendered shell.
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_ASSISTANT_PANEL_WIDTH);
   const [resizing, setResizing] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   // Set once the reader scrolls by hand, so streaming never yanks the
@@ -376,6 +376,8 @@ export function AssistantPanel({
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const pinnedUserMessageRef = useRef<HTMLDivElement>(null);
   const bottomSpacerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const panelWidthRef = useRef(panelWidth);
 
   const {
     messages,
@@ -398,7 +400,13 @@ export function AssistantPanel({
   });
 
   const busy = status === "streaming" || status === "submitted";
+  const panelActive = desktopViewport ? !desktopCollapsed : mobileOpen;
   const pendingApproval = findLatestPendingApproval(messages);
+  const agentStatus = busy
+    ? { label: "Working", color: "animate-pulse bg-amber-400" }
+    : pendingApproval
+      ? { label: "Needs approval", color: "bg-amber-400" }
+      : { label: "Ready", color: "bg-emerald-500" };
   const messagesThroughPendingApproval = pendingApproval
     ? messages.slice(0, pendingApproval.messageIndex + 1)
     : [];
@@ -409,7 +417,7 @@ export function AssistantPanel({
     });
 
   const updatePinnedLayout = useCallback(() => {
-    if (!open || !pinnedUserMessageId) return;
+    if (!panelActive || !pinnedUserMessageId) return;
 
     const viewport = messagesViewportRef.current;
     const pinnedMessage = pinnedUserMessageRef.current;
@@ -451,7 +459,7 @@ export function AssistantPanel({
       currentSpacing === requiredSpacing ? currentSpacing : requiredSpacing,
     );
     if (!readerScrolledRef.current) viewport.scrollTo({ top: targetScrollTop });
-  }, [messages, open, pinnedUserMessageId]);
+  }, [messages, panelActive, pinnedUserMessageId]);
 
   const updateScrollAffordance = useCallback(() => {
     const viewport = messagesViewportRef.current;
@@ -467,7 +475,7 @@ export function AssistantPanel({
   }, [bottomSpacing, status, updatePinnedLayout]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!panelActive) return;
 
     const viewport = messagesViewportRef.current;
     const content = messagesContentRef.current;
@@ -489,12 +497,12 @@ export function AssistantPanel({
       cancelAnimationFrame(animationFrame);
       observer.disconnect();
     };
-  }, [open, updatePinnedLayout, updateScrollAffordance]);
+  }, [panelActive, updatePinnedLayout, updateScrollAffordance]);
 
   // Opening lands on the latest message; after that the transcript only moves
   // when the reader asks it to.
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!panelActive) return;
 
     readerScrolledRef.current = false;
     const jumpToEnd = () => {
@@ -507,7 +515,30 @@ export function AssistantPanel({
     // Markdown and tool cards settle a frame later, changing the end position.
     const animationFrame = requestAnimationFrame(jumpToEnd);
     return () => cancelAnimationFrame(animationFrame);
-  }, [open, updateScrollAffordance]);
+  }, [panelActive, updateScrollAffordance]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(DESKTOP_PANEL_MEDIA_QUERY);
+    const updateViewport = () => setDesktopViewport(mediaQuery.matches);
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
+
+  useEffect(() => {
+    const animationFrame = requestAnimationFrame(() => {
+      const storedWidth = window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+      if (!storedWidth) return;
+
+      const next = clampAssistantPanelWidth(
+        Number(storedWidth),
+        Math.min(window.innerWidth, MAX_WORKSPACE_WIDTH),
+      );
+      panelWidthRef.current = next;
+      setPanelWidth(next);
+    });
+    return () => cancelAnimationFrame(animationFrame);
+  }, []);
 
   useEffect(() => {
     const unseenWrites = completedWriteToolCallIds(messages).filter(
@@ -522,17 +553,22 @@ export function AssistantPanel({
   }, [messages, refreshedToolCalls, router]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!panelActive) return;
 
-    // A narrower window shrinks the panel without overwriting the stored width.
+    // A narrower workspace shrinks the panel without overwriting the stored width.
     const handleViewportResize = () => {
-      setPanelWidth((width) =>
-        clampAssistantPanelWidth(width, window.innerWidth),
-      );
+      const workspaceWidth =
+        panelRef.current?.parentElement?.clientWidth ??
+        Math.min(window.innerWidth, MAX_WORKSPACE_WIDTH);
+      setPanelWidth((width) => {
+        const next = clampAssistantPanelWidth(width, workspaceWidth);
+        panelWidthRef.current = next;
+        return next;
+      });
     };
     window.addEventListener("resize", handleViewportResize);
     return () => window.removeEventListener("resize", handleViewportResize);
-  }, [open]);
+  }, [panelActive]);
 
   function storePanelWidth(width: number) {
     window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(width));
@@ -546,12 +582,17 @@ export function AssistantPanel({
 
   function resize(event: PointerEvent<HTMLDivElement>) {
     if (!resizing) return;
-    setPanelWidth(
-      clampAssistantPanelWidth(
-        window.innerWidth - event.clientX,
-        window.innerWidth,
-      ),
+    const panelRight =
+      panelRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+    const workspaceWidth =
+      panelRef.current?.parentElement?.clientWidth ??
+      Math.min(window.innerWidth, MAX_WORKSPACE_WIDTH);
+    const next = clampAssistantPanelWidth(
+      panelRight - event.clientX,
+      workspaceWidth,
     );
+    panelWidthRef.current = next;
+    setPanelWidth(next);
   }
 
   function endResize(event: PointerEvent<HTMLDivElement>) {
@@ -561,7 +602,7 @@ export function AssistantPanel({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     setResizing(false);
-    storePanelWidth(panelWidth);
+    storePanelWidth(panelWidthRef.current);
   }
 
   function resizeWithKeyboard(event: KeyboardEvent<HTMLDivElement>) {
@@ -577,8 +618,10 @@ export function AssistantPanel({
     event.preventDefault();
     const next = clampAssistantPanelWidth(
       panelWidth + step,
-      window.innerWidth,
+      panelRef.current?.parentElement?.clientWidth ??
+        Math.min(window.innerWidth, MAX_WORKSPACE_WIDTH),
     );
+    panelWidthRef.current = next;
     setPanelWidth(next);
     storePanelWidth(next);
   }
@@ -683,26 +726,43 @@ export function AssistantPanel({
     }
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Open subscription assistant"
-        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-900 text-white shadow-lg transition hover:bg-neutral-700"
-      >
-        <Bot className="h-5 w-5" />
-      </button>
-    );
-  }
-
   return (
+    <>
+      {!mobileOpen ? (
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open subscription assistant"
+          className="fixed bottom-6 right-6 z-40 flex size-12 items-center justify-center rounded-full bg-slate-950 text-white shadow-lg shadow-slate-950/20 transition hover:bg-slate-800 xl:hidden"
+        >
+          <Bot className="size-5" aria-hidden="true" />
+        </button>
+      ) : null}
+
+      {desktopCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setDesktopCollapsed(false)}
+          aria-label="Open subscription assistant"
+          className="fixed bottom-6 right-6 z-40 hidden size-12 items-center justify-center rounded-full bg-slate-950 text-white shadow-lg shadow-slate-950/20 transition hover:bg-slate-800 xl:flex"
+        >
+          <Bot className="size-5" aria-hidden="true" />
+        </button>
+      ) : null}
+
     <aside
+      ref={panelRef}
       style={
         { "--assistant-panel-width": `${panelWidth}px` } as CSSProperties
       }
       className={cn(
-        "fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-neutral-200 bg-white shadow-xl sm:w-[var(--assistant-panel-width)]",
+        "relative z-50 w-full flex-col overflow-hidden border-l border-slate-200/80 bg-white",
+        mobileOpen
+          ? "fixed inset-y-0 right-0 flex shadow-2xl"
+          : "hidden",
+        desktopCollapsed
+          ? "xl:hidden"
+          : "xl:sticky xl:top-0 xl:z-40 xl:flex xl:h-screen xl:w-[var(--assistant-panel-width)] xl:shrink-0 xl:self-start xl:shadow-none",
         resizing && "select-none",
       )}
     >
@@ -719,21 +779,35 @@ export function AssistantPanel({
         onPointerCancel={endResize}
         onKeyDown={resizeWithKeyboard}
         className={cn(
-          "absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize touch-none sm:block",
-          "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors hover:after:bg-neutral-400 focus-visible:after:bg-neutral-500",
-          resizing ? "after:bg-neutral-500" : "after:bg-transparent",
+          "absolute inset-y-0 -left-1 z-10 hidden w-2 cursor-col-resize touch-none xl:block",
+          "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:transition-colors hover:after:bg-blue-400 focus-visible:after:bg-blue-500",
+          resizing ? "after:bg-blue-500" : "after:bg-transparent",
         )}
       />
 
-      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold text-neutral-900">Assistant</p>
-          <p className="text-xs text-neutral-500">{applicationName}</p>
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-600/20">
+            <Bot className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-950">Workspace agent</p>
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+              <span
+                className={cn("size-1.5 shrink-0 rounded-full", agentStatus.color)}
+                aria-hidden="true"
+              />
+              <span className="shrink-0">{agentStatus.label}</span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">{applicationName}</span>
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
+            className="size-8"
             onClick={() => void clearConversation()}
             disabled={busy || clearing || messages.length === 0}
             aria-label="Clear assistant conversation"
@@ -743,22 +817,31 @@ export function AssistantPanel({
             ) : (
               <Trash2 className="size-3.5" aria-hidden="true" />
             )}
-            Clear
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setOpen(false)}
-            aria-label="Close assistant"
+            className="size-8 xl:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close workspace agent"
           >
             <X className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden size-8 xl:inline-flex"
+            onClick={() => setDesktopCollapsed(true)}
+            aria-label="Collapse workspace agent"
+          >
+            <PanelRightClose className="size-4" />
           </Button>
         </div>
       </header>
 
       <div
         ref={messagesViewportRef}
-        className="flex-1 overflow-y-auto px-4 pb-32 pt-4"
+        className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-4 pb-32 pt-5"
         aria-live="polite"
         onScroll={updateScrollAffordance}
         onWheel={noteReaderScroll}
@@ -768,16 +851,33 @@ export function AssistantPanel({
       >
         <div ref={messagesContentRef} className="space-y-4">
           {messages.length === 0 ? (
-            <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600">
-              <p className="font-medium text-neutral-900">
-                Manage subscription settings in plain language.
+            <div className="mx-auto flex max-w-sm flex-col items-center px-1 py-6 text-center">
+              <span className="flex size-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-600">
+                <Sparkles className="size-5" aria-hidden="true" />
+              </span>
+              <p className="mt-4 text-sm font-semibold text-slate-950">
+                Build your subscription setup
               </p>
-              <ul className="mt-2 space-y-1 text-xs">
-                <li>“Add a Pro plan at $19/month with a 14-day trial”</li>
-                <li>“Give Pro 10,000 points every month”</li>
-                <li>“Create an api_calls usage item that resets every 24 hours”</li>
-                <li>“Only let Pro subscribers buy the large points pack”</li>
-              </ul>
+              <p className="mt-1.5 text-xs leading-5 text-slate-500">
+                Ask the agent to create, connect, or explain anything in this
+                workspace.
+              </p>
+              <div className="mt-5 grid w-full gap-2 text-left">
+                {[
+                  "Add a Pro plan at $19/month with a 14-day trial",
+                  "Give Pro 10,000 points every month",
+                  "Create an api_calls usage item that resets every 24 hours",
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setDraft(suggestion)}
+                    className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-xs leading-5 text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-blue-200 hover:text-slate-950 hover:shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
 
@@ -791,11 +891,19 @@ export function AssistantPanel({
               }
               className="space-y-2"
             >
+              {message.role === "assistant" ? (
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                  <span className="flex size-5 items-center justify-center rounded-md bg-blue-100 text-blue-600">
+                    <Bot className="size-3" aria-hidden="true" />
+                  </span>
+                  Agent
+                </div>
+              ) : null}
               {message.parts.map((part, index) => {
                 if (part.type === "text") {
                   if (message.role !== "user") {
                     return (
-                      <div key={index} className="text-sm">
+                      <div key={index} className="w-full pr-0 text-sm">
                         <MarkdownMessage>{part.text}</MarkdownMessage>
                       </div>
                     );
@@ -804,7 +912,7 @@ export function AssistantPanel({
                   return (
                     <div
                       key={index}
-                      className="ml-auto w-fit max-w-[calc(100%-2rem)] break-words whitespace-pre-wrap rounded-xl bg-slate-900 px-3 py-2 text-sm text-white"
+                      className="ml-auto w-fit max-w-[calc(100%-2rem)] break-words whitespace-pre-wrap rounded-2xl rounded-br-md bg-blue-600 px-3.5 py-2.5 text-sm text-white shadow-sm shadow-blue-600/10"
                     >
                       {part.text}
                     </div>
@@ -980,14 +1088,14 @@ export function AssistantPanel({
           type="button"
           onClick={scrollToBottom}
           aria-label="Scroll to latest message"
-          className="absolute bottom-28 left-1/2 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-600 shadow-md transition hover:bg-neutral-50 hover:text-neutral-900"
+          className="absolute bottom-28 left-1/2 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50 hover:text-slate-950"
         >
           <ChevronDown className="size-4" aria-hidden="true" />
         </button>
       ) : null}
 
       <form
-        className="absolute inset-x-3 bottom-3 z-10 flex items-end gap-2 rounded-2xl border border-slate-200/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(241,245,249,0.42))] p-2 backdrop-blur-2xl backdrop-saturate-150"
+        className="absolute inset-x-3 bottom-3 z-10 flex items-end gap-2 rounded-2xl border border-slate-200/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(241,245,249,0.42))] p-2 backdrop-blur-2xl backdrop-saturate-150 transition focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-100/70"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
@@ -1009,16 +1117,16 @@ export function AssistantPanel({
               ? canResumePendingApproval
                 ? "Resume the pending change first"
                 : "Approve or reject the pending change first"
-              : "Ask for a change…"
+              : "Ask the agent…"
           }
-          className="min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+          className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
         />
         {busy ? (
           <Button
             type="button"
             size="icon"
             variant="secondary"
-            className="shadow-none"
+            className="size-9 shrink-0 shadow-none"
             onClick={() => void stopResponse()}
             aria-label="Stop response"
           >
@@ -1028,7 +1136,7 @@ export function AssistantPanel({
           <Button
             type="submit"
             size="icon"
-            className="shadow-none"
+            className="size-9 shrink-0 shadow-none"
             disabled={pendingApproval !== null || !draft.trim()}
             aria-label="Send message"
           >
@@ -1037,5 +1145,6 @@ export function AssistantPanel({
         )}
       </form>
     </aside>
+    </>
   );
 }
