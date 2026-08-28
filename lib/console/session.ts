@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq, inArray } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   auth,
   authStatus,
@@ -118,46 +118,31 @@ async function syncApplications(clients: OAuthClientSummary[]): Promise<void> {
   if (clients.length === 0) return;
   const now = new Date();
 
-  const existing = await db
-    .select({ id: applications.id })
-    .from(applications)
-    .where(
-      inArray(
-        applications.id,
-        clients.map((client) => client.id),
-      ),
-    );
-  const existingIds = new Set(existing.map((row) => row.id));
-
-  for (const client of clients) {
-    if (existingIds.has(client.id)) {
-      await db
-        .update(applications)
-        .set({
-          name: client.name,
-          description: client.description,
-          iconUrl: client.iconUrl,
-          updatedAt: now,
-          syncedAt: now,
-        })
-        .where(eq(applications.id, client.id));
-      continue;
-    }
-    await db
-      .insert(applications)
-      .values({
+  await db
+    .insert(applications)
+    .values(
+      clients.map((client) => ({
         id: client.id,
         name: client.name,
         description: client.description,
         iconUrl: client.iconUrl,
-        status: "active",
+        status: "active" as const,
         defaultCurrency: "usd",
         createdAt: now,
         updatedAt: now,
         syncedAt: now,
-      })
-      .onConflictDoNothing();
-  }
+      })),
+    )
+    .onConflictDoUpdate({
+      target: applications.id,
+      set: {
+        name: sql.raw("excluded.name"),
+        description: sql.raw("excluded.description"),
+        iconUrl: sql.raw("excluded.icon_url"),
+        updatedAt: sql.raw("excluded.updated_at"),
+        syncedAt: sql.raw("excluded.synced_at"),
+      },
+    });
 }
 
 export class ApplicationAccessError extends Error {
