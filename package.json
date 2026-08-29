@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "bun db:migrate && next build",
+    "build": "bun db:push && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -42,6 +42,7 @@
     "stripe": "^22.3.2",
     "tailwind-merge": "^3.6.0",
     "typescript": "^5",
+    "workflow": "^4.8.5",
     "zod": "4.4.3"
   },
   "devDependencies": {

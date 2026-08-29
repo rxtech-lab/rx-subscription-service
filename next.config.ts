@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 
 const nextConfig: NextConfig = {
   // Playwright runs beside a developer's existing `next dev` process. Keeping
@@ -19,4 +20,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// `withWorkflow` is what compiles the "use workflow" / "use step" directives in
+// `lib/workflows`. Without it those files are ordinary async functions and the
+// trial and expiry jobs silently lose their durability.
+export default withWorkflow(nextConfig);

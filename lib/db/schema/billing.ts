@@ -52,6 +52,14 @@ export const subscriptions = sqliteTable(
     entitlementSnapshot: text("entitlement_snapshot", { mode: "json" }).$type<
       Record<string, unknown>
     >(),
+    /**
+     * The trial-watch workflow run already scheduled for this subscription, and
+     * the trial end it was scheduled for. A trialing subscription re-syncs on
+     * every Stripe event, and `start()` has no idempotency key of its own, so
+     * without these a fresh durable timer would be enqueued per webhook.
+     */
+    trialWatchRunId: text("trial_watch_run_id"),
+    trialWatchEndsAt: integer("trial_watch_ends_at", { mode: "timestamp_ms" }),
     startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
     endedAt: integer("ended_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

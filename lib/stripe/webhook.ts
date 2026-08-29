@@ -21,6 +21,7 @@ import {
   upsertSubscriptionFromStripe,
 } from "@/lib/subscription/subscriptions";
 import { creditBalance, debitBalance } from "@/lib/subscription/users";
+import { scheduleTrialWatch } from "@/lib/workflows/schedule";
 import { referenceId, stripe, webhookSecretFor, type StripeMode } from "./client";
 
 /** A claim older than this is treated as a crashed attempt and retried. */
@@ -322,7 +323,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
   const currentPeriodEnd = toDate(item?.current_period_end);
   const status = mapStatus(subscription.status);
 
-  await upsertSubscriptionFromStripe({
+  const { subscription: row } = await upsertSubscriptionFromStripe({
     applicationId,
     appUserId,
     planId,
@@ -341,7 +342,17 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
       appUserId,
       planId,
       periodKey: String(currentPeriodStart.getTime()),
+      periodEnd: currentPeriodEnd,
+      subscriptionId: row.id,
     });
+  }
+
+  // A trial that Stripe has just opened gets a job that waits it out, so the
+  // switch to paid allowances does not depend on a single webhook arriving.
+  // `trial_end` is authoritative; the item period only coincides with it.
+  const trialEndsAt = toDate(subscription.trial_end) ?? currentPeriodEnd;
+  if (status === "trialing" && trialEndsAt) {
+    await scheduleTrialWatch({ subscriptionId: row.id, trialEndsAt });
   }
   return true;
 }
@@ -430,6 +441,7 @@ async function debitBalanceAllowingNegative(input: {
     await debitBalance(input);
   } catch {
     const { balances, ledgerEntries } = await import("@/lib/db/schema");
+    const { drainLots } = await import("@/lib/subscription/balance-lots");
     const now = new Date();
     await db.transaction(async (tx) => {
       const [updated] = await tx
@@ -443,6 +455,11 @@ async function debitBalanceAllowingNegative(input: {
         )
         .returning();
       if (!updated) return;
+
+      // Empty what tranches remain. Whatever the lots cannot cover is the debt
+      // this reversal leaves behind, carried on the negative balance until the
+      // next credit settles it.
+      await drainLots(tx, input.appUserId, input.unitId, input.amount, now);
       await tx
         .insert(ledgerEntries)
         .values({

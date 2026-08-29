@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     "playwright-report/**",
     "test-results/**",
     "next-env.d.ts",
+    // Route handlers the Workflow build writes into the app directory. They are
+    // generated on every build and already git-ignored, so linting them only
+    // reports on code nobody here can edit.
+    "app/.well-known/workflow/**",
   ]),
 ]);
 

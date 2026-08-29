@@ -17,6 +17,27 @@ export const resetUnitSchema = z.enum(["hour", "day", "week", "month"]);
 export const statusSchema = z.enum(["draft", "active", "archived"]);
 export const couponDurationSchema = z.enum(["once", "repeating", "forever"]);
 
+export const balanceExpiryPolicySchema = z
+  .enum(["never", "period_end", "duration", "after_plan_end"])
+  .optional()
+  .describe(
+    "balance_grant only. When granted units stop being spendable: " +
+      "never (default, they accumulate); period_end (they lapse with the " +
+      "billing period that granted them, so nothing rolls over); duration " +
+      "(balanceExpiryMonths after the grant); after_plan_end " +
+      "(balanceExpiryMonths after the subscription ends)",
+  );
+
+export const balanceExpiryMonthsSchema = z
+  .number()
+  .int()
+  .positive()
+  .nullable()
+  .optional()
+  .describe(
+    "Months. Required when balanceExpiryPolicy is duration or after_plan_end, ignored otherwise",
+  );
+
 const couponRestrictionSchemas = {
   maxDiscountCents: z.number().int().positive().nullable().optional(),
   duration: couponDurationSchema.default("once"),
@@ -206,6 +227,8 @@ export const writeToolSchemas = {
       ),
     unitId: z.string().optional(),
     amount: z.number().int().positive().optional(),
+    balanceExpiryPolicy: balanceExpiryPolicySchema,
+    balanceExpiryMonths: balanceExpiryMonthsSchema,
     featureKey: z.string().optional(),
     featureValue: z.string().optional(),
   }),
