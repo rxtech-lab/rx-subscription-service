@@ -228,6 +228,12 @@ export async function createPlanCheckout(input: {
   // A one-time plan is a payment, so it needs a purchase row to fulfill against;
   // recurring plans are reconciled from `customer.subscription.*` events instead.
   const purchaseId = recurring ? null : newId();
+  // A recurring plan has no purchase row to key the Stripe request on, but the
+  // key still has to be unique per attempt: anything derived from the user and
+  // plan alone survives across attempts, so a second checkout for the same plan
+  // either fails outright (`idempotency_error`, when a redirect URL or price has
+  // since changed) or replays the first attempt's already expired session URL.
+  const attemptId = purchaseId ?? newId();
   const metadata: Record<string, string> = {
     applicationId: input.applicationId,
     appUserId: input.user.id,
@@ -281,11 +287,7 @@ export async function createPlanCheckout(input: {
             }),
         ...redirectUrls(input),
       },
-      {
-        idempotencyKey: `plan-checkout:${
-          purchaseId ?? `${input.user.id}:${plan.id}`
-        }${coupon ? `:${coupon.redemptionId}` : ""}`,
-      },
+      { idempotencyKey: `plan-checkout:${attemptId}` },
     );
     if (!session.url) throw new Error("STRIPE_CHECKOUT_URL_MISSING");
     if (purchaseId) {
