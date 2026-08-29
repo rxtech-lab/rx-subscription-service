@@ -11,6 +11,7 @@ import {
   type BalanceReservationOperationKind,
 } from "@/lib/db/schema";
 import { ensureBalanceRow, InsufficientBalanceError } from "./balance-core";
+import { drainLots } from "./balance-lots-core";
 import {
   assertNonNegativeInteger,
   assertPositiveInteger,
@@ -577,6 +578,20 @@ export async function settleBalanceReservation(input: {
         )
         .returning();
       if (!balance) throw new Error("Reservation aggregate is inconsistent");
+
+      // Settling spends real units, so the tranches behind them have to be
+      // drawn down as well. Skipping this would leave the lots claiming units
+      // the balance no longer has, and the next expiry would then take those
+      // units off the balance a second time.
+      if (operationSettledAmount > 0) {
+        await drainLots(
+          tx,
+          reservation.appUserId,
+          reservation.unitId,
+          operationSettledAmount,
+          now,
+        );
+      }
 
       const entryId = newId();
       await tx.insert(ledgerEntries).values({

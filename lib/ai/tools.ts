@@ -403,7 +403,7 @@ export function buildTools(applicationId: string, actor: Actor) {
     }),
     addPlanEntitlement: tool({
       description:
-        "Grant something through a plan: a role, a permission, a usage limit, a balance grant, or a feature flag. Usage limits can have distinct trial and non-trial allowances. Use a role grant to connect a plan to role-gated topups.",
+        "Grant something through a plan: a role, a permission, a usage limit, a balance grant, or a feature flag. Usage limits can have distinct trial and non-trial allowances. A balance grant can also carry an expiry policy so its units lapse instead of accumulating. Use a role grant to connect a plan to role-gated topups.",
       inputSchema: writeToolSchemas.addPlanEntitlement,
       needsApproval: true,
       execute: runWrite("addPlanEntitlement"),
@@ -594,6 +594,8 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- Set `createTopup.eligibility` to `standalone` when anyone may buy it, `plan` when one specific subscribed plan is required, or `role` for an access tier shared by plans. The create tool persists that link atomically with the topup.",
     "- Use a role-gated topup only when the role represents a reusable access tier, especially when multiple plans should qualify. List roles and the relevant plan entitlements first. Reuse a matching role; create one only when the requested access model needs a new role.",
     "- A role-gated topup must be reachable: before creating the topup, ensure every qualifying plan grants that role with `addPlanEntitlement` kind `role`. Never create an orphan role or add a role gate without a granting plan unless the role is default.",
+    "- A balance grant accumulates for good unless it is given a `balanceExpiryPolicy`. Choose `period_end` when the user says an allowance does not roll over, `duration` with `balanceExpiryMonths` for \"points expire after N months\", and `after_plan_end` with `balanceExpiryMonths` for \"points last N months after the plan ends\". Leave it at `never` when the user did not ask for expiry.",
+    "- Do not confuse a `usage_limit` with an expiring `balance_grant`. A usage limit is an allowance that refills every period and is never spendable as a stored balance; a balance grant is stored units the user draws down, which expire only if a policy says so.",
     ...USAGE_LIMIT_PROMPT_RULES,
     "- Coupons belong to this application even though Stripe coupons belong to the shared Stripe account. Never enable or suggest Stripe's account-wide promotion-code box; use these app coupon tools so checkout resolves the code inside the current app and pins the Stripe coupon to this app's products.",
     "- Always call `listCoupons` before editing, publishing, archiving, or deleting a coupon. A new coupon starts as draft; publish it with `setCouponStatus` only when the user asked for it to become redeemable.",

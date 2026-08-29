@@ -6,11 +6,27 @@ import {
   planEntitlements,
   plans,
   subscriptions,
+  type BalanceExpiryPolicy,
   type Plan,
   type SubscriptionStatus,
 } from "@/lib/db/schema";
 import { newId, NotFoundError, recordAudit, type Actor } from "./shared";
 import { creditBalance } from "./users";
+import { resolveExpiresAt } from "./balance-expiry-rules";
+import { stampLotsForPlanEnd } from "./balance-lots";
+
+/**
+ * The slice of a plan entitlement `grantPeriodBalances` needs. Accepted as a
+ * parameter so a caller holding an entitlement snapshot can grant from that
+ * frozen copy instead of re-reading the live — possibly since edited — plan.
+ */
+export interface BalanceGrantEntitlement {
+  kind: string;
+  unitId: string | null;
+  amount: number | null;
+  balanceExpiryPolicy?: BalanceExpiryPolicy | null;
+  balanceExpiryMonths?: number | null;
+}
 
 /**
  * Freeze what a plan grants right now. Stored on the subscription so a later
@@ -104,6 +120,15 @@ export async function upsertSubscriptionFromStripe(input: {
       })
       .where(eq(subscriptions.id, existing.id))
       .returning();
+
+    // The plan has ended, so `after_plan_end` grants finally have the anchor
+    // they were waiting for and can be given a real expiry.
+    if (updated.endedAt) {
+      await stampLotsForPlanEnd({
+        subscriptionId: updated.id,
+        endedAt: updated.endedAt,
+      });
+    }
     return { subscription: updated, created: false as const };
   }
 
@@ -141,7 +166,11 @@ export async function grantPeriodBalances(input: {
   appUserId: string;
   planId: string;
   periodKey: string;
-  entitlements?: { kind: string; unitId: string | null; amount: number | null }[];
+  /** End of the period being granted, the anchor for `period_end` expiry. */
+  periodEnd?: Date | null;
+  /** Recorded on each lot so plan end can find `after_plan_end` grants. */
+  subscriptionId?: string | null;
+  entitlements?: BalanceGrantEntitlement[];
 }) {
   const entitlements =
     input.entitlements ??
@@ -155,8 +184,11 @@ export async function grantPeriodBalances(input: {
       entitlement.kind === "balance_grant" && entitlement.unitId && entitlement.amount,
   );
 
+  const grantedAt = new Date();
   const results = [];
   for (const grant of grants) {
+    const policy = grant.balanceExpiryPolicy ?? "never";
+    const months = grant.balanceExpiryMonths ?? null;
     results.push(
       await creditBalance({
         appUserId: input.appUserId,
@@ -167,6 +199,16 @@ export async function grantPeriodBalances(input: {
         idempotencyKey: `plan_grant:${input.appUserId}:${input.planId}:${grant.unitId}:${input.periodKey}`,
         referenceType: "plan",
         referenceId: input.planId,
+        expiresAt: resolveExpiresAt({
+          policy,
+          months,
+          grantedAt,
+          periodEnd: input.periodEnd ?? null,
+        }),
+        expiryPolicy: policy,
+        expiryMonths: months,
+        subscriptionId: input.subscriptionId ?? null,
+        planId: input.planId,
       }),
     );
   }
@@ -201,6 +243,16 @@ export async function cancelSubscription(input: {
     )
     .where(eq(subscriptions.id, input.subscriptionId))
     .returning();
+
+  // Only an immediate cancel ends the plan now. `cancel_at_period_end` leaves
+  // the subscription running, so its grants keep their open-ended lots until
+  // Stripe reports the subscription actually gone.
+  if (updated.endedAt) {
+    await stampLotsForPlanEnd({
+      subscriptionId: updated.id,
+      endedAt: updated.endedAt,
+    });
+  }
 
   await recordAudit({
     applicationId: input.applicationId,

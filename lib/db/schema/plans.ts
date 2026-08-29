@@ -62,6 +62,30 @@ export const ENTITLEMENT_KINDS = [
 export type EntitlementKind = (typeof ENTITLEMENT_KINDS)[number];
 
 /**
+ * When units granted by a `balance_grant` stop being spendable.
+ *
+ * `never` is the default and the behaviour every existing grant had: units
+ * accumulate for good. The other three each resolve to a concrete instant on
+ * the lot the grant creates, so expiry is decided once at grant time rather
+ * than re-derived on every read:
+ *
+ * - `period_end` — the end of the billing period that granted them, so an
+ *   allowance that is not spent within its own period does not roll over.
+ * - `duration` — `balanceExpiryMonths` after the grant, independent of the
+ *   billing period.
+ * - `after_plan_end` — `balanceExpiryMonths` after the subscription itself
+ *   ends. The instant is unknowable at grant time, so these lots are created
+ *   open-ended and stamped when the subscription actually ends.
+ */
+export const BALANCE_EXPIRY_POLICIES = [
+  "never",
+  "period_end",
+  "duration",
+  "after_plan_end",
+] as const;
+export type BalanceExpiryPolicy = (typeof BALANCE_EXPIRY_POLICIES)[number];
+
+/**
  * What a plan grants. One row per grant so the console (and the AI) can add or
  * remove a single entitlement without rewriting the plan.
  *
@@ -95,12 +119,31 @@ export const planEntitlements = sqliteTable(
       onDelete: "cascade",
     }),
     amount: integer("amount"),
+    /** `balance_grant` only. See `BALANCE_EXPIRY_POLICIES`. */
+    balanceExpiryPolicy: text("balance_expiry_policy", {
+      enum: BALANCE_EXPIRY_POLICIES,
+    })
+      .notNull()
+      .default("never"),
+    /** Months, required by the `duration` and `after_plan_end` policies. */
+    balanceExpiryMonths: integer("balance_expiry_months"),
     featureKey: text("feature_key"),
     featureValue: text("feature_value"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("plan_entitlements_plan_idx").on(table.planId)],
+  (table) => [
+    index("plan_entitlements_plan_idx").on(table.planId),
+    check(
+      "plan_entitlements_expiry_months_positive",
+      sql`${table.balanceExpiryMonths} IS NULL OR ${table.balanceExpiryMonths} >= 1`,
+    ),
+    // The two duration-bearing policies are meaningless without a duration.
+    check(
+      "plan_entitlements_expiry_months_required",
+      sql`${table.balanceExpiryPolicy} NOT IN ('duration', 'after_plan_end') OR ${table.balanceExpiryMonths} IS NOT NULL`,
+    ),
+  ],
 );
 
 export type Plan = typeof plans.$inferSelect;

@@ -7,5 +7,6 @@ export * from "./users";
 export * from "./topups";
 export * from "./coupons";
 export * from "./billing";
+export * from "./lots";
 export * from "./ai";
 export * from "./testing";

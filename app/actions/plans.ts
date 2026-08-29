@@ -1,6 +1,10 @@
 "use server";
 
-import type { BillingInterval, EntitlementKind } from "@/lib/db/schema";
+import type {
+  BalanceExpiryPolicy,
+  BillingInterval,
+  EntitlementKind,
+} from "@/lib/db/schema";
 import {
   addPlanEntitlement,
   createPlan,
@@ -111,6 +115,9 @@ export async function addPlanEntitlementAction(
         trialLimitValue: optionalInteger(formData, "trialLimitValue"),
         unitId: optionalText(formData, "unitId"),
         amount: optionalInteger(formData, "amount"),
+        balanceExpiryPolicy: (optionalText(formData, "balanceExpiryPolicy") ??
+          "never") as BalanceExpiryPolicy,
+        balanceExpiryMonths: optionalInteger(formData, "balanceExpiryMonths"),
         featureKey: optionalText(formData, "featureKey"),
         featureValue: optionalText(formData, "featureValue"),
         actor,

@@ -7,9 +7,11 @@ import {
   plans,
   subscriptionRoles,
   usageItems,
+  type BalanceExpiryPolicy,
   type BillingInterval,
   type EntitlementKind,
 } from "@/lib/db/schema";
+import { policyRequiresMonths } from "./balance-expiry-rules";
 import {
   assertCurrency,
   assertKey,
@@ -243,6 +245,8 @@ type EntitlementFields = {
   trialLimitValue?: number | null;
   unitId?: string | null;
   amount?: number | null;
+  balanceExpiryPolicy?: BalanceExpiryPolicy | null;
+  balanceExpiryMonths?: number | null;
   featureKey?: string | null;
   featureValue?: string | null;
 };
@@ -297,6 +301,8 @@ function entitlementColumnsForKind(input: EntitlementFields) {
     trialLimitValue: null,
     unitId: null,
     amount: null,
+    balanceExpiryPolicy: "never",
+    balanceExpiryMonths: null,
     featureKey: null,
     featureValue: null,
   } as const;
@@ -325,12 +331,20 @@ function entitlementColumnsForKind(input: EntitlementFields) {
             ? (input.limitValue ?? null)
             : input.trialLimitValue,
       };
-    case "balance_grant":
+    case "balance_grant": {
+      const policy = input.balanceExpiryPolicy ?? "never";
       return {
         ...empty,
         unitId: blankToNull(input.unitId),
         amount: input.amount ?? null,
+        balanceExpiryPolicy: policy,
+        // A duration on a policy that does not use one would be dead data that
+        // silently takes effect if the policy is later switched.
+        balanceExpiryMonths: policyRequiresMonths(policy)
+          ? (input.balanceExpiryMonths ?? null)
+          : null,
       };
+    }
     case "feature":
       return {
         ...empty,
@@ -412,6 +426,16 @@ async function assertEntitlementShape(input: EntitlementFields) {
         throw new ValidationError("balance unit does not belong to this application");
       }
       assertPositiveInteger(input.amount ?? 0, "amount");
+
+      // Caught here rather than at the database check constraint so the console
+      // and the AI agent both get a sentence they can act on.
+      const policy = input.balanceExpiryPolicy ?? "never";
+      if (policyRequiresMonths(policy)) {
+        assertPositiveInteger(
+          input.balanceExpiryMonths ?? 0,
+          "balanceExpiryMonths",
+        );
+      }
       return;
     }
     case "feature": {

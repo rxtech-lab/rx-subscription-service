@@ -6,6 +6,7 @@ import {
   balances,
   balanceUnits,
   ledgerEntries,
+  type BalanceExpiryPolicy,
   type LedgerKind,
 } from "@/lib/db/schema";
 import {
@@ -18,6 +19,7 @@ import {
 } from "./shared";
 import { ensureBalanceRow, InsufficientBalanceError } from "./balance-core";
 import { expireBalanceReservations } from "./balance-reservations";
+import { drainLots, expireBalanceLots, openLot } from "./balance-lots";
 
 export { InsufficientBalanceError } from "./balance-core";
 
@@ -279,6 +281,9 @@ export async function setUserLevel(input: {
 
 export async function getBalances(appUserId: string) {
   await expireBalanceReservations({ appUserId });
+  // Reading is the other moment a stale balance would be visible, so the same
+  // lazy sweep the debit path runs happens here too.
+  await expireBalanceLots({ appUserId });
   return db
     .select({
       balanceId: balances.id,
@@ -318,12 +323,26 @@ export interface BalanceMutation {
 }
 
 /**
+ * How the units this credit adds should expire.
+ *
+ * Omitted entirely by callers that grant units which never lapse — a topup, a
+ * manual adjustment, a reversal — so their lots are opened open-ended.
+ */
+export interface CreditExpiry {
+  expiresAt?: Date | null;
+  expiryPolicy?: BalanceExpiryPolicy;
+  expiryMonths?: number | null;
+  subscriptionId?: string | null;
+  planId?: string | null;
+}
+
+/**
  * Add units to a balance.
  *
  * Idempotent on `idempotencyKey`: a retried Stripe webhook or API call returns
  * the original ledger entry instead of crediting twice.
  */
-export async function creditBalance(input: BalanceMutation) {
+export async function creditBalance(input: BalanceMutation & CreditExpiry) {
   const amount = assertPositiveInteger(input.amount, "amount");
   const existing = await findLedgerEntry(input.idempotencyKey);
   if (existing) return { entry: existing, duplicate: true as const };
@@ -332,6 +351,21 @@ export async function creditBalance(input: BalanceMutation) {
   const now = new Date();
 
   const entry = await db.transaction(async (tx) => {
+    // Read before the increment so a negative balance — units clawed back after
+    // they were already spent — can be settled out of this credit rather than
+    // opening a lot for units that only cover an existing debt.
+    const [before] = await tx
+      .select()
+      .from(balances)
+      .where(
+        and(
+          eq(balances.appUserId, input.appUserId),
+          eq(balances.unitId, input.unitId),
+        ),
+      )
+      .limit(1);
+    const debt = before && before.amount < 0 ? -before.amount : 0;
+
     const [updated] = await tx
       .update(balances)
       .set({ amount: sql`${balances.amount} + ${amount}`, updatedAt: now })
@@ -360,6 +394,24 @@ export async function creditBalance(input: BalanceMutation) {
         createdAt: now,
       })
       .returning();
+
+    await openLot(
+      tx,
+      {
+        appUserId: input.appUserId,
+        unitId: input.unitId,
+        amount,
+        ledgerEntryId: row.id,
+        expiresAt: input.expiresAt ?? null,
+        expiryPolicy: input.expiryPolicy,
+        expiryMonths: input.expiryMonths,
+        subscriptionId: input.subscriptionId,
+        planId: input.planId,
+        now,
+      },
+      debt,
+    );
+
     return row;
   });
 
@@ -383,6 +435,12 @@ export async function debitBalance(input: BalanceMutation) {
     unitId: input.unitId,
   });
   await ensureBalanceRow(input.appUserId, input.unitId);
+  // Lapsed units must be gone before the sufficiency guard runs, or a debit
+  // between two sweeps would spend a balance the user no longer has.
+  await expireBalanceLots({
+    appUserId: input.appUserId,
+    unitId: input.unitId,
+  });
   const now = new Date();
 
   const entry = await db.transaction(async (tx) => {
@@ -414,6 +472,10 @@ export async function debitBalance(input: BalanceMutation) {
         amount,
       );
     }
+
+    // Spend the tranches that lapse soonest, so the units a user is about to
+    // lose go first and the ones they could have kept survive.
+    await drainLots(tx, input.appUserId, input.unitId, amount, now);
 
     const [row] = await tx
       .insert(ledgerEntries)

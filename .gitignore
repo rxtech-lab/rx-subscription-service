@@ -48,3 +48,4 @@ local.db
 local.db-*
 local.db÷
 .playwright-mcp
+/.swc

@@ -348,6 +348,29 @@ export default async function PlansPage({ params }: PageProps<"/apps/[appId]">) 
                   <Input name="amount" type="number" min="1" />
                 </Field>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Granted units expire"
+                  hint="Balance grants only"
+                >
+                  <Select name="balanceExpiryPolicy" defaultValue="never">
+                    <option value="never">Never — they accumulate</option>
+                    <option value="period_end">
+                      At the end of the granting period
+                    </option>
+                    <option value="duration">A number of months after the grant</option>
+                    <option value="after_plan_end">
+                      A number of months after the plan ends
+                    </option>
+                  </Select>
+                </Field>
+                <Field
+                  label="Expiry months"
+                  hint="Only for the two month-based policies"
+                >
+                  <Input name="balanceExpiryMonths" type="number" min="1" />
+                </Field>
+              </div>
               <Field label="Permission key" hint="Bare key such as read:a">
                 <Input name="permissionKey" placeholder="read:a" />
               </Field>
