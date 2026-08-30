@@ -149,6 +149,12 @@ Point a webhook at `/api/stripe/webhook` for `checkout.session.*`,
 Stripe's retries are safe. Topup eligibility is re-checked at fulfillment, not
 just at checkout, so a plan cancelled mid-payment cannot unlock a gated pack.
 
+Every plan belongs to a plan group, defaulting to `default`. A user can own one
+active or in-progress plan in each group: repeat purchases of the same plan and
+purchases of another plan in the same group are rejected, while plans in
+different groups can be combined. The console and assistant can change a plan's
+group.
+
 Two accounts run side by side: `live` for real subscribers and `sandbox` for
 test users. Stripe ids are per-account, so plans and topups store a second
 product/price pair for the sandbox; `lib/stripe/accounts.ts` owns which account
@@ -158,8 +164,9 @@ a call belongs to and which columns go with it.
 
 Coupon codes belong to one application even when several applications share a
 Stripe account. Checkout resolves a submitted `couponCode` against the calling
-application and applies the resulting Stripe Coupon directly; Stripe's
-account-wide promotion-code entry is intentionally not enabled.
+application and applies the resulting Stripe Coupon directly. When a code is
+not pre-applied, Checkout enables its promotion-code field only if the user has
+an eligible app coupon, mirrored as a customer-specific Stripe Promotion Code.
 
 Coupons support fixed or percentage discounts, an optional maximum discount,
 one-time or repeating durations, selected plans/topups, user allow-lists,

@@ -182,6 +182,7 @@ export async function runControlOp(input: {
         key: plan.key,
         name: plan.name,
         description: plan.description,
+        planGroup: plan.planGroup,
         billingInterval: plan.billingInterval,
         intervalCount: plan.intervalCount,
         priceAmountCents: plan.priceAmountCents,

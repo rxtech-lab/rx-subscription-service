@@ -77,6 +77,7 @@ export function buildTools(applicationId: string, actor: Actor) {
           id: plan.id,
           key: plan.key,
           name: plan.name,
+          planGroup: plan.planGroup,
           billingInterval: plan.billingInterval,
           intervalCount: plan.intervalCount,
           priceAmountCents: plan.priceAmountCents,
@@ -384,13 +385,14 @@ export function buildTools(applicationId: string, actor: Actor) {
   const writeTools = {
     createPlan: tool({
       description:
-        "Create a plan. Use billingInterval one_time for non-recurring purchases. Creating the plan does not grant a role; add a role entitlement separately when the plan represents an access tier.",
+        "Create a plan. planGroup defaults to default; users can hold only one plan per group. Use billingInterval one_time for non-recurring purchases. Creating the plan does not grant a role; add a role entitlement separately when the plan represents an access tier.",
       inputSchema: writeToolSchemas.createPlan,
       needsApproval: true,
       execute: runWrite("createPlan"),
     }),
     updatePlan: tool({
-      description: "Update a plan's name, description, price, or trial length.",
+      description:
+        "Update a plan's name, description, group, price, or trial length.",
       inputSchema: writeToolSchemas.updatePlan,
       needsApproval: true,
       execute: runWrite("updatePlan"),
@@ -589,6 +591,7 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- Keys are lowercase, alphanumeric with - or _.",
     "- Permission keys are bare, like `read:a`. The `:all` or `:id1,id2` suffix is a per-role scope, not part of the key.",
     "- A quarterly plan is billingInterval `quarter`, not three months.",
+    "- Every plan belongs to a `planGroup`, defaulting to `default`. A user can hold only one plan in a group, but may hold plans from different groups. Use distinct groups for plans that can be combined.",
     "- Usage items reset by policy: `never`, `rolling_window` (from first use), `calendar_period` (snapped to clock boundaries), or `billing_period` (follows the subscription).",
     "- Before creating a topup, decide from the user's request who may buy it. Do not invent a restriction when the topup is meant for everyone or the user did not specify one.",
     "- Set `createTopup.eligibility` to `standalone` when anyone may buy it, `plan` when one specific subscribed plan is required, or `role` for an access tier shared by plans. The create tool persists that link atomically with the topup.",
@@ -597,7 +600,7 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- A balance grant accumulates for good unless it is given a `balanceExpiryPolicy`. Choose `period_end` when the user says an allowance does not roll over, `duration` with `balanceExpiryMonths` for \"points expire after N months\", and `after_plan_end` with `balanceExpiryMonths` for \"points last N months after the plan ends\". Leave it at `never` when the user did not ask for expiry.",
     "- Do not confuse a `usage_limit` with an expiring `balance_grant`. A usage limit is an allowance that refills every period and is never spendable as a stored balance; a balance grant is stored units the user draws down, which expire only if a policy says so.",
     ...USAGE_LIMIT_PROMPT_RULES,
-    "- Coupons belong to this application even though Stripe coupons belong to the shared Stripe account. Never enable or suggest Stripe's account-wide promotion-code box; use these app coupon tools so checkout resolves the code inside the current app and pins the Stripe coupon to this app's products.",
+    "- Coupons belong to this application even though Stripe coupons belong to the shared Stripe account. Checkout may expose Stripe's promotion-code box only for eligible customer-specific Promotion Codes; use these app coupon tools so each code is still validated in the current app and pinned to its products.",
     "- Always call `listCoupons` before editing, publishing, archiving, or deleting a coupon. A new coupon starts as draft; publish it with `setCouponStatus` only when the user asked for it to become redeemable.",
     "- Coupon percentages are hundredths of a percent: 2550 is 25.5%. Coupon amounts, caps, and minimums are integer cents. For a repeating coupon, set `duration` to `repeating` and provide `durationInMonths`.",
     "- For `appliesTo: selected`, list plans and topups first and pass at least one id. For `restrictToUsers: true`, call `listCouponUserOptions` and pass at least one appUserId; an empty allow-list is invalid rather than meaning everyone.",

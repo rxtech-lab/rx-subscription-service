@@ -3,8 +3,10 @@ import { startTestPlanCheckoutAction } from "@/app/actions/test-checkout";
 import { ActionForm } from "@/components/forms/action-form";
 import { Badge, Card, CardHeader, EmptyState, Input } from "@/components/ui/primitives";
 import { sandboxConfigured } from "@/lib/stripe/client";
-import { resolveEntitlements } from "@/lib/subscription/entitlements";
-import { listPurchasablePlans } from "@/lib/subscription/subscriptions";
+import {
+  listOwnedPlans,
+  listPurchasablePlans,
+} from "@/lib/subscription/subscriptions";
 import { readTestSessionFor } from "@/lib/test-session";
 import { formatInterval, formatMoney } from "@/lib/utils";
 
@@ -15,11 +17,12 @@ export default async function TestPlansPage({
   const session = await readTestSessionFor(appId);
   if (!session) notFound();
 
-  const [plans, entitlements] = await Promise.all([
+  const [plans, ownedPlans] = await Promise.all([
     listPurchasablePlans(appId),
-    resolveEntitlements({ applicationId: appId, appUserId: session.user.id }),
+    listOwnedPlans({ applicationId: appId, appUserId: session.user.id }),
   ]);
-  const subscribedPlanIds = new Set(entitlements.plans.map((plan) => plan.planId));
+  const subscribedPlanIds = new Set(ownedPlans.map((plan) => plan.planId));
+  const subscribedPlanGroups = new Set(ownedPlans.map((plan) => plan.planGroup));
   const ready = sandboxConfigured();
 
   return (
@@ -37,6 +40,7 @@ export default async function TestPlansPage({
         <ul className="divide-y divide-slate-100">
           {plans.map((plan) => {
             const subscribed = subscribedPlanIds.has(plan.id);
+            const groupOccupied = subscribedPlanGroups.has(plan.planGroup);
             return (
               <li
                 key={plan.id}
@@ -46,6 +50,7 @@ export default async function TestPlansPage({
                   <p className="flex items-center gap-2 font-medium text-slate-900">
                     {plan.name}
                     {subscribed ? <Badge tone="green">Subscribed</Badge> : null}
+                    <Badge tone="neutral">{plan.planGroup}</Badge>
                   </p>
                   {plan.description ? (
                     <p className="mt-1 text-sm leading-6 text-slate-500">
@@ -65,10 +70,12 @@ export default async function TestPlansPage({
                   </p>
                 </div>
 
-                {subscribed || !ready ? (
+                {subscribed || groupOccupied || !ready ? (
                   <p className="text-xs text-slate-500">
                     {subscribed
                       ? "Already active"
+                      : groupOccupied
+                        ? `Another ${plan.planGroup} plan is already active.`
                       : "Stripe sandbox is not configured."}
                   </p>
                 ) : (

@@ -41,7 +41,7 @@ type Role = Awaited<ReturnType<typeof listRoles>>[number];
 type UsageItem = Awaited<ReturnType<typeof listUsageItems>>[number];
 
 function planOption(plan: Plan) {
-  return `${plan.name} · ${formatMoney(plan.priceAmountCents, plan.currency)} ${formatInterval(
+  return `${plan.name} · ${plan.planGroup} · ${formatMoney(plan.priceAmountCents, plan.currency)} ${formatInterval(
     plan.billingInterval,
     plan.intervalCount,
   )}`;

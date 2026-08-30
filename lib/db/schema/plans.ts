@@ -14,6 +14,7 @@ import { usageItems } from "./usage";
 
 export const BILLING_INTERVALS = ["month", "quarter", "year", "one_time"] as const;
 export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+export const DEFAULT_PLAN_GROUP = "default";
 
 export const plans = sqliteTable(
   "plans",
@@ -25,6 +26,8 @@ export const plans = sqliteTable(
     key: text("key").notNull(),
     name: text("name").notNull(),
     description: text("description"),
+    /** A user may own at most one active or one-time plan in each group. */
+    planGroup: text("plan_group").notNull().default(DEFAULT_PLAN_GROUP),
     billingInterval: text("billing_interval", { enum: BILLING_INTERVALS }).notNull(),
     intervalCount: integer("interval_count").notNull().default(1),
     priceAmountCents: integer("price_amount_cents").notNull(),
@@ -46,6 +49,7 @@ export const plans = sqliteTable(
   (table) => [
     uniqueIndex("plans_app_key_idx").on(table.applicationId, table.key),
     index("plans_app_status_idx").on(table.applicationId, table.status),
+    index("plans_app_group_idx").on(table.applicationId, table.planGroup),
     check("plans_price_nonnegative", sql`${table.priceAmountCents} >= 0`),
     check("plans_interval_count_positive", sql`${table.intervalCount} >= 1`),
     check("plans_trial_nonnegative", sql`${table.trialDays} >= 0`),

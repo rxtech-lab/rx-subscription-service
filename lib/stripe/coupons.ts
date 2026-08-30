@@ -2,11 +2,14 @@ import "server-only";
 import Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { coupons, type Coupon } from "@/lib/db/schema";
+import { coupons, type AppUser, type Coupon } from "@/lib/db/schema";
 import { listPlans } from "@/lib/subscription/plans";
 import { listTopupProducts } from "@/lib/subscription/topups";
 import {
+  couponUsage,
   couponTerms,
+  evaluateCoupon,
+  listCoupons,
   listCouponTargets,
   targetPrice,
   type CouponTarget,
@@ -130,6 +133,167 @@ export interface StripeCouponResolution {
   discountCents: number;
   /** True when a percentage was converted to a flat amount to honour the cap. */
   cappedToFixedAmount: boolean;
+}
+
+function promotionCouponId(promotionCode: Stripe.PromotionCode): string | null {
+  const coupon = promotionCode.promotion.coupon;
+  return typeof coupon === "string" ? coupon : (coupon?.id ?? null);
+}
+
+function remainingPromotionUses(promotionCode: Stripe.PromotionCode): number | null {
+  return promotionCode.max_redemptions === null
+    ? null
+    : Math.max(0, promotionCode.max_redemptions - promotionCode.times_redeemed);
+}
+
+function promotionRuleFingerprint(coupon: Coupon): string {
+  return [
+    coupon.maxRedemptions ?? "unlimited",
+    coupon.maxRedemptionsPerUser ?? "unlimited",
+    coupon.minimumAmountCents ?? "none",
+    coupon.currency,
+    coupon.firstTimeOnly,
+  ].join("|");
+}
+
+/**
+ * Make this user's currently eligible app coupons redeemable in hosted Checkout.
+ *
+ * Promotion Codes are restricted to the app-specific Stripe Customer. Their
+ * Coupons are additionally restricted to the app's Products, so enabling
+ * Checkout's code box does not turn the shared Stripe account into a
+ * cross-application coupon namespace.
+ */
+export async function prepareCheckoutPromotionCodes(input: {
+  applicationId: string;
+  user: AppUser;
+  customerId: string;
+  target: CouponTarget;
+  mode: StripeMode;
+}): Promise<boolean> {
+  const appCoupons = await listCoupons(input.applicationId, {
+    includeArchived: true,
+  });
+  const client = stripe(input.mode);
+  const activePromotionCodes = await client.promotionCodes
+    .list({ active: true, customer: input.customerId, limit: 100 })
+    .autoPagingToArray({ limit: 1_000 });
+  let available = 0;
+
+  for (const coupon of appCoupons) {
+    const owned = activePromotionCodes.filter(
+      (promotionCode) =>
+        promotionCode.code.toUpperCase() === coupon.code.toUpperCase() &&
+        promotionCode.metadata?.applicationId === input.applicationId &&
+        promotionCode.metadata?.couponId === coupon.id,
+    );
+    const evaluation = await evaluateCoupon({
+      applicationId: input.applicationId,
+      coupon,
+      appUserId: input.user.id,
+      target: input.target,
+    });
+
+    if (!evaluation.applies || evaluation.discountCents <= 0) {
+      await Promise.all(
+        owned.map((promotionCode) =>
+          client.promotionCodes.update(promotionCode.id, { active: false }),
+        ),
+      );
+      continue;
+    }
+
+    const usage = await couponUsage(coupon.id, input.user.id);
+    const remainingLimits = [
+      coupon.maxRedemptions === null
+        ? null
+        : Math.max(0, coupon.maxRedemptions - usage.used),
+      coupon.maxRedemptionsPerUser === null
+        ? null
+        : Math.max(0, coupon.maxRedemptionsPerUser - usage.usedByUser),
+    ].filter((value): value is number => value !== null);
+    const maxRedemptions =
+      remainingLimits.length > 0 ? Math.min(...remainingLimits) : null;
+    if (maxRedemptions === 0) {
+      await Promise.all(
+        owned.map((promotionCode) =>
+          client.promotionCodes.update(promotionCode.id, { active: false }),
+        ),
+      );
+      continue;
+    }
+
+    const resolved = await resolveStripeCoupon({
+      coupon,
+      target: input.target,
+      mode: input.mode,
+    });
+    const ruleFingerprint = promotionRuleFingerprint(coupon);
+    const reusable = owned.find((promotionCode) => {
+      if (
+        promotionCouponId(promotionCode) !== resolved.stripeCouponId ||
+        promotionCode.metadata?.ruleFingerprint !== ruleFingerprint
+      ) {
+        return false;
+      }
+      const remaining = remainingPromotionUses(promotionCode);
+      // A tighter existing Stripe limit is safe and can simply be reused while
+      // its completion webhook catches the local redemption count up.
+      return (
+        remaining === maxRedemptions ||
+        (remaining !== null && (maxRedemptions === null || remaining < maxRedemptions))
+      );
+    });
+
+    await Promise.all(
+      owned
+        .filter((promotionCode) => promotionCode.id !== reusable?.id)
+        .map((promotionCode) =>
+          client.promotionCodes.update(promotionCode.id, { active: false }),
+        ),
+    );
+
+    if (!reusable) {
+      const restrictions = {
+        ...(coupon.firstTimeOnly ? { first_time_transaction: true } : {}),
+        ...(coupon.minimumAmountCents === null
+          ? {}
+          : {
+              minimum_amount: coupon.minimumAmountCents,
+              minimum_amount_currency: coupon.currency,
+            }),
+      };
+      await client.promotionCodes.create({
+        promotion: { type: "coupon", coupon: resolved.stripeCouponId },
+        code: coupon.code,
+        customer: input.customerId,
+        ...(maxRedemptions === null ? {} : { max_redemptions: maxRedemptions }),
+        ...(coupon.redeemBy === null
+          ? {}
+          : { expires_at: toStripeTimestamp(coupon.redeemBy)! }),
+        ...(Object.keys(restrictions).length === 0 ? {} : { restrictions }),
+        metadata: {
+          applicationId: input.applicationId,
+          appUserId: input.user.id,
+          couponId: coupon.id,
+          code: coupon.code,
+          ruleFingerprint,
+        },
+      }, {
+        idempotencyKey: [
+          "promotion-code",
+          coupon.id,
+          input.customerId,
+          resolved.stripeCouponId,
+          maxRedemptions ?? "unlimited",
+          coupon.updatedAt.getTime(),
+        ].join(":"),
+      });
+    }
+    available += 1;
+  }
+
+  return available > 0;
 }
 
 /**

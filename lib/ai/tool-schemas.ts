@@ -95,6 +95,10 @@ export const writeToolSchemas = {
     key: z.string().describe("URL-safe identifier, lowercase"),
     name: z.string(),
     description: z.string().optional(),
+    planGroup: z
+      .string()
+      .default("default")
+      .describe("Mutually exclusive plan group; defaults to default"),
     billingInterval: billingIntervalSchema,
     intervalCount: z.number().int().positive().default(1),
     priceAmountCents: z.number().int().nonnegative().describe("Price in cents"),
@@ -106,6 +110,7 @@ export const writeToolSchemas = {
     planId: z.string(),
     name: z.string().optional(),
     description: z.string().optional(),
+    planGroup: z.string().optional(),
     priceAmountCents: z.number().int().nonnegative().optional(),
     trialDays: z.number().int().nonnegative().optional(),
   }),

@@ -266,6 +266,8 @@ declare global {
     key: string;
     /** The plan's display name. */
     name: string;
+    /** Mutually exclusive group. A user can hold one plan per group. */
+    planGroup: string;
     /** Subscription status: active, trialing, past_due, canceled. */
     status: string;
   }
@@ -298,6 +300,8 @@ declare global {
     name: string;
     /** Longer copy, if the plan has any. */
     description: string | null;
+    /** Mutually exclusive group. A user can hold one plan per group. */
+    planGroup: string;
     /** month, quarter, year, or one_time. */
     billingInterval: string;
     /** How many intervals per period. 3 with "month" is quarterly. */

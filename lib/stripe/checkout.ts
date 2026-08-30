@@ -6,7 +6,7 @@ import { purchases, stripeCustomers, type AppUser } from "@/lib/db/schema";
 import { newId, ValidationError } from "@/lib/subscription/shared";
 import { requirePlan } from "@/lib/subscription/plans";
 import { checkTopupEligibility, requireTopupProduct } from "@/lib/subscription/topups";
-import { getActiveSubscriptionForPlan } from "@/lib/subscription/subscriptions";
+import { assertPlanGroupAvailable } from "@/lib/subscription/subscriptions";
 import {
   attachRedemptionSession,
   attachRedemptionStripeCoupon,
@@ -26,7 +26,7 @@ import {
   stripe,
   type StripeMode,
 } from "./client";
-import { resolveStripeCoupon } from "./coupons";
+import { prepareCheckoutPromotionCodes, resolveStripeCoupon } from "./coupons";
 import { ensurePlanPrice, ensureTopupPrice } from "./products";
 import {
   fulfillPaidPurchase,
@@ -147,14 +147,13 @@ async function customerFor(user: AppUser, mode: StripeMode): Promise<string> {
 /**
  * The discount half of a Checkout Session.
  *
- * Stripe's own `allow_promotion_codes` box is deliberately not enabled: a
- * promotion code belongs to the Stripe *account*, which every application here
- * shares, so the box would let one app's buyer redeem another app's code. Codes
- * are collected by the calling app instead and resolved through `applyCoupon`,
- * which only ever looks in that application's coupons.
+ * An explicitly submitted code is applied before Checkout opens. Otherwise the
+ * hosted promotion-code field is enabled only after eligible app coupons have
+ * been mirrored to customer-specific Stripe Promotion Codes.
  */
-function discountParams(coupon: AppliedCoupon | null) {
-  return coupon ? { discounts: [{ coupon: coupon.stripeCouponId }] } : {};
+function discountParams(coupon: AppliedCoupon | null, allowPromotionCodes: boolean) {
+  if (coupon) return { discounts: [{ coupon: coupon.stripeCouponId }] };
+  return allowPromotionCodes ? { allow_promotion_codes: true } : {};
 }
 
 /**
@@ -206,11 +205,11 @@ export async function createPlanCheckout(input: {
     throw new ValidationError("plan is not available for purchase");
   }
 
-  const existing = await getActiveSubscriptionForPlan({
+  await assertPlanGroupAvailable({
+    applicationId: input.applicationId,
     appUserId: input.user.id,
-    planId: plan.id,
+    plan,
   });
-  if (existing) throw new ValidationError("user already subscribes to this plan");
 
   const priceId = await ensurePlanPrice(plan, mode);
   const customer = await customerFor(input.user, mode);
@@ -224,6 +223,15 @@ export async function createPlanCheckout(input: {
         mode,
       })
     : null;
+  const allowPromotionCodes = coupon
+    ? false
+    : await prepareCheckoutPromotionCodes({
+        applicationId: input.applicationId,
+        user: input.user,
+        customerId: customer,
+        target: { kind: "plan", plan },
+        mode,
+      });
 
   // A one-time plan is a payment, so it needs a purchase row to fulfill against;
   // recurring plans are reconciled from `customer.subscription.*` events instead.
@@ -271,7 +279,7 @@ export async function createPlanCheckout(input: {
         customer,
         client_reference_id: purchaseId ?? input.user.id,
         line_items: [{ price: priceId, quantity: 1 }],
-        ...discountParams(coupon),
+        ...discountParams(coupon, allowPromotionCodes),
         automatic_tax: { enabled: automaticTax() },
         metadata,
         ...(recurring
@@ -311,6 +319,7 @@ export async function createPlanCheckout(input: {
       discount: coupon
         ? { code: coupon.code, discountCents: coupon.discountCents }
         : null,
+      promotionCodesEnabled: allowPromotionCodes,
     };
   } catch (error) {
     const abandoned = await abandonCheckout(mode, coupon, session);
@@ -377,6 +386,15 @@ export async function createTopupCheckout(input: {
         mode,
       })
     : null;
+  const allowPromotionCodes = coupon
+    ? false
+    : await prepareCheckoutPromotionCodes({
+        applicationId: input.applicationId,
+        user: input.user,
+        customerId: customer,
+        target: { kind: "topup", product },
+        mode,
+      });
   const purchaseId = newId();
 
   const metadata = {
@@ -416,7 +434,7 @@ export async function createTopupCheckout(input: {
         customer,
         client_reference_id: purchaseId,
         line_items: [{ price: priceId, quantity: 1 }],
-        ...discountParams(coupon),
+        ...discountParams(coupon, allowPromotionCodes),
         automatic_tax: { enabled: automaticTax() },
         invoice_creation: { enabled: true, invoice_data: { metadata } },
         payment_intent_data: { metadata },
@@ -445,6 +463,7 @@ export async function createTopupCheckout(input: {
       discount: coupon
         ? { code: coupon.code, discountCents: coupon.discountCents }
         : null,
+      promotionCodesEnabled: allowPromotionCodes,
     };
   } catch (error) {
     const abandoned = await abandonCheckout(mode, coupon, session);
@@ -504,8 +523,8 @@ export async function reconcilePlanCheckoutSession(input: {
   assertSubscriptionMatchesSession(session, subscription);
   const synced = await syncSubscriptionFromStripe(subscription);
   if (!synced) throw new Error("STRIPE_SUBSCRIPTION_METADATA_MISSING");
-  if (!(await settleCouponRedemption(session))) {
-    await holdCouponRedemption(session);
+  if (!(await settleCouponRedemption(session, mode))) {
+    await holdCouponRedemption(session, mode);
   }
   return { sessionId: session.id, subscriptionId: subscription.id };
 }
@@ -533,7 +552,7 @@ export async function reconcileTopupCheckoutSession(input: {
   // An async payment method can leave the session complete but unpaid. That is
   // not a failure — the webhook settles it once the funds clear.
   if (session.status !== "complete" || session.payment_status === "unpaid") {
-    await holdCouponRedemption(session);
+    await holdCouponRedemption(session, mode);
     return { sessionId: session.id, status: "pending" as const };
   }
 
@@ -547,6 +566,6 @@ export async function reconcileTopupCheckoutSession(input: {
     stripeInvoiceId: referenceId(session.invoice),
     mode,
   });
-  await settleCouponRedemption(session);
+  await settleCouponRedemption(session, mode);
   return { sessionId: session.id, status: "settled" as const };
 }
