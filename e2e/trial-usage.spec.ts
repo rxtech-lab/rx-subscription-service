@@ -86,6 +86,59 @@ test.describe.serial("trial usage allowance", () => {
       remaining: 0,
     });
   });
+
+  test("keeps usage when a trialing subscriber transitions to active", async () => {
+    const user = await createTrialUser(api, "Trial to paid allowance");
+
+    const trialAllowance = await record(
+      api,
+      user.rxlabUserId,
+      1_000,
+      "trial-to-paid-trial-allowance",
+    );
+    expect(trialAllowance.ok()).toBe(true);
+    await expect(trialAllowance.json()).resolves.toMatchObject({
+      allowed: true,
+      used: 1_000,
+      limit: 1_000,
+    });
+
+    const activated = await api.post("/api/e2e/subscriptions", {
+      data: {
+        rxlabUserId: user.rxlabUserId,
+        planId: E2E_SECOND_PLAN_ID,
+        status: "active",
+      },
+    });
+    expect(activated.ok()).toBe(true);
+
+    const paidAllowance = await record(
+      api,
+      user.rxlabUserId,
+      9_000,
+      "trial-to-paid-active-allowance",
+    );
+    expect(paidAllowance.ok()).toBe(true);
+    await expect(paidAllowance.json()).resolves.toMatchObject({
+      allowed: true,
+      used: 10_000,
+      limit: 10_000,
+    });
+
+    const overLimit = await record(
+      api,
+      user.rxlabUserId,
+      1,
+      "trial-to-paid-over-limit",
+    );
+    expect(overLimit.status()).toBe(402);
+    await expect(overLimit.json()).resolves.toMatchObject({
+      allowed: false,
+      reason: "limit_exceeded",
+      used: 10_000,
+      limit: 10_000,
+    });
+  });
 });
 
 async function createTrialUser(api: APIRequestContext, displayName: string) {

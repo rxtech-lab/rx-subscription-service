@@ -25,7 +25,10 @@ import {
 import { resolveEntitlements } from "./entitlements";
 import { requireRole } from "./roles";
 import { clampClockOffset } from "./test-clock";
-import { upsertSubscriptionFromStripe } from "./subscriptions";
+import {
+  getSubscriptionByStripeId,
+  upsertSubscriptionFromStripe,
+} from "./subscriptions";
 import { requireUsageItem } from "./usage-items";
 import { creditBalance, requireAppUser } from "./users";
 
@@ -205,14 +208,28 @@ export async function grantTestSubscription(input: {
   }
 
   const now = new Date();
+  const stripeSubscriptionId = `sub_test_${user.id}_${plan.id}`;
+  const existing = await getSubscriptionByStripeId(stripeSubscriptionId);
+  const continuesCurrentPeriod =
+    existing?.status === "trialing" &&
+    status === "active" &&
+    existing.currentPeriodStart !== null &&
+    existing.currentPeriodEnd !== null &&
+    now < existing.currentPeriodEnd;
+  // A generated suite calls grantPlan again to change a live trial to active.
+  // Keep that status-only transition in the same usage period so the larger
+  // paid allowance applies to what the subscriber already consumed.
+  const currentPeriodStart = continuesCurrentPeriod
+    ? existing.currentPeriodStart
+    : now;
   const { subscription } = await upsertSubscriptionFromStripe({
     applicationId: input.applicationId,
     appUserId: user.id,
     planId: plan.id,
-    stripeSubscriptionId: `sub_test_${user.id}_${plan.id}`,
+    stripeSubscriptionId,
     stripeCustomerId: `cus_test_${user.id}`,
     status,
-    currentPeriodStart: now,
+    currentPeriodStart,
     currentPeriodEnd: new Date(now.getTime() + periodDays * 86_400_000),
     cancelAtPeriodEnd: false,
   });

@@ -8,6 +8,7 @@ import { e2eNotFound, isAuthorizedE2ERequest } from "@/lib/e2e/request";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
 import { requirePlan } from "@/lib/subscription/plans";
 import { upsertSubscriptionFromStripe } from "@/lib/subscription/subscriptions";
+import { grantTestSubscription } from "@/lib/subscription/test-users";
 
 const schema = z.object({
   rxlabUserId: z.string().min(1),
@@ -15,7 +16,7 @@ const schema = z.object({
   status: z.enum(["active", "trialing"]).default("active"),
 });
 
-/** Simulate the authoritative Stripe subscription sync in Playwright tests. */
+/** Simulate subscription grants for both production and sandbox E2E users. */
 export async function POST(request: Request) {
   if (!isAuthorizedE2ERequest(request)) return e2eNotFound();
 
@@ -27,18 +28,20 @@ export async function POST(request: Request) {
     });
     await requirePlan(context.application.id, input.planId);
 
-    const now = new Date();
-    const { subscription } = await upsertSubscriptionFromStripe({
-      applicationId: context.application.id,
-      appUserId: user.id,
-      planId: input.planId,
-      stripeSubscriptionId: `sub_e2e_${user.id}_${input.planId}`,
-      stripeCustomerId: `cus_e2e_${user.id}`,
-      status: input.status,
-      currentPeriodStart: now,
-      currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000),
-      cancelAtPeriodEnd: false,
-    });
+    const subscription = user.isTest
+      ? await grantTestSubscription({
+          applicationId: context.application.id,
+          appUserId: user.id,
+          planId: input.planId,
+          status: input.status,
+          actor: { type: "system", id: null },
+        })
+      : await syncProductionSubscription({
+          applicationId: context.application.id,
+          appUserId: user.id,
+          planId: input.planId,
+          status: input.status,
+        });
     const entitlements = await resolveEntitlements({
       applicationId: context.application.id,
       appUserId: user.id,
@@ -47,4 +50,25 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiError(error);
   }
+}
+
+async function syncProductionSubscription(input: {
+  applicationId: string;
+  appUserId: string;
+  planId: string;
+  status: "active" | "trialing";
+}) {
+  const now = new Date();
+  const { subscription } = await upsertSubscriptionFromStripe({
+    applicationId: input.applicationId,
+    appUserId: input.appUserId,
+    planId: input.planId,
+    stripeSubscriptionId: `sub_e2e_${input.appUserId}_${input.planId}`,
+    stripeCustomerId: `cus_e2e_${input.appUserId}`,
+    status: input.status,
+    currentPeriodStart: now,
+    currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000),
+    cancelAtPeriodEnd: false,
+  });
+  return subscription;
 }
