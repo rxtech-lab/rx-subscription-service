@@ -1,8 +1,9 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   subscriptions,
+  purchases,
   topupEligibilityRules,
   topupProducts,
   type TopupRuleType,
@@ -336,7 +337,11 @@ export async function removeEligibilityRule(input: {
 export interface EligibilityResult {
   eligible: boolean;
   /** Rules the user failed, for a message the app can show verbatim. */
-  failed: { ruleType: TopupRuleType; planId: string | null; roleId: string | null }[];
+  failed: {
+    ruleType: TopupRuleType | "purchase_limit";
+    planId: string | null;
+    roleId: string | null;
+  }[];
 }
 
 const ACTIVE_STATUSES = ["trialing", "active", "past_due"] as const;
@@ -353,7 +358,7 @@ export async function checkTopupEligibility(input: {
   appUserId: string;
 }): Promise<EligibilityResult> {
   const rules = await listEligibilityRules(input.topupId);
-  if (rules.length === 0) return { eligible: true, failed: [] };
+  const product = await requireTopupProduct(input.applicationId, input.topupId);
 
   const activeSubscriptions = await db
     .select({ planId: subscriptions.planId, status: subscriptions.status })
@@ -389,6 +394,22 @@ export async function checkTopupEligibility(input: {
     );
     if (!rule.roleId || !roleIds.has(rule.roleId)) {
       failed.push({ ruleType: rule.ruleType, planId: null, roleId: rule.roleId });
+    }
+  }
+
+  if (product.maxPurchasesPerUser !== null) {
+    const [{ value }] = await db
+      .select({ value: count() })
+      .from(purchases)
+      .where(
+        and(
+          eq(purchases.appUserId, input.appUserId),
+          eq(purchases.topupProductId, input.topupId),
+          inArray(purchases.status, ["pending", "paid"]),
+        ),
+      );
+    if (value >= product.maxPurchasesPerUser) {
+      failed.push({ ruleType: "purchase_limit", planId: null, roleId: null });
     }
   }
 

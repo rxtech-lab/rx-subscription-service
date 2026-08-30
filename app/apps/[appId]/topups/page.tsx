@@ -7,6 +7,10 @@ import {
   updateTopupAction,
 } from "@/app/actions/catalog";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
+import {
+  removeAppleProductMappingAction,
+  saveAppleTopupProductAction,
+} from "@/app/actions/store-products";
 import { TopupEligibilityFields } from "@/components/forms/topup-eligibility-fields";
 import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
@@ -25,6 +29,7 @@ import {
   statusTone,
 } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
+import { listStoreProductMappings } from "@/lib/iap/configuration";
 import { listPlans } from "@/lib/subscription/plans";
 import { listRoles } from "@/lib/subscription/roles";
 import { listEligibilityRules, listTopupProducts } from "@/lib/subscription/topups";
@@ -35,12 +40,20 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
   const { appId } = await params;
   await requireApplicationAccess(appId);
 
-  const [topups, units, plans, roles] = await Promise.all([
+  const [topups, units, plans, roles, storeMappings] = await Promise.all([
     listTopupProducts(appId, { includeArchived: true }),
     listBalanceUnits(appId),
     listPlans(appId),
     listRoles(appId),
+    listStoreProductMappings(appId),
   ]);
+  const appleByTopup = new Map(
+    storeMappings
+      .filter(
+        (mapping) => mapping.provider === "apple_app_store" && mapping.topupProductId,
+      )
+      .map((mapping) => [mapping.topupProductId!, mapping]),
+  );
 
   const rulesByTopup = new Map(
     await Promise.all(
@@ -75,6 +88,7 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                 <Th>Pack</Th>
                 <Th>Grants</Th>
                 <Th>Price</Th>
+                <Th>App Store</Th>
                 <Th>Requires</Th>
                 <Th>Status</Th>
                 <Th>Actions</Th>
@@ -93,6 +107,11 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                       {topup.amount.toLocaleString("en-US")} {unitKey(topup.unitId)}
                     </Td>
                     <Td>{formatMoney(topup.priceAmountCents, topup.currency)}</Td>
+                    <Td>
+                      <span className="font-mono text-xs text-neutral-500">
+                        {appleByTopup.get(topup.id)?.productId ?? "Not mapped"}
+                      </span>
+                    </Td>
                     <Td>
                       {rules.length === 0 ? (
                         <span className="text-xs text-neutral-400">Anyone</span>
@@ -195,6 +214,44 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                             </div>
                           </ActionForm>
                         </FormDialog>
+                        <FormDialog
+                          triggerLabel="App Store product"
+                          title={`Map ${topup.name} in App Store Connect`}
+                          description="Expected type: Consumable."
+                          triggerVariant="menu"
+                          triggerSize="sm"
+                        >
+                          <ActionForm
+                            action={saveAppleTopupProductAction}
+                            submitLabel="Save product ID"
+                          >
+                            <input type="hidden" name="applicationId" value={appId} />
+                            <input type="hidden" name="targetId" value={topup.id} />
+                            <Field label="Apple product ID">
+                              <Input
+                                name="productId"
+                                defaultValue={appleByTopup.get(topup.id)?.productId ?? ""}
+                                placeholder="com.rxlab.app.points5000"
+                                required
+                              />
+                            </Field>
+                          </ActionForm>
+                        </FormDialog>
+                        {appleByTopup.has(topup.id) ? (
+                          <InlineActionButton
+                            action={removeAppleProductMappingAction}
+                            label="Remove App Store mapping"
+                            variant="menuDanger"
+                          >
+                            <input type="hidden" name="applicationId" value={appId} />
+                            <input type="hidden" name="section" value="topups" />
+                            <input
+                              type="hidden"
+                              name="mappingId"
+                              value={appleByTopup.get(topup.id)!.id}
+                            />
+                          </InlineActionButton>
+                        ) : null}
                         <InlineActionButton
                           action={setTopupStatusAction}
                           label={topup.status === "active" ? "Unpublish" : "Publish"}

@@ -147,6 +147,9 @@ export async function listSubscriptions(
       currentPeriodStart: subscriptions.currentPeriodStart,
       currentPeriodEnd: subscriptions.currentPeriodEnd,
       cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+      billingProvider: subscriptions.billingProvider,
+      providerSubscriptionId: subscriptions.providerSubscriptionId,
+      providerProductId: subscriptions.providerProductId,
       stripeSubscriptionId: subscriptions.stripeSubscriptionId,
       startedAt: subscriptions.startedAt,
       // Carried so the console can tag test rows rather than hide them — an
@@ -185,6 +188,7 @@ export async function upsertSubscriptionFromStripe(input: {
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
+  providerProductId?: string | null;
 }) {
   const now = new Date();
   const existing = await getSubscriptionByStripeId(input.stripeSubscriptionId);
@@ -213,6 +217,10 @@ export async function upsertSubscriptionFromStripe(input: {
     const [updated] = await db
       .update(subscriptions)
       .set({
+        billingProvider: "stripe",
+        providerSubscriptionId: input.stripeSubscriptionId,
+        providerProductId:
+          input.providerProductId ?? existing.providerProductId,
         status: input.status,
         currentPeriodStart: input.currentPeriodStart,
         currentPeriodEnd: input.currentPeriodEnd,
@@ -248,6 +256,9 @@ export async function upsertSubscriptionFromStripe(input: {
       currentPeriodStart: input.currentPeriodStart,
       currentPeriodEnd: input.currentPeriodEnd,
       cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+      billingProvider: "stripe",
+      providerSubscriptionId: input.stripeSubscriptionId,
+      providerProductId: input.providerProductId ?? null,
       stripeSubscriptionId: input.stripeSubscriptionId,
       stripeCustomerId: input.stripeCustomerId,
       entitlementSnapshot: await buildEntitlementSnapshot(input.planId),
@@ -276,6 +287,10 @@ export async function grantPeriodBalances(input: {
   /** Recorded on each lot so plan end can find `after_plan_end` grants. */
   subscriptionId?: string | null;
   entitlements?: BalanceGrantEntitlement[];
+  /** Defaults preserve the existing Stripe/local ledger contract. */
+  idempotencyPrefix?: string;
+  referenceType?: string;
+  referenceId?: string;
 }) {
   const entitlements =
     input.entitlements ??
@@ -301,9 +316,9 @@ export async function grantPeriodBalances(input: {
         amount: grant.amount!,
         kind: "plan_grant",
         description: "Plan allowance",
-        idempotencyKey: `plan_grant:${input.appUserId}:${input.planId}:${grant.unitId}:${input.periodKey}`,
-        referenceType: "plan",
-        referenceId: input.planId,
+        idempotencyKey: `${input.idempotencyPrefix ?? "plan_grant"}:${input.appUserId}:${input.planId}:${grant.unitId}:${input.periodKey}`,
+        referenceType: input.referenceType ?? "plan",
+        referenceId: input.referenceId ?? input.planId,
         expiresAt: resolveExpiresAt({
           policy,
           months,

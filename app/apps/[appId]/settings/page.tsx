@@ -1,6 +1,9 @@
-import { KeyRound, Settings2, Workflow } from "lucide-react";
+import { KeyRound, Settings2, Smartphone, Workflow } from "lucide-react";
 import Link from "next/link";
-import { updateTestAutomationSettingsAction } from "@/app/actions/settings";
+import {
+  updateAppleIntegrationAction,
+  updateTestAutomationSettingsAction,
+} from "@/app/actions/settings";
 import { createApiKeyAction, deleteApiKeyAction } from "@/app/actions/users";
 import {
   ActionForm,
@@ -22,12 +25,18 @@ import {
 } from "@/components/ui/primitives";
 import { listApiKeys } from "@/lib/api/keys";
 import { requireApplicationAccess } from "@/lib/console/session";
+import {
+  appleCredentialsConfigured,
+  getAppleIntegration,
+  listStoreProductMappings,
+} from "@/lib/iap/configuration";
 import { getTestAutomationSettings } from "@/lib/testing/automation";
 import { cn, formatDate } from "@/lib/utils";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "api-keys", label: "API keys", icon: KeyRound },
+  { id: "app-store", label: "App Store", icon: Smartphone },
   { id: "automation", label: "Automation", icon: Workflow },
 ] as const;
 
@@ -39,7 +48,9 @@ function first(value: string | string[] | undefined) {
 
 function settingsTab(value: string | string[] | undefined): SettingsTab {
   const tab = first(value);
-  return tab === "api-keys" || tab === "automation" ? tab : "general";
+  return tab === "api-keys" || tab === "app-store" || tab === "automation"
+    ? tab
+    : "general";
 }
 
 function SettingsTabs({
@@ -93,7 +104,7 @@ export default async function SettingsPage({
 
   const activeTab = settingsTab(tab);
   const query = first(q)?.trim() ?? "";
-  const [apiKeyData, testAutomation] = await Promise.all([
+  const [apiKeyData, testAutomation, appleIntegration, storeMappings] = await Promise.all([
     activeTab === "api-keys"
       ? listApiKeys(appId, {
           page: Number(first(page)) || 1,
@@ -101,7 +112,13 @@ export default async function SettingsPage({
         })
       : null,
     activeTab === "automation" ? getTestAutomationSettings(appId) : null,
+    activeTab === "app-store" ? getAppleIntegration(appId) : null,
+    activeTab === "app-store" ? listStoreProductMappings(appId) : [],
   ]);
+  const site = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
+  const notificationUrl = site
+    ? `${site}/api/apple/notifications/${appId}`
+    : `/api/apple/notifications/${appId}`;
 
   function pageHref(target: number) {
     const search = new URLSearchParams();
@@ -192,6 +209,76 @@ export default async function SettingsPage({
                 </>
               )}
             </p>
+          </ActionForm>
+        </Card>
+      ) : null}
+
+      {activeTab === "app-store" ? (
+        <Card>
+          <CardHeader
+            title="App Store"
+            description="Connect StoreKit 2 purchases and App Store Server Notifications V2 to this application."
+          />
+          <ActionForm
+            action={updateAppleIntegrationAction}
+            submitLabel="Save App Store settings"
+            pendingLabel="Saving App Store settings…"
+            className="space-y-4 px-5 py-4"
+          >
+            <input type="hidden" name="applicationId" value={appId} />
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Bundle ID">
+                <Input
+                  name="bundleId"
+                  defaultValue={appleIntegration?.bundleId ?? ""}
+                  placeholder="com.rxlab.rxargo"
+                  required
+                />
+              </Field>
+              <Field label="Apple app ID" hint="The numeric ID from App Store Connect.">
+                <Input
+                  name="appAppleId"
+                  type="number"
+                  min="1"
+                  defaultValue={appleIntegration?.appAppleId ?? undefined}
+                  required
+                />
+              </Field>
+            </div>
+            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+              <input
+                type="checkbox"
+                name="enabled"
+                defaultChecked={appleIntegration?.enabled ?? false}
+                className="mt-0.5 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-900">
+                  Enable App Store purchases
+                </span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  Enable only after credentials, products, and notifications are ready.
+                </span>
+              </span>
+            </label>
+            <dl className="space-y-3 rounded-xl border border-slate-200 p-4 text-xs">
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-slate-500">Shared credentials</dt>
+                <dd className="font-semibold text-slate-900">
+                  {appleCredentialsConfigured() ? "Ready" : "Missing deployment secrets"}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-slate-500">Mapped products</dt>
+                <dd className="font-semibold text-slate-900">
+                  {storeMappings.filter((mapping) => mapping.provider === "apple_app_store").length}
+                </dd>
+              </div>
+              <div className="space-y-1">
+                <dt className="text-slate-500">Notifications V2 URL</dt>
+                <dd className="break-all font-mono text-slate-900">{notificationUrl}</dd>
+              </div>
+            </dl>
           </ActionForm>
         </Card>
       ) : null}

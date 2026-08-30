@@ -37,6 +37,14 @@ export default defineConfig({
         STRIPE_SANDBOX_SECRET_KEY: "sk_test_playwright_sandbox",
         STRIPE_SANDBOX_WEBHOOK_SECRET: E2E_SANDBOX_WEBHOOK_SECRET,
         NEXT_PUBLIC_SITE_URL: E2E_BASE_URL,
+        APPLE_IAP_ISSUER_ID: "e2e-issuer",
+        APPLE_IAP_KEY_ID: "e2e-key",
+        APPLE_IAP_PRIVATE_KEY_BASE64: Buffer.from(
+          "-----BEGIN PRIVATE KEY-----\ne2e\n-----END PRIVATE KEY-----",
+        ).toString("base64"),
+        APPLE_IAP_ROOT_CERTIFICATES_BASE64: Buffer.from("e2e-root").toString(
+          "base64",
+        ),
       },
     },
   ],

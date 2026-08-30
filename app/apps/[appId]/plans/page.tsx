@@ -7,6 +7,10 @@ import {
   updatePlanAction,
 } from "@/app/actions/plans";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
+import {
+  removeAppleProductMappingAction,
+  saveApplePlanProductAction,
+} from "@/app/actions/store-products";
 import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
@@ -24,6 +28,7 @@ import {
   statusTone,
 } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
+import { listStoreProductMappings } from "@/lib/iap/configuration";
 import { listPlanEntitlements, listPlans } from "@/lib/subscription/plans";
 import { listRoles } from "@/lib/subscription/roles";
 import { listUsageItems } from "@/lib/subscription/usage-items";
@@ -103,12 +108,18 @@ export default async function PlansPage({
   const { tab } = await searchParams;
   await requireApplicationAccess(appId);
 
-  const [allPlans, roles, usageItems, units] = await Promise.all([
+  const [allPlans, roles, usageItems, units, storeMappings] = await Promise.all([
     listPlans(appId, { includeArchived: true }),
     listRoles(appId),
     listUsageItems(appId),
     listBalanceUnits(appId),
+    listStoreProductMappings(appId),
   ]);
+  const appleByPlan = new Map(
+    storeMappings
+      .filter((mapping) => mapping.provider === "apple_app_store" && mapping.planId)
+      .map((mapping) => [mapping.planId!, mapping]),
+  );
 
   const activeTab = planTab(tab);
   const activePlans = allPlans.filter((plan) => plan.status !== "archived");
@@ -160,6 +171,7 @@ export default async function PlansPage({
                 <Th>Plan</Th>
                 <Th>Group</Th>
                 <Th>Price</Th>
+                <Th>App Store</Th>
                 <Th>Grants</Th>
                 <Th>Status</Th>
                 <Th>Actions</Th>
@@ -185,6 +197,11 @@ export default async function PlansPage({
                         {formatInterval(plan.billingInterval, plan.intervalCount)}
                         {plan.trialDays > 0 ? ` · ${plan.trialDays}-day trial` : ""}
                       </p>
+                    </Td>
+                    <Td>
+                      <span className="font-mono text-xs text-neutral-500">
+                        {appleByPlan.get(plan.id)?.productId ?? "Not mapped"}
+                      </span>
                     </Td>
                     <Td>
                       {entitlements.length === 0 ? (
@@ -295,6 +312,44 @@ export default async function PlansPage({
                             </div>
                           </ActionForm>
                         </FormDialog>
+                        <FormDialog
+                          triggerLabel="App Store product"
+                          title={`Map ${plan.name} in App Store Connect`}
+                          description={`Expected type: ${plan.billingInterval === "one_time" ? "Non-Consumable" : "Auto-Renewable Subscription"}.`}
+                          triggerVariant="menu"
+                          triggerSize="sm"
+                        >
+                          <ActionForm
+                            action={saveApplePlanProductAction}
+                            submitLabel="Save product ID"
+                          >
+                            <input type="hidden" name="applicationId" value={appId} />
+                            <input type="hidden" name="targetId" value={plan.id} />
+                            <Field label="Apple product ID">
+                              <Input
+                                name="productId"
+                                defaultValue={appleByPlan.get(plan.id)?.productId ?? ""}
+                                placeholder="com.rxlab.app.plan"
+                                required
+                              />
+                            </Field>
+                          </ActionForm>
+                        </FormDialog>
+                        {appleByPlan.has(plan.id) ? (
+                          <InlineActionButton
+                            action={removeAppleProductMappingAction}
+                            label="Remove App Store mapping"
+                            variant="menuDanger"
+                          >
+                            <input type="hidden" name="applicationId" value={appId} />
+                            <input type="hidden" name="section" value="plans" />
+                            <input
+                              type="hidden"
+                              name="mappingId"
+                              value={appleByPlan.get(plan.id)!.id}
+                            />
+                          </InlineActionButton>
+                        ) : null}
                         {plan.status === "archived" ? (
                           <InlineActionButton
                             action={setPlanStatusAction}

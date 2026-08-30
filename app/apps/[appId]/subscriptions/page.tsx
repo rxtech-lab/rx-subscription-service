@@ -100,7 +100,7 @@ export default async function SubscriptionsPage({
       <Card>
         <CardHeader
           title="Subscriptions"
-          description="Stripe owns status and period boundaries; cancelling here records the intent locally."
+          description="Stripe and the App Store remain authoritative for billing status and period boundaries."
           action={
             canTest ? (
               <FormDialog
@@ -188,6 +188,7 @@ export default async function SubscriptionsPage({
                 <Th>Plan</Th>
                 <Th>User</Th>
                 <Th>Status</Th>
+                <Th>Provider</Th>
                 <Th>Period</Th>
                 <Th>Actions</Th>
               </tr>
@@ -221,15 +222,26 @@ export default async function SubscriptionsPage({
                     ) : null}
                   </Td>
                   <Td>
+                    <span className="text-xs font-medium text-neutral-600">
+                      {subscription.billingProvider === "apple_app_store"
+                        ? "App Store"
+                        : "Stripe"}
+                    </span>
+                  </Td>
+                  <Td>
                     <span className="text-xs text-neutral-500">
                       {formatDate(subscription.currentPeriodStart)} →{" "}
                       {formatDate(subscription.currentPeriodEnd)}
                     </span>
                   </Td>
                   <Td>
-                    {["active", "trialing", "past_due"].includes(
-                      subscription.status,
-                    ) ? (
+                    {subscription.billingProvider === "apple_app_store" ? (
+                      <span className="text-xs text-neutral-500">
+                        Managed in the App Store
+                      </span>
+                    ) : ["active", "trialing", "past_due"].includes(
+                        subscription.status,
+                      ) ? (
                       <ActionMenu label={`Actions for ${subscription.planName}`}>
                         <InlineActionButton
                           action={cancelSubscriptionAction}

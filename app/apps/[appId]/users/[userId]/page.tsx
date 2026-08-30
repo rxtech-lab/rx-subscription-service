@@ -27,6 +27,7 @@ import {
   getUsageSeries,
 } from "@/lib/subscription/consumption";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
+import { listPurchaseHistory } from "@/lib/subscription/purchases";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
 import { isGranularity, type Granularity } from "@/lib/subscription/series";
 import { listBalanceUnits } from "@/lib/subscription/units";
@@ -202,6 +203,7 @@ export default async function UserDetailPage({
     subscriptions,
     ledger,
     paymentHistory,
+    localPurchaseHistory,
     statistics,
   ] = await Promise.all([
       getBalances(user.id),
@@ -218,8 +220,17 @@ export default async function UserDetailPage({
             before: paymentBefore,
           })
         : Promise.resolve({ payments: [], hasMore: false }),
+      listPurchaseHistory({
+        applicationId: appId,
+        appUserId: user.id,
+        page: 1,
+        pageSize: 100,
+      }),
       statisticsPromise,
     ]);
+  const applePurchases = localPurchaseHistory.purchases.filter(
+    (purchase) => purchase.billingProvider === "apple_app_store",
+  );
 
   const firstPayment = paymentHistory.payments[0];
   const lastPayment = paymentHistory.payments.at(-1);
@@ -410,6 +421,7 @@ export default async function UserDetailPage({
               <tr>
                 <Th>Plan</Th>
                 <Th>Status</Th>
+                <Th>Provider</Th>
                 <Th>Period ends</Th>
               </tr>
             </thead>
@@ -429,6 +441,13 @@ export default async function UserDetailPage({
                   </Td>
                   <Td>
                     <span className="text-xs text-neutral-500">
+                      {subscription.billingProvider === "apple_app_store"
+                        ? "App Store"
+                        : "Stripe"}
+                    </span>
+                  </Td>
+                  <Td>
+                    <span className="text-xs text-neutral-500">
                       {formatDate(subscription.currentPeriodEnd)}
                     </span>
                   </Td>
@@ -441,7 +460,7 @@ export default async function UserDetailPage({
 
       <Card>
         <CardHeader
-          title="Payments"
+          title="Stripe payments"
           description={`Invoices from the Stripe ${environment} account, including renewals and one-time purchases.`}
         />
         {!stripeConfigured(stripeMode) ? (
@@ -539,6 +558,55 @@ export default async function UserDetailPage({
               </div>
             ) : null}
           </>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="App Store purchases"
+          description="Verified transaction price and currency come from Apple's signed data."
+        />
+        {applePurchases.length === 0 ? (
+          <EmptyState title="No App Store purchases" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Product</Th>
+                <Th>Type</Th>
+                <Th>Status</Th>
+                <Th>Quantity</Th>
+                <Th>Apple price</Th>
+                <Th>Date</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {applePurchases.map((purchase) => (
+                <tr key={purchase.id}>
+                  <Td>
+                    <span className="font-mono text-xs text-slate-600">
+                      {purchase.providerProductId ?? "Unknown product"}
+                    </span>
+                  </Td>
+                  <Td>{purchase.kind === "topup" ? "Consumable" : "Non-consumable"}</Td>
+                  <Td>
+                    <Badge tone={statusTone(purchase.status)}>{purchase.status}</Badge>
+                  </Td>
+                  <Td>{purchase.quantity}</Td>
+                  <Td>
+                    {purchase.priceMilliunits === null
+                      ? "Unavailable"
+                      : `${(purchase.priceMilliunits / 1000).toFixed(3)} ${purchase.currency.toUpperCase()}`}
+                  </Td>
+                  <Td>
+                    <span className="text-xs text-slate-500">
+                      {formatDate(purchase.createdAt)}
+                    </span>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
         )}
       </Card>
 
