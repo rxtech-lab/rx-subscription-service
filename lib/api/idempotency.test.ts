@@ -4,6 +4,7 @@ import {
   apiReservationKey,
   apiReservationOperationKey,
   apiUsageKey,
+  scopedApiUsageKey,
 } from "./idempotency";
 
 describe("API environment idempotency namespaces", () => {
@@ -18,6 +19,9 @@ describe("API environment idempotency namespaces", () => {
       apiReservationOperationKey("app-a", "production", "settle-1"),
     ).toBe("api:app-a:balance-reservation-operation:settle-1");
     expect(apiUsageKey("app-a", "production", "usage-1")).toBe("usage-1");
+    expect(
+      scopedApiUsageKey("app-a", "production", "user-a", "item-a", "usage-1"),
+    ).toBe("api:app-a:usage:user-a:item-a:usage-1");
   });
 
   it("isolates sandbox keys from production", () => {
@@ -33,5 +37,8 @@ describe("API environment idempotency namespaces", () => {
     expect(apiUsageKey("app-a", "sandbox", "usage-1")).toBe(
       "api:app-a:sandbox:usage:usage-1",
     );
+    expect(
+      scopedApiUsageKey("app-a", "sandbox", "user-a", "item-a", "usage-1"),
+    ).toBe("api:app-a:sandbox:usage:user-a:item-a:usage-1");
   });
 });

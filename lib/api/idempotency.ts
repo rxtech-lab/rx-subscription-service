@@ -39,7 +39,8 @@ export function apiReservationOperationKey(
   return `${environmentNamespace(applicationId, environment)}:balance-reservation-operation:${callerKey.trim()}`;
 }
 
-/** Keep production usage retry semantics unchanged while isolating sandbox. */
+/** The legacy usage key, retained for recognizing retries recorded before
+ * usage keys were scoped to a user and meter. */
 export function apiUsageKey(
   applicationId: string,
   environment: ApiEnvironment,
@@ -48,4 +49,18 @@ export function apiUsageKey(
   return environment === "production"
     ? callerKey.trim()
     : `${environmentNamespace(applicationId, environment)}:usage:${callerKey.trim()}`;
+}
+
+/**
+ * A caller's operation id may legitimately repeat for different users or
+ * meters. Scope it before it reaches the globally unique database column.
+ */
+export function scopedApiUsageKey(
+  applicationId: string,
+  environment: ApiEnvironment,
+  appUserId: string,
+  usageItemId: string,
+  callerKey: string,
+) {
+  return `${environmentNamespace(applicationId, environment)}:usage:${appUserId}:${usageItemId}:${callerKey.trim()}`;
 }

@@ -8,7 +8,7 @@ import {
 } from "@/lib/api/context";
 import { getUsageItemByKey } from "@/lib/subscription/usage-items";
 import { getUsageStatus, recordUsage } from "@/lib/subscription/usage";
-import { apiUsageKey } from "@/lib/api/idempotency";
+import { apiUsageKey, scopedApiUsageKey } from "@/lib/api/idempotency";
 
 const schema = z.object({
   rxlabUserId: z.string().min(1),
@@ -46,9 +46,16 @@ export async function POST(request: Request) {
       parsed.data.idempotencyKey ??
       request.headers.get("idempotency-key") ??
       `usage:${user.id}:${item.id}:${crypto.randomUUID()}`;
-    const idempotencyKey = apiUsageKey(
+    const legacyIdempotencyKey = apiUsageKey(
       context.application.id,
       context.environment,
+      callerIdempotencyKey,
+    );
+    const idempotencyKey = scopedApiUsageKey(
+      context.application.id,
+      context.environment,
+      user.id,
+      item.id,
       callerIdempotencyKey,
     );
 
@@ -58,6 +65,7 @@ export async function POST(request: Request) {
       usageItemId: item.id,
       amount: parsed.data.amount,
       idempotencyKey,
+      legacyIdempotencyKey,
       metadata: parsed.data.metadata ?? null,
     });
 
