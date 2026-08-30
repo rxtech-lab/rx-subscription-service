@@ -26,6 +26,7 @@ export interface ResolvedEntitlements {
     planId: string;
     planKey: string;
     planName: string;
+    planGroup: string;
     status: string;
     currentPeriodStart: Date | null;
     currentPeriodEnd: Date | null;
@@ -113,6 +114,7 @@ export async function resolveEntitlements(input: {
       entitlementSnapshot: subscriptions.entitlementSnapshot,
       planKey: plans.key,
       planName: plans.name,
+      planGroup: plans.planGroup,
     })
     .from(subscriptions)
     .innerJoin(plans, eq(subscriptions.planId, plans.id))
@@ -248,6 +250,7 @@ export async function resolveEntitlements(input: {
       planId: row.planId,
       planKey: row.planKey,
       planName: row.planName,
+      planGroup: row.planGroup,
       status: row.status,
       currentPeriodStart: row.currentPeriodStart,
       currentPeriodEnd: row.currentPeriodEnd,

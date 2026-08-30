@@ -1,19 +1,103 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appUsers,
   planEntitlements,
   plans,
+  purchases,
   subscriptions,
   type BalanceExpiryPolicy,
   type Plan,
   type SubscriptionStatus,
 } from "@/lib/db/schema";
-import { newId, NotFoundError, recordAudit, type Actor } from "./shared";
+import {
+  newId,
+  NotFoundError,
+  recordAudit,
+  ValidationError,
+  type Actor,
+} from "./shared";
 import { creditBalance } from "./users";
 import { resolveExpiresAt } from "./balance-expiry-rules";
 import { stampLotsForPlanEnd } from "./balance-lots";
+
+const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due"] as const;
+
+export interface OwnedPlan {
+  planId: string;
+  planName: string;
+  planGroup: string;
+}
+
+/** Active recurring and paid/in-progress one-time plans owned by one user. */
+export async function listOwnedPlans(input: {
+  applicationId: string;
+  appUserId: string;
+  excludeSubscriptionId?: string;
+}): Promise<OwnedPlan[]> {
+  const subscriptionConditions = [
+    eq(subscriptions.applicationId, input.applicationId),
+    eq(subscriptions.appUserId, input.appUserId),
+    inArray(subscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+  ];
+  if (input.excludeSubscriptionId) {
+    subscriptionConditions.push(ne(subscriptions.id, input.excludeSubscriptionId));
+  }
+
+  const [activeSubscriptions, oneTimePurchases] = await Promise.all([
+    db
+      .select({
+        planId: plans.id,
+        planName: plans.name,
+        planGroup: plans.planGroup,
+      })
+      .from(subscriptions)
+      .innerJoin(plans, eq(subscriptions.planId, plans.id))
+      .where(and(...subscriptionConditions)),
+    db
+      .select({
+        planId: plans.id,
+        planName: plans.name,
+        planGroup: plans.planGroup,
+      })
+      .from(purchases)
+      .innerJoin(plans, eq(purchases.planId, plans.id))
+      .where(
+        and(
+          eq(purchases.applicationId, input.applicationId),
+          eq(purchases.appUserId, input.appUserId),
+          eq(purchases.kind, "plan_one_time"),
+          inArray(purchases.status, ["pending", "paid"]),
+        ),
+      )
+  ]);
+  return [...activeSubscriptions, ...oneTimePurchases];
+}
+
+/** Enforce one owned or in-progress plan per group before opening Checkout. */
+export async function assertPlanGroupAvailable(input: {
+  applicationId: string;
+  appUserId: string;
+  plan: Plan;
+  excludeSubscriptionId?: string;
+}) {
+  const ownedPlans = await listOwnedPlans({
+    applicationId: input.applicationId,
+    appUserId: input.appUserId,
+    excludeSubscriptionId: input.excludeSubscriptionId,
+  });
+  const conflict = ownedPlans.find(
+    (ownedPlan) => ownedPlan.planGroup === input.plan.planGroup,
+  );
+  if (!conflict) return;
+  if (conflict.planId === input.plan.id) {
+    throw new ValidationError(`User already has the "${input.plan.name}" plan.`);
+  }
+  throw new ValidationError(
+    `User already has "${conflict.planName}" in plan group "${conflict.planGroup}". A user can only have one plan in each group.`,
+  );
+}
 
 /**
  * The slice of a plan entitlement `grantPeriodBalances` needs. Accepted as a
@@ -58,6 +142,7 @@ export async function listSubscriptions(
       planId: subscriptions.planId,
       planName: plans.name,
       planKey: plans.key,
+      planGroup: plans.planGroup,
       status: subscriptions.status,
       currentPeriodStart: subscriptions.currentPeriodStart,
       currentPeriodEnd: subscriptions.currentPeriodEnd,
@@ -103,6 +188,26 @@ export async function upsertSubscriptionFromStripe(input: {
 }) {
   const now = new Date();
   const existing = await getSubscriptionByStripeId(input.stripeSubscriptionId);
+
+  if ((ACTIVE_SUBSCRIPTION_STATUSES as readonly string[]).includes(input.status)) {
+    const [plan] = await db
+      .select()
+      .from(plans)
+      .where(
+        and(
+          eq(plans.id, input.planId),
+          eq(plans.applicationId, input.applicationId),
+        ),
+      )
+      .limit(1);
+    if (!plan) throw new NotFoundError("plan", input.planId);
+    await assertPlanGroupAvailable({
+      applicationId: input.applicationId,
+      appUserId: input.appUserId,
+      plan,
+      excludeSubscriptionId: existing?.id,
+    });
+  }
 
   if (existing) {
     const [updated] = await db

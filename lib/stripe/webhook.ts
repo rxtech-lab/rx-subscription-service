@@ -13,6 +13,7 @@ import { newId } from "@/lib/subscription/shared";
 import {
   markRedemptionProcessing,
   markRedemptionPaid,
+  recordPromotionCodeRedemption,
   releaseRedemptionBySession,
 } from "@/lib/subscription/coupons";
 import { checkTopupEligibility } from "@/lib/subscription/topups";
@@ -181,15 +182,62 @@ async function purchaseFor(session: Stripe.Checkout.Session) {
  * same use twice. The amount is taken from what Stripe actually discounted
  * rather than from our quote, so a rounding difference is recorded honestly.
  */
+async function promotionCodeForSession(
+  session: Stripe.Checkout.Session,
+  mode: StripeMode,
+): Promise<Stripe.PromotionCode | null> {
+  const reference = session.discounts?.find((discount) => discount.promotion_code)
+    ?.promotion_code;
+  if (!reference) return null;
+  return typeof reference === "string"
+    ? stripe(mode).promotionCodes.retrieve(reference)
+    : reference;
+}
+
+async function recordHostedPromotionCode(
+  session: Stripe.Checkout.Session,
+  mode: StripeMode,
+  status: "processing" | "redeemed",
+): Promise<boolean> {
+  const promotionCode = await promotionCodeForSession(session, mode);
+  const metadata = promotionCode?.metadata;
+  if (
+    !promotionCode ||
+    !metadata?.couponId ||
+    metadata.applicationId !== session.metadata?.applicationId ||
+    metadata.appUserId !== session.metadata?.appUserId
+  ) {
+    return false;
+  }
+  const coupon = promotionCode.promotion.coupon;
+  const stripeCouponId = typeof coupon === "string" ? coupon : (coupon?.id ?? null);
+  return recordPromotionCodeRedemption({
+    couponId: metadata.couponId,
+    applicationId: metadata.applicationId,
+    appUserId: metadata.appUserId,
+    stripeCheckoutSessionId: session.id,
+    stripeCouponId,
+    purchaseId: session.metadata?.purchaseId ?? null,
+    planId: session.metadata?.planId ?? null,
+    topupProductId: session.metadata?.topupProductId ?? null,
+    discountCents: session.total_details?.amount_discount ?? 0,
+    currency: session.currency ?? "usd",
+    status,
+  });
+}
+
 export async function settleCouponRedemption(
   session: Stripe.Checkout.Session,
+  mode: StripeMode = "live",
 ): Promise<boolean> {
-  if (!session.metadata?.couponId) return false;
   if (
     session.payment_status !== "paid" &&
     session.payment_status !== "no_payment_required"
   ) {
     return false;
+  }
+  if (!session.metadata?.couponId) {
+    return recordHostedPromotionCode(session, mode, "redeemed");
   }
   return markRedemptionPaid({
     stripeCheckoutSessionId: session.id,
@@ -201,13 +249,16 @@ export async function settleCouponRedemption(
 /** A completed delayed payment keeps consuming its reserved coupon use. */
 export async function holdCouponRedemption(
   session: Stripe.Checkout.Session,
+  mode: StripeMode = "live",
 ): Promise<boolean> {
   if (
-    !session.metadata?.couponId ||
     session.status !== "complete" ||
     session.payment_status !== "unpaid"
   ) {
     return false;
+  }
+  if (!session.metadata?.couponId) {
+    return recordHostedPromotionCode(session, mode, "processing");
   }
   return markRedemptionProcessing({
     stripeCheckoutSessionId: session.id,
@@ -223,16 +274,16 @@ async function handleCheckoutCompleted(
     session.payment_status !== "paid" &&
     session.payment_status !== "no_payment_required"
   ) {
-    return holdCouponRedemption(session);
+    return holdCouponRedemption(session, mode);
   }
 
   // Subscriptions are reconciled from `customer.subscription.*`, which carries
   // the authoritative period boundaries — but the coupon use belongs to the
   // session, which only this event carries.
-  if (session.mode === "subscription") return settleCouponRedemption(session);
+  if (session.mode === "subscription") return settleCouponRedemption(session, mode);
 
   const purchaseId = session.metadata?.purchaseId ?? session.client_reference_id;
-  if (!purchaseId) return settleCouponRedemption(session);
+  if (!purchaseId) return settleCouponRedemption(session, mode);
 
   const fulfilled = await fulfillPaidPurchase({
     purchaseId,
@@ -240,7 +291,7 @@ async function handleCheckoutCompleted(
     stripeInvoiceId: referenceId(session.invoice),
     mode,
   });
-  const redeemed = await settleCouponRedemption(session);
+  const redeemed = await settleCouponRedemption(session, mode);
   return fulfilled || redeemed;
 }
 

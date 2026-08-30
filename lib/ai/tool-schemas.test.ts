@@ -9,6 +9,28 @@ const topup = {
   priceAmountCents: 500,
 };
 
+describe("plan tool schemas", () => {
+  it("defaults new plans to the default group", () => {
+    expect(
+      writeToolSchemas.createPlan.parse({
+        key: "pro",
+        name: "Pro",
+        billingInterval: "month",
+        priceAmountCents: 1_900,
+      }).planGroup,
+    ).toBe("default");
+  });
+
+  it("lets the agent move a plan to another group", () => {
+    expect(
+      writeToolSchemas.updatePlan.parse({
+        planId: "plan-pro",
+        planGroup: "addons",
+      }).planGroup,
+    ).toBe("addons");
+  });
+});
+
 describe("createTopup tool schema", () => {
   it("defaults to a standalone topup", () => {
     expect(writeToolSchemas.createTopup.parse(topup).eligibility).toEqual({

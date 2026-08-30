@@ -4,6 +4,7 @@ import { E2E_STRIPE_URL } from "./fixtures";
 const port = Number(new URL(E2E_STRIPE_URL).port);
 let sequence = 0;
 const coupons = new Map<string, Record<string, unknown>>();
+const promotionCodes = new Map<string, Record<string, unknown>>();
 
 const invoices = Array.from({ length: 12 }, (_, index) => {
   const ordinal = index + 1;
@@ -83,12 +84,16 @@ const server = createServer(async (request, response) => {
   const couponId = path.startsWith("/v1/coupons/")
     ? decodeURIComponent(path.slice("/v1/coupons/".length))
     : null;
+  const promotionCodeId = path.startsWith("/v1/promotion_codes/")
+    ? decodeURIComponent(path.slice("/v1/promotion_codes/".length))
+    : null;
   const couponMetadata = Object.fromEntries(
     [...form.entries()]
       .filter(([key]) => key.startsWith("metadata[") && key.endsWith("]"))
       .map(([key, value]) => [key.slice(9, -1), value]),
   );
   let couponPayload: Record<string, unknown> | null = null;
+  let promotionCodePayload: Record<string, unknown> | null = null;
   if (request.method === "POST" && path === "/v1/coupons") {
     const id = form.get("id") ?? `coupon_e2e_${sequence}`;
     couponPayload = {
@@ -114,6 +119,61 @@ const server = createServer(async (request, response) => {
     };
     coupons.set(couponId, couponPayload);
   }
+  if (request.method === "GET" && path === "/v1/promotion_codes") {
+    const code = url.searchParams.get("code")?.toUpperCase();
+    const customer = url.searchParams.get("customer");
+    const active = url.searchParams.get("active");
+    promotionCodePayload = {
+      object: "list",
+      data: [...promotionCodes.values()].filter(
+        (promotionCode) =>
+          (!code || String(promotionCode.code).toUpperCase() === code) &&
+          (!customer || promotionCode.customer === customer) &&
+          (active === null || String(promotionCode.active) === active),
+      ),
+      has_more: false,
+      url: "/v1/promotion_codes",
+    };
+  } else if (request.method === "POST" && path === "/v1/promotion_codes") {
+    const id = `promo_e2e_${sequence}`;
+    promotionCodePayload = {
+      id,
+      object: "promotion_code",
+      active: true,
+      code: form.get("code"),
+      customer: form.get("customer"),
+      max_redemptions: form.has("max_redemptions")
+        ? Number(form.get("max_redemptions"))
+        : null,
+      metadata: couponMetadata,
+      promotion: {
+        type: "coupon",
+        coupon: form.get("promotion[coupon]"),
+      },
+      restrictions: {
+        first_time_transaction:
+          form.get("restrictions[first_time_transaction]") === "true",
+        minimum_amount: form.has("restrictions[minimum_amount]")
+          ? Number(form.get("restrictions[minimum_amount]"))
+          : null,
+        minimum_amount_currency:
+          form.get("restrictions[minimum_amount_currency]") ?? null,
+      },
+      times_redeemed: 0,
+    };
+    promotionCodes.set(id, promotionCodePayload);
+  } else if (promotionCodeId && request.method === "GET") {
+    promotionCodePayload = promotionCodes.get(promotionCodeId) ?? null;
+  } else if (promotionCodeId && request.method === "POST") {
+    const existing = promotionCodes.get(promotionCodeId);
+    if (existing) {
+      promotionCodePayload = {
+        ...existing,
+        ...(form.has("active") ? { active: form.get("active") === "true" } : {}),
+      };
+      promotionCodes.set(promotionCodeId, promotionCodePayload);
+    }
+  }
   const payload =
     request.method === "GET" && path === "/v1/invoices"
       ? invoicePage(url)
@@ -135,6 +195,8 @@ const server = createServer(async (request, response) => {
             }
         : couponPayload
           ? couponPayload
+        : promotionCodePayload
+          ? promotionCodePayload
         : request.method === "POST" && path === "/v1/checkout/sessions"
           ? {
               id: `cs_test_e2e_${sequence}`,
@@ -142,7 +204,17 @@ const server = createServer(async (request, response) => {
               mode: "payment",
               payment_status: "unpaid",
               status: "open",
-              url: `https://checkout.stripe.test/session/${sequence}`,
+              url: `https://checkout.stripe.test/session/${sequence}${
+                form.get("allow_promotion_codes") === "true"
+                  ? `?promotion_codes=1&promotion_code=${
+                      [...promotionCodes.values()].find(
+                        (promotionCode) =>
+                          promotionCode.customer === form.get("customer") &&
+                          promotionCode.active === true,
+                      )?.id ?? ""
+                    }`
+                  : ""
+              }`,
             }
           : null;
 
@@ -152,7 +224,7 @@ const server = createServer(async (request, response) => {
       JSON.stringify({
         error: {
           type: "invalid_request_error",
-          code: couponId ? "resource_missing" : undefined,
+          code: couponId || promotionCodeId ? "resource_missing" : undefined,
           message: "Unhandled E2E Stripe route",
         },
       }),

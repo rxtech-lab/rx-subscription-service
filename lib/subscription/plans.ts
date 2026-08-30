@@ -7,6 +7,7 @@ import {
   plans,
   subscriptionRoles,
   usageItems,
+  DEFAULT_PLAN_GROUP,
   type BalanceExpiryPolicy,
   type BillingInterval,
   type EntitlementKind,
@@ -74,6 +75,7 @@ export async function createPlan(input: {
   key: string;
   name: string;
   description?: string | null;
+  planGroup?: string;
   billingInterval: BillingInterval;
   intervalCount?: number;
   priceAmountCents: number;
@@ -94,6 +96,7 @@ export async function createPlan(input: {
   );
   const trialDays = assertNonNegativeInteger(input.trialDays ?? 0, "trialDays");
   const currency = assertCurrency(input.currency ?? "usd");
+  const planGroup = assertKey(input.planGroup ?? DEFAULT_PLAN_GROUP, "planGroup");
 
   if (input.billingInterval === "one_time" && trialDays > 0) {
     throw new ValidationError("a one-time plan cannot have a trial");
@@ -115,6 +118,7 @@ export async function createPlan(input: {
       key,
       name: input.name.trim(),
       description: input.description?.trim() || null,
+      planGroup,
       billingInterval: input.billingInterval,
       intervalCount,
       priceAmountCents,
@@ -143,6 +147,7 @@ export async function updatePlan(input: {
   planId: string;
   name?: string;
   description?: string | null;
+  planGroup?: string;
   priceAmountCents?: number;
   currency?: string;
   trialDays?: number;
@@ -168,6 +173,10 @@ export async function updatePlan(input: {
         input.description === undefined
           ? before.description
           : input.description?.trim() || null,
+      planGroup:
+        input.planGroup === undefined
+          ? before.planGroup
+          : assertKey(input.planGroup, "planGroup"),
       priceAmountCents:
         input.priceAmountCents === undefined
           ? before.priceAmountCents

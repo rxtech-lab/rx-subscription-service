@@ -133,7 +133,7 @@ export default async function SubscriptionsPage({
                       <Select name="planId" required>
                         {plans.map((plan) => (
                           <option key={plan.id} value={plan.id}>
-                            {plan.name} ·{" "}
+                            {plan.name} · {plan.planGroup} ·{" "}
                             {formatMoney(plan.priceAmountCents, plan.currency)}{" "}
                             {formatInterval(
                               plan.billingInterval,
@@ -200,7 +200,7 @@ export default async function SubscriptionsPage({
                       {subscription.planName}
                     </p>
                     <p className="font-mono text-xs text-neutral-500">
-                      {subscription.planKey}
+                      {subscription.planKey} · {subscription.planGroup}
                     </p>
                   </Td>
                   <Td>

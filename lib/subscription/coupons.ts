@@ -1120,6 +1120,62 @@ export async function markRedemptionProcessing(input: {
   return fallback.length > 0;
 }
 
+/** Persist a coupon selected inside Stripe-hosted Checkout rather than pre-applied. */
+export async function recordPromotionCodeRedemption(input: {
+  couponId: string;
+  applicationId: string;
+  appUserId: string;
+  stripeCheckoutSessionId: string;
+  stripeCouponId: string | null;
+  purchaseId: string | null;
+  planId: string | null;
+  topupProductId: string | null;
+  discountCents: number;
+  currency: string;
+  status: "processing" | "redeemed";
+}): Promise<boolean> {
+  const [coupon] = await db
+    .select({ id: coupons.id })
+    .from(coupons)
+    .where(
+      and(
+        eq(coupons.id, input.couponId),
+        eq(coupons.applicationId, input.applicationId),
+      ),
+    )
+    .limit(1);
+  if (!coupon) return false;
+
+  const inserted = await db
+    .insert(couponRedemptions)
+    .values({
+      id: newId(),
+      couponId: coupon.id,
+      applicationId: input.applicationId,
+      appUserId: input.appUserId,
+      status: input.status,
+      planId: input.planId,
+      topupProductId: input.topupProductId,
+      purchaseId: input.purchaseId,
+      discountCents: input.discountCents,
+      currency: input.currency,
+      stripeCouponId: input.stripeCouponId,
+      stripeCheckoutSessionId: input.stripeCheckoutSessionId,
+      createdAt: new Date(),
+      redeemedAt: input.status === "redeemed" ? new Date() : null,
+    })
+    .onConflictDoNothing({ target: couponRedemptions.stripeCheckoutSessionId })
+    .returning({ id: couponRedemptions.id });
+  if (inserted.length > 0) return true;
+
+  return input.status === "redeemed"
+    ? markRedemptionPaid({
+        stripeCheckoutSessionId: input.stripeCheckoutSessionId,
+        discountCents: input.discountCents,
+      })
+    : false;
+}
+
 /** Give the use back when Stripe expires or fails the session. */
 export async function releaseRedemptionBySession(
   stripeCheckoutSessionId: string,

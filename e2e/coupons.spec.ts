@@ -4,12 +4,15 @@ import {
   test,
   type APIRequestContext,
 } from "@playwright/test";
+import Stripe from "stripe";
 import {
   E2E_API_KEY,
+  E2E_APPLICATION_ID,
   E2E_BASE_URL,
   E2E_PLAN_ID,
   E2E_PLAN_USER,
   E2E_SANDBOX_API_KEY,
+  E2E_SANDBOX_WEBHOOK_SECRET,
   E2E_SECRET,
   E2E_STANDALONE_USER,
   E2E_UNIT_ID,
@@ -75,6 +78,101 @@ test.describe.serial("app-scoped coupons", () => {
       code: "PLAY25",
       status: "active",
       restrictToUsers: true,
+    });
+
+    const hosted = await api.post("/api/e2e/coupons", {
+      data: {
+        code: "HOSTED10",
+        name: "Hosted Checkout 10%",
+        discountType: "percent",
+        percentBasisPoints: 1_000,
+        maxRedemptions: 1,
+        appliesTo: "selected",
+        topupProductIds: [topupId],
+      },
+    });
+    expect(hosted.ok()).toBe(true);
+  });
+
+  test("enables hosted Checkout's code field when an eligible coupon exists", async () => {
+    const checkout = await api.post("/api/v1/checkout", {
+      data: {
+        kind: "topup",
+        topupId,
+        rxlabUserId: E2E_STANDALONE_USER,
+      },
+    });
+    expect(checkout.ok()).toBe(true);
+    const result = (await checkout.json()) as {
+      checkoutUrl: string;
+      sessionId: string;
+      purchaseId: string;
+      promotionCodesEnabled: boolean;
+      discount: null;
+    };
+    expect(result).toMatchObject({
+      checkoutUrl: expect.stringContaining("promotion_codes=1"),
+      promotionCodesEnabled: true,
+      discount: null,
+    });
+
+    const promotionCodeId = new URL(result.checkoutUrl).searchParams.get(
+      "promotion_code",
+    );
+    expect(promotionCodeId).toBeTruthy();
+    const event = JSON.stringify({
+      id: `evt_coupon_${crypto.randomUUID().replaceAll("-", "")}`,
+      object: "event",
+      api_version: "2026-07-29.dahlia",
+      created: Math.floor(Date.now() / 1_000),
+      data: {
+        object: {
+          id: result.sessionId,
+          object: "checkout.session",
+          client_reference_id: result.purchaseId,
+          currency: "usd",
+          discounts: [{ coupon: null, promotion_code: promotionCodeId }],
+          invoice: null,
+          metadata: {
+            applicationId: E2E_APPLICATION_ID,
+            appUserId: "e2e-standalone-app-user",
+            kind: "topup",
+            purchaseId: result.purchaseId,
+            topupProductId: topupId,
+          },
+          mode: "payment",
+          payment_intent: null,
+          payment_status: "paid",
+          status: "complete",
+          total_details: { amount_discount: 50 },
+        },
+      },
+      livemode: false,
+      pending_webhooks: 1,
+      request: { id: null, idempotency_key: null },
+      type: "checkout.session.completed",
+    });
+    const signature = Stripe.webhooks.generateTestHeaderString({
+      payload: event,
+      secret: E2E_SANDBOX_WEBHOOK_SECRET,
+    });
+    const webhook = await api.post("/api/stripe/webhook", {
+      headers: {
+        "Content-Type": "application/json",
+        "Stripe-Signature": signature,
+      },
+      data: event,
+    });
+    expect(webhook.ok()).toBe(true);
+
+    const spent = await validate(api, {
+      rxlabUserId: E2E_STANDALONE_USER,
+      code: "HOSTED10",
+      topupId,
+    });
+    await expect(spent.json()).resolves.toMatchObject({
+      valid: false,
+      blockers: expect.arrayContaining(["fully_redeemed"]),
     });
   });
 
