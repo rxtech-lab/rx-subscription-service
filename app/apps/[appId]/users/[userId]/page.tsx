@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
 import { adjustBalanceAction, setUserLevelAction } from "@/app/actions/users";
 import { ActionForm } from "@/components/forms/action-form";
+import { UserStatistics } from "@/components/console/user-statistics";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Badge,
@@ -21,8 +22,13 @@ import { TestBadge } from "@/components/ui/test-badge";
 import { requireApplicationAccess } from "@/lib/console/session";
 import { stripeConfigured, type StripeMode } from "@/lib/stripe/client";
 import { listPaymentHistory } from "@/lib/stripe/invoices";
+import {
+  getConsumptionSeries,
+  getUsageSeries,
+} from "@/lib/subscription/consumption";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
+import { isGranularity, type Granularity } from "@/lib/subscription/series";
 import { listBalanceUnits } from "@/lib/subscription/units";
 import { getUsageStatus } from "@/lib/subscription/usage";
 import {
@@ -61,16 +67,46 @@ function pageNumber(value: string | string[] | undefined, hasCursor: boolean) {
   return Number.isSafeInteger(candidate) && candidate > 0 ? candidate : 1;
 }
 
+function utcStatisticsDate(
+  value: string | string[] | undefined,
+  fallback: Date,
+) {
+  const candidate = firstValue(value)?.trim();
+  if (!candidate) return fallback;
+  const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(candidate);
+  const parsed = new Date(explicitZone ? candidate : `${candidate}Z`);
+  return Number.isFinite(parsed.getTime()) ? parsed : fallback;
+}
+
+function statisticsGranularity(
+  value: string | string[] | undefined,
+): Granularity {
+  const candidate = firstValue(value);
+  return candidate && isGranularity(candidate) ? candidate : "day";
+}
+
 function userDetailHref(
   appId: string,
   userId: string,
   environment: DataEnvironment,
-  input: { paymentPage?: number; paymentAfter?: string; paymentBefore?: string } = {},
+  input: {
+    paymentPage?: number;
+    paymentAfter?: string;
+    paymentBefore?: string;
+    statsFrom?: string;
+    statsTo?: string;
+    statsGranularity?: Granularity;
+  } = {},
 ) {
   const query = new URLSearchParams({ environment });
   if (input.paymentPage) query.set("paymentPage", String(input.paymentPage));
   if (input.paymentAfter) query.set("paymentAfter", input.paymentAfter);
   if (input.paymentBefore) query.set("paymentBefore", input.paymentBefore);
+  if (input.statsFrom) query.set("statsFrom", input.statsFrom);
+  if (input.statsTo) query.set("statsTo", input.statsTo);
+  if (input.statsGranularity) {
+    query.set("statsGranularity", input.statsGranularity);
+  }
   return `/apps/${encodeURIComponent(appId)}/users/${encodeURIComponent(userId)}?${query}`;
 }
 
@@ -112,9 +148,62 @@ export default async function UserDetailPage({
     Boolean(paymentAfter || paymentBefore),
   );
   const stripeMode: StripeMode = environment === "sandbox" ? "sandbox" : "live";
+  const statsTo = utcStatisticsDate(query.statsTo, new Date());
+  const statsFrom = utcStatisticsDate(
+    query.statsFrom,
+    new Date(statsTo.getTime() - 29 * 24 * 60 * 60 * 1_000),
+  );
+  const statsGranularity = statisticsGranularity(query.statsGranularity);
+  const statisticsParams = {
+    statsFrom: statsFrom.toISOString(),
+    statsTo: statsTo.toISOString(),
+    statsGranularity,
+  };
 
-  const [balances, units, entitlements, usage, subscriptions, ledger, paymentHistory] =
-    await Promise.all([
+  // `usage.chargedUnits` and `ledger_entries(kind = "overage")` describe the
+  // same charge. Keep the series separate and never add them into one total.
+  const statisticsPromise = Promise.all([
+    getConsumptionSeries({
+      applicationId: appId,
+      appUserId: user.id,
+      from: statsFrom,
+      to: statsTo,
+      granularity: statsGranularity,
+      groupBy: "description",
+      isTest: user.isTest,
+    }),
+    getUsageSeries({
+      applicationId: appId,
+      appUserId: user.id,
+      from: statsFrom,
+      to: statsTo,
+      granularity: statsGranularity,
+      groupBy: "item",
+      isTest: user.isTest,
+    }),
+  ])
+    .then(([consumption, usageSeries]) => ({
+      consumption,
+      usage: usageSeries,
+      error: undefined,
+    }))
+    .catch((error: unknown) => {
+      if (error instanceof Error && error.name === "ValidationError") {
+        return { consumption: null, usage: null, error: error.message };
+      }
+      throw error;
+    });
+
+  const [
+    balances,
+    units,
+    entitlements,
+    usage,
+    subscriptions,
+    ledger,
+    paymentHistory,
+    statistics,
+  ] = await Promise.all([
       getBalances(user.id),
       listBalanceUnits(appId),
       resolveEntitlements({ applicationId: appId, appUserId: user.id }),
@@ -129,6 +218,7 @@ export default async function UserDetailPage({
             before: paymentBefore,
           })
         : Promise.resolve({ payments: [], hasMore: false }),
+      statisticsPromise,
     ]);
 
   const firstPayment = paymentHistory.payments[0];
@@ -168,7 +258,7 @@ export default async function UserDetailPage({
             >
               {productionUser ? (
                 <Link
-                  href={userDetailHref(appId, userId, "production")}
+                  href={userDetailHref(appId, userId, "production", statisticsParams)}
                   aria-current={environment === "production" ? "page" : undefined}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                     environment === "production"
@@ -188,7 +278,7 @@ export default async function UserDetailPage({
               )}
               {sandboxUser ? (
                 <Link
-                  href={userDetailHref(appId, userId, "sandbox")}
+                  href={userDetailHref(appId, userId, "sandbox", statisticsParams)}
                   aria-current={environment === "sandbox" ? "page" : undefined}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                     environment === "sandbox"
@@ -299,6 +389,16 @@ export default async function UserDetailPage({
           )}
         </Card>
       </div>
+
+      <UserStatistics
+        environment={environment}
+        from={statsFrom}
+        to={statsTo}
+        granularity={statsGranularity}
+        consumption={statistics.consumption}
+        usage={statistics.usage}
+        error={statistics.error}
+      />
 
       <Card>
         <CardHeader title="Subscriptions" />
@@ -414,6 +514,7 @@ export default async function UserDetailPage({
                   {hasPreviousPayments && firstPayment ? (
                     <Link
                       href={userDetailHref(appId, userId, environment, {
+                        ...statisticsParams,
                         paymentPage: currentPaymentPage - 1,
                         paymentBefore: firstPayment.id,
                       })}
@@ -425,6 +526,7 @@ export default async function UserDetailPage({
                   {hasNextPayments && lastPayment ? (
                     <Link
                       href={userDetailHref(appId, userId, environment, {
+                        ...statisticsParams,
                         paymentPage: currentPaymentPage + 1,
                         paymentAfter: lastPayment.id,
                       })}
