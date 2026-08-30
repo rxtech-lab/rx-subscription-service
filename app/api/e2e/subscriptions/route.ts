@@ -12,6 +12,7 @@ import { upsertSubscriptionFromStripe } from "@/lib/subscription/subscriptions";
 const schema = z.object({
   rxlabUserId: z.string().min(1),
   planId: z.string().min(1),
+  status: z.enum(["active", "trialing"]).default("active"),
 });
 
 /** Simulate the authoritative Stripe subscription sync in Playwright tests. */
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
       planId: input.planId,
       stripeSubscriptionId: `sub_e2e_${user.id}_${input.planId}`,
       stripeCustomerId: `cus_e2e_${user.id}`,
-      status: "active",
+      status: input.status,
       currentPeriodStart: now,
       currentPeriodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000),
       cancelAtPeriodEnd: false,

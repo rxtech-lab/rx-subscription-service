@@ -211,6 +211,8 @@ export async function recordUsage(input: {
   usageItemId: string;
   amount: number;
   idempotencyKey: string;
+  /** Previous public-API key format, used only to recognize an old retry. */
+  legacyIdempotencyKey?: string;
   metadata?: Record<string, unknown> | null;
   now?: Date;
 }): Promise<RecordUsageResult> {
@@ -223,11 +225,28 @@ export async function recordUsage(input: {
   const now = input.now ?? simulatedNow(user.testClockOffsetMs);
   const item = await requireUsageItem(input.applicationId, input.usageItemId);
 
-  const [duplicate] = await db
+  const [currentDuplicate] = await db
     .select()
     .from(usageRecords)
     .where(eq(usageRecords.idempotencyKey, input.idempotencyKey))
     .limit(1);
+  const [legacyDuplicate] =
+    !currentDuplicate &&
+    input.legacyIdempotencyKey &&
+    input.legacyIdempotencyKey !== input.idempotencyKey
+      ? await db
+          .select()
+          .from(usageRecords)
+          .where(
+            and(
+              eq(usageRecords.idempotencyKey, input.legacyIdempotencyKey),
+              eq(usageRecords.appUserId, input.appUserId),
+              eq(usageRecords.usageItemId, input.usageItemId),
+            ),
+          )
+          .limit(1)
+      : [];
+  const duplicate = currentDuplicate ?? legacyDuplicate;
   if (duplicate) {
     const limit = await resolveLimit({
       applicationId: input.applicationId,

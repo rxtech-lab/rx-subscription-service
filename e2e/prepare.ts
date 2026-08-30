@@ -13,6 +13,7 @@ import {
   E2E_PERMISSION_KEY,
   E2E_PLAN_ID,
   E2E_PLAN_USER,
+  E2E_POINTS_USAGE_ITEM_ID,
   E2E_ROLE_ID,
   E2E_ROLE_KEY,
   E2E_SANDBOX_API_KEY,
@@ -169,6 +170,19 @@ await db.insert(schema.usageItems).values([
     createdAt: now,
     updatedAt: now,
   },
+  {
+    id: E2E_POINTS_USAGE_ITEM_ID,
+    applicationId: E2E_APPLICATION_ID,
+    key: "pts",
+    name: "Points",
+    valueType: "counter",
+    resetPolicy: "billing_period",
+    defaultLimit: null,
+    overagePolicy: "block",
+    sortOrder: 2,
+    createdAt: now,
+    updatedAt: now,
+  },
 ]);
 
 await db.insert(schema.plans).values([
@@ -198,7 +212,7 @@ await db.insert(schema.plans).values([
     intervalCount: 1,
     priceAmountCents: 2_900,
     currency: "usd",
-    trialDays: 0,
+    trialDays: 7,
     status: "active",
     sortOrder: 1,
     createdAt: now,
@@ -222,14 +236,26 @@ await db.insert(schema.plans).values([
   },
 ]);
 
-await db.insert(schema.planEntitlements).values({
-  id: "e2e-pro-role-grant",
-  planId: E2E_PLAN_ID,
-  kind: "role",
-  roleId: E2E_ROLE_ID,
-  createdAt: now,
-  updatedAt: now,
-});
+await db.insert(schema.planEntitlements).values([
+  {
+    id: "e2e-pro-role-grant",
+    planId: E2E_PLAN_ID,
+    kind: "role",
+    roleId: E2E_ROLE_ID,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "e2e-plus-points-grant",
+    planId: E2E_SECOND_PLAN_ID,
+    kind: "usage_limit",
+    usageItemId: E2E_POINTS_USAGE_ITEM_ID,
+    limitValue: 10_000,
+    trialLimitValue: 1_000,
+    createdAt: now,
+    updatedAt: now,
+  },
+]);
 
 await db.insert(schema.appUsers).values([
   {

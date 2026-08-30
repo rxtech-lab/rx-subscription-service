@@ -18,6 +18,7 @@ export const E2E_ROLE_KEY = "pro";
 export const E2E_PERMISSION_ID = "e2e-reports-permission";
 export const E2E_PERMISSION_KEY = "read:reports";
 export const E2E_USAGE_ITEM_ID = "e2e-api-calls";
+export const E2E_POINTS_USAGE_ITEM_ID = "e2e-points-usage";
 /** Deliberately tiny, so a test can walk into the limit in one call. */
 export const E2E_USAGE_DEFAULT_LIMIT = 1;
 /** A second item that rolls over daily, for testing time-based resets. */
