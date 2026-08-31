@@ -40,6 +40,12 @@ import { USAGE_LIMIT_PROMPT_RULES } from "./subscription-prompt-rules";
 import { TEST_SUITE_EDIT_PROMPT_RULES } from "./test-suite-prompt-rules";
 import { isConfigurationWriteTool } from "./configuration-write-tools";
 import { scheduleAutomaticTestRuns } from "@/lib/testing/automation";
+import {
+  appleCredentialsConfigured,
+  getAppleIntegration,
+  listStoreProductMappings,
+} from "@/lib/iap/configuration";
+import { APP_STORE_SETUP_PROMPT_RULES } from "./app-store-prompt-rules";
 
 /**
  * Read tools execute immediately — they cannot change anything, and making the
@@ -151,6 +157,37 @@ export function buildTools(applicationId: string, actor: Actor) {
           });
         }
         return withRules;
+      },
+    }),
+
+    getAppStoreSetup: tool({
+      description:
+        "Inspect this application's App Store readiness without returning any secret values. Call this before explaining or troubleshooting Apple product setup.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const [integration, mappings] = await Promise.all([
+          getAppleIntegration(applicationId),
+          listStoreProductMappings(applicationId),
+        ]);
+        return {
+          credentialsConfigured: appleCredentialsConfigured(),
+          integration: integration
+            ? {
+                bundleId: integration.bundleId,
+                appAppleId: integration.appAppleId,
+                enabled: integration.enabled,
+              }
+            : null,
+          notificationPath: `/api/apple/notifications/${applicationId}`,
+          productMappings: mappings
+            .filter((mapping) => mapping.provider === "apple_app_store")
+            .map((mapping) => ({
+              productId: mapping.productId,
+              productType: mapping.productType,
+              planId: mapping.planId,
+              topupProductId: mapping.topupProductId,
+            })),
+        };
       },
     }),
 
@@ -405,7 +442,7 @@ export function buildTools(applicationId: string, actor: Actor) {
     }),
     addPlanEntitlement: tool({
       description:
-        "Grant something through a plan: a role, a permission, a usage limit, a balance grant, or a feature flag. Usage limits can have distinct trial and non-trial allowances. A balance grant can also carry an expiry policy so its units lapse instead of accumulating. Use a role grant to connect a plan to role-gated topups.",
+        "Grant something through a plan: a role, a permission, a usage limit, a balance grant, or a feature flag. Usage limits and balance grants can have distinct trial and non-trial amounts. A balance grant can also carry an expiry policy so its units lapse instead of accumulating. Use a role grant to connect a plan to role-gated topups.",
       inputSchema: writeToolSchemas.addPlanEntitlement,
       needsApproval: true,
       execute: runWrite("addPlanEntitlement"),
@@ -600,6 +637,7 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- A balance grant accumulates for good unless it is given a `balanceExpiryPolicy`. Choose `period_end` when the user says an allowance does not roll over, `duration` with `balanceExpiryMonths` for \"points expire after N months\", and `after_plan_end` with `balanceExpiryMonths` for \"points last N months after the plan ends\". Leave it at `never` when the user did not ask for expiry.",
     "- Do not confuse a `usage_limit` with an expiring `balance_grant`. A usage limit is an allowance that refills every period and is never spendable as a stored balance; a balance grant is stored units the user draws down, which expire only if a policy says so.",
     ...USAGE_LIMIT_PROMPT_RULES,
+    ...APP_STORE_SETUP_PROMPT_RULES,
     "- Coupons belong to this application even though Stripe coupons belong to the shared Stripe account. Checkout may expose Stripe's promotion-code box only for eligible customer-specific Promotion Codes; use these app coupon tools so each code is still validated in the current app and pinned to its products.",
     "- Always call `listCoupons` before editing, publishing, archiving, or deleting a coupon. A new coupon starts as draft; publish it with `setCouponStatus` only when the user asked for it to become redeemable.",
     "- Coupon percentages are hundredths of a percent: 2550 is 25.5%. Coupon amounts, caps, and minimums are integer cents. For a repeating coupon, set `duration` to `repeating` and provide `durationInMonths`.",

@@ -6,6 +6,7 @@ import {
   appUserUsageLimits,
   planEntitlements,
   plans,
+  purchases,
   subscriptionRoles,
   subscriptions,
   type PlanEntitlement,
@@ -15,14 +16,18 @@ import {
   parsePermissionList,
   serializePermissionList,
 } from "@/lib/permissions/expression";
-import { usageLimitForSubscriptionStatus } from "./entitlement-rules";
+import {
+  balanceAmountForSubscriptionStatus,
+  usageLimitForSubscriptionStatus,
+} from "./entitlement-rules";
 import { getRolePermissions, listRoles } from "./roles";
 
 const ACTIVE_STATUSES = ["trialing", "active", "past_due"] as const;
 
 export interface ResolvedEntitlements {
   plans: {
-    subscriptionId: string;
+    subscriptionId: string | null;
+    purchaseId: string | null;
     planId: string;
     planKey: string;
     planName: string;
@@ -31,6 +36,8 @@ export interface ResolvedEntitlements {
     currentPeriodStart: Date | null;
     currentPeriodEnd: Date | null;
     cancelAtPeriodEnd: boolean;
+    billingProvider: string;
+    providerProductId: string | null;
   }[];
   roleKeys: string[];
   roleIds: string[];
@@ -103,28 +110,67 @@ export async function resolveEntitlements(input: {
   applicationId: string;
   appUserId: string;
 }): Promise<ResolvedEntitlements> {
-  const rows = await db
-    .select({
-      subscriptionId: subscriptions.id,
-      planId: subscriptions.planId,
-      status: subscriptions.status,
-      currentPeriodStart: subscriptions.currentPeriodStart,
-      currentPeriodEnd: subscriptions.currentPeriodEnd,
-      cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
-      entitlementSnapshot: subscriptions.entitlementSnapshot,
-      planKey: plans.key,
-      planName: plans.name,
-      planGroup: plans.planGroup,
-    })
-    .from(subscriptions)
-    .innerJoin(plans, eq(subscriptions.planId, plans.id))
-    .where(
-      and(
-        eq(subscriptions.applicationId, input.applicationId),
-        eq(subscriptions.appUserId, input.appUserId),
-        inArray(subscriptions.status, [...ACTIVE_STATUSES]),
+  const [subscriptionRows, oneTimePurchaseRows] = await Promise.all([
+    db
+      .select({
+        subscriptionId: subscriptions.id,
+        planId: subscriptions.planId,
+        status: subscriptions.status,
+        currentPeriodStart: subscriptions.currentPeriodStart,
+        currentPeriodEnd: subscriptions.currentPeriodEnd,
+        cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+        entitlementSnapshot: subscriptions.entitlementSnapshot,
+        billingProvider: subscriptions.billingProvider,
+        providerProductId: subscriptions.providerProductId,
+        planKey: plans.key,
+        planName: plans.name,
+        planGroup: plans.planGroup,
+      })
+      .from(subscriptions)
+      .innerJoin(plans, eq(subscriptions.planId, plans.id))
+      .where(
+        and(
+          eq(subscriptions.applicationId, input.applicationId),
+          eq(subscriptions.appUserId, input.appUserId),
+          inArray(subscriptions.status, [...ACTIVE_STATUSES]),
+        ),
       ),
-    );
+    db
+      .select({
+        purchaseId: purchases.id,
+        planId: purchases.planId,
+        entitlementSnapshot: purchases.entitlementSnapshot,
+        billingProvider: purchases.billingProvider,
+        providerProductId: purchases.providerProductId,
+        paidAt: purchases.paidAt,
+        planKey: plans.key,
+        planName: plans.name,
+        planGroup: plans.planGroup,
+      })
+      .from(purchases)
+      .innerJoin(plans, eq(purchases.planId, plans.id))
+      .where(
+        and(
+          eq(purchases.applicationId, input.applicationId),
+          eq(purchases.appUserId, input.appUserId),
+          eq(purchases.kind, "plan_one_time"),
+          eq(purchases.status, "paid"),
+        ),
+      ),
+  ]);
+
+  const rows = [
+    ...subscriptionRows.map((row) => ({ ...row, purchaseId: null })),
+    ...oneTimePurchaseRows.map((row) => ({
+      ...row,
+      planId: row.planId!,
+      subscriptionId: null,
+      status: "active" as const,
+      currentPeriodStart: row.paidAt,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    })),
+  ];
 
   const [allRoles, directRoleIds, usageLimitOverrides] = await Promise.all([
     listRoles(input.applicationId),
@@ -156,7 +202,8 @@ export async function resolveEntitlements(input: {
   const liveByPlan = new Map<string, PlanEntitlement[]>();
   const planIdsNeedingLive = rows
     .filter((row) => snapshotEntitlements(row.entitlementSnapshot) === null)
-    .map((row) => row.planId);
+    .map((row) => row.planId)
+    .filter((planId): planId is string => planId !== null);
 
   if (planIdsNeedingLive.length > 0) {
     const live = await db
@@ -215,10 +262,15 @@ export async function resolveEntitlements(input: {
           break;
         }
         case "balance_grant":
-          if (entitlement.unitId && entitlement.amount) {
+          if (entitlement.unitId) {
+            const amount = balanceAmountForSubscriptionStatus(
+              entitlement,
+              row.status,
+            );
+            if (!amount || amount < 0) break;
             balanceGrants.push({
               unitId: entitlement.unitId,
-              amount: entitlement.amount,
+              amount,
             });
           }
           break;
@@ -247,6 +299,7 @@ export async function resolveEntitlements(input: {
   return {
     plans: rows.map((row) => ({
       subscriptionId: row.subscriptionId,
+      purchaseId: row.purchaseId,
       planId: row.planId,
       planKey: row.planKey,
       planName: row.planName,
@@ -255,6 +308,8 @@ export async function resolveEntitlements(input: {
       currentPeriodStart: row.currentPeriodStart,
       currentPeriodEnd: row.currentPeriodEnd,
       cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+      billingProvider: row.billingProvider,
+      providerProductId: row.providerProductId,
     })),
     roleIds: roleIdList,
     directRoleIds,

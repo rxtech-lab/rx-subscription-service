@@ -7,6 +7,10 @@ import {
 import { listPlans } from "@/lib/subscription/plans";
 import { checkTopupEligibility, listTopupProducts } from "@/lib/subscription/topups";
 import { listBalanceUnits } from "@/lib/subscription/units";
+import {
+  getAppleIntegration,
+  listStoreProductMappings,
+} from "@/lib/iap/configuration";
 
 /**
  * The purchasable catalog. When a user is supplied, each topup carries its
@@ -20,15 +24,29 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const rxlabUserId = url.searchParams.get("rxlabUserId");
 
-    const [plans, topups, units] = await Promise.all([
+    const [plans, topups, units, appleIntegration, storeMappings] = await Promise.all([
       listPlans(applicationId),
       listTopupProducts(applicationId),
       listBalanceUnits(applicationId),
+      getAppleIntegration(applicationId),
+      listStoreProductMappings(applicationId),
     ]);
     const unitsById = new Map(units.map((unit) => [unit.id, unit]));
 
     const activePlans = plans.filter((plan) => plan.status === "active");
     const activeTopups = topups.filter((topup) => topup.status === "active");
+    const appleByPlan = new Map(
+      storeMappings
+        .filter((mapping) => mapping.provider === "apple_app_store" && mapping.planId)
+        .map((mapping) => [mapping.planId!, mapping]),
+    );
+    const appleByTopup = new Map(
+      storeMappings
+        .filter(
+          (mapping) => mapping.provider === "apple_app_store" && mapping.topupProductId,
+        )
+        .map((mapping) => [mapping.topupProductId!, mapping]),
+    );
 
     const user = rxlabUserId
       ? await resolveRequestUser(context, { rxlabUserId })
@@ -54,6 +72,19 @@ export async function GET(request: Request) {
         currency: topup.currency,
         eligible: eligibility?.eligible ?? null,
         blockedBy: eligibility?.failed ?? null,
+        purchaseOptions: [
+          { provider: "stripe", flow: "checkout" },
+          ...(appleIntegration?.enabled && appleByTopup.has(topup.id)
+            ? [
+                {
+                  provider: "apple_app_store",
+                  flow: "storekit",
+                  productId: appleByTopup.get(topup.id)!.productId,
+                  productType: appleByTopup.get(topup.id)!.productType,
+                },
+              ]
+            : []),
+        ],
       });
     }
 
@@ -70,6 +101,19 @@ export async function GET(request: Request) {
           priceAmountCents: plan.priceAmountCents,
           currency: plan.currency,
           trialDays: plan.trialDays,
+          purchaseOptions: [
+            { provider: "stripe", flow: "checkout" },
+            ...(appleIntegration?.enabled && appleByPlan.has(plan.id)
+              ? [
+                  {
+                    provider: "apple_app_store",
+                    flow: "storekit",
+                    productId: appleByPlan.get(plan.id)!.productId,
+                    productType: appleByPlan.get(plan.id)!.productType,
+                  },
+                ]
+              : []),
+          ],
         })),
         topups: topupPayload,
       },

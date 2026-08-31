@@ -117,6 +117,7 @@ export async function addPlanEntitlementAction(
         trialLimitValue: optionalInteger(formData, "trialLimitValue"),
         unitId: optionalText(formData, "unitId"),
         amount: optionalInteger(formData, "amount"),
+        trialAmount: optionalInteger(formData, "trialAmount"),
         balanceExpiryPolicy: (optionalText(formData, "balanceExpiryPolicy") ??
           "never") as BalanceExpiryPolicy,
         balanceExpiryMonths: optionalInteger(formData, "balanceExpiryMonths"),

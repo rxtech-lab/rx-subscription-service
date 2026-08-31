@@ -254,6 +254,7 @@ type EntitlementFields = {
   trialLimitValue?: number | null;
   unitId?: string | null;
   amount?: number | null;
+  trialAmount?: number | null;
   balanceExpiryPolicy?: BalanceExpiryPolicy | null;
   balanceExpiryMonths?: number | null;
   featureKey?: string | null;
@@ -310,6 +311,7 @@ function entitlementColumnsForKind(input: EntitlementFields) {
     trialLimitValue: null,
     unitId: null,
     amount: null,
+    trialAmount: null,
     balanceExpiryPolicy: "never",
     balanceExpiryMonths: null,
     featureKey: null,
@@ -346,6 +348,9 @@ function entitlementColumnsForKind(input: EntitlementFields) {
         ...empty,
         unitId: blankToNull(input.unitId),
         amount: input.amount ?? null,
+        // A blank trial value inherits the non-trial amount. Zero remains a
+        // deliberate choice to grant no stored units during the trial.
+        trialAmount: input.trialAmount ?? input.amount ?? null,
         balanceExpiryPolicy: policy,
         // A duration on a policy that does not use one would be dead data that
         // silently takes effect if the policy is later switched.
@@ -435,6 +440,9 @@ async function assertEntitlementShape(input: EntitlementFields) {
         throw new ValidationError("balance unit does not belong to this application");
       }
       assertPositiveInteger(input.amount ?? 0, "amount");
+      if (input.trialAmount !== null && input.trialAmount !== undefined) {
+        assertNonNegativeInteger(input.trialAmount, "trialAmount");
+      }
 
       // Caught here rather than at the database check constraint so the console
       // and the AI agent both get a sentence they can act on.

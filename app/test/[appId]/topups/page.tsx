@@ -15,6 +15,7 @@ import { formatMoney } from "@/lib/utils";
 /** Turn a failed gate into something a subscriber would understand. */
 function blockedReason(failed: EligibilityResult["failed"]): string {
   const reasons = failed.map((rule) => {
+    if (rule.ruleType === "purchase_limit") return "the purchase limit was reached";
     if (rule.ruleType === "requires_any_plan") return "an active subscription";
     if (rule.ruleType === "requires_active_plan") return "a specific plan";
     return "a subscription role";

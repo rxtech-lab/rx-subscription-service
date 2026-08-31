@@ -23,6 +23,13 @@ export const SUBSCRIPTION_STATUSES = [
 ] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
+export const BILLING_PROVIDERS = [
+  "stripe",
+  "apple_app_store",
+  "google_play",
+] as const;
+export type BillingProvider = (typeof BILLING_PROVIDERS)[number];
+
 /**
  * `entitlementSnapshot` freezes what the plan granted at purchase time, so
  * editing a plan never silently changes what existing subscribers already paid
@@ -47,6 +54,14 @@ export const subscriptions = sqliteTable(
     cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" })
       .notNull()
       .default(false),
+    billingProvider: text("billing_provider", { enum: BILLING_PROVIDERS })
+      .notNull()
+      .default("stripe"),
+    /** Provider-stable subscription identity; Apple's originalTransactionId. */
+    providerSubscriptionId: text("provider_subscription_id"),
+    providerProductId: text("provider_product_id"),
+    /** Reject provider state older than the latest signed snapshot we applied. */
+    providerSignedAt: integer("provider_signed_at", { mode: "timestamp_ms" }),
     stripeSubscriptionId: text("stripe_subscription_id").unique(),
     stripeCustomerId: text("stripe_customer_id"),
     entitlementSnapshot: text("entitlement_snapshot", { mode: "json" }).$type<
@@ -69,6 +84,10 @@ export const subscriptions = sqliteTable(
     index("subscriptions_user_status_idx").on(table.appUserId, table.status),
     index("subscriptions_app_status_idx").on(table.applicationId, table.status),
     index("subscriptions_plan_idx").on(table.planId),
+    uniqueIndex("subscriptions_provider_id_idx").on(
+      table.billingProvider,
+      table.providerSubscriptionId,
+    ),
   ],
 );
 
@@ -97,6 +116,19 @@ export const purchases = sqliteTable(
     status: text("status", {
       enum: ["pending", "paid", "failed", "refunded", "disputed"],
     }).notNull(),
+    billingProvider: text("billing_provider", { enum: BILLING_PROVIDERS })
+      .notNull()
+      .default("stripe"),
+    providerTransactionId: text("provider_transaction_id"),
+    providerOriginalTransactionId: text("provider_original_transaction_id"),
+    providerProductId: text("provider_product_id"),
+    quantity: integer("quantity").notNull().default(1),
+    /** Apple records prices in 1/1000 currency units; cents remain for reports. */
+    priceMilliunits: integer("price_milliunits"),
+    entitlementSnapshot: text("entitlement_snapshot", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    fulfillmentFailureCode: text("fulfillment_failure_code"),
     stripeCheckoutSessionId: text("stripe_checkout_session_id").unique(),
     stripePaymentIntentId: text("stripe_payment_intent_id").unique(),
     stripeInvoiceId: text("stripe_invoice_id"),
@@ -111,6 +143,11 @@ export const purchases = sqliteTable(
   (table) => [
     index("purchases_user_created_idx").on(table.appUserId, table.createdAt),
     index("purchases_app_created_idx").on(table.applicationId, table.createdAt),
+    uniqueIndex("purchases_provider_transaction_idx").on(
+      table.billingProvider,
+      table.providerTransactionId,
+    ),
+    check("purchases_quantity_positive", sql`${table.quantity} >= 1`),
     check("purchases_refund_nonnegative", sql`${table.refundedAmountCents} >= 0`),
   ],
 );

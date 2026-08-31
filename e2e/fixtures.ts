@@ -13,6 +13,7 @@ export const E2E_UNIT_ID = "e2e-points";
 export const E2E_PLAN_ID = "e2e-pro-plan";
 export const E2E_SECOND_PLAN_ID = "e2e-plus-plan";
 export const E2E_ADDON_PLAN_ID = "e2e-addon-plan";
+export const E2E_ONE_TIME_PLAN_ID = "e2e-lifetime-plan";
 export const E2E_ROLE_ID = "e2e-pro-role";
 export const E2E_ROLE_KEY = "pro";
 export const E2E_PERMISSION_ID = "e2e-reports-permission";

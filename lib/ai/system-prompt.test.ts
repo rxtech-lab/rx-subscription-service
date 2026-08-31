@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { USAGE_LIMIT_PROMPT_RULES } from "./subscription-prompt-rules";
 import { TEST_SUITE_EDIT_PROMPT_RULES } from "./test-suite-prompt-rules";
+import { APP_STORE_SETUP_PROMPT_RULES } from "./app-store-prompt-rules";
 
 describe("subscription agent system prompt", () => {
   it("teaches the agent how to create trial-specific usage limits", () => {
@@ -22,6 +23,37 @@ describe("subscription agent system prompt", () => {
       "call `removePlanEntitlement` with the exact obsolete entitlement id",
     );
     expect(prompt).toContain("never remove the newly added replacement");
+    expect(prompt).toContain(
+      "1000 trial points and 10000 after the trial means `{ amount: 10000, trialAmount: 1000 }`",
+    );
+    expect(prompt).toContain(
+      "Set it to zero when the trial should grant no stored units",
+    );
+  });
+});
+
+describe("App Store setup system prompt", () => {
+  it("teaches the agent the manual Apple product setup and mapping flow", () => {
+    const prompt = APP_STORE_SETUP_PROMPT_RULES.join("\n");
+
+    expect(prompt).toContain("call `getAppStoreSetup` first");
+    expect(prompt).toContain(
+      "does not create or update a product in App Store Connect",
+    );
+    expect(prompt).toContain(
+      "Users and Access -> Integrations -> Keys -> In-App Purchase",
+    );
+    expect(prompt).toContain(
+      "numeric Apple ID shown in App Store Connect -> Apps -> the app -> App Information",
+    );
+    expect(prompt).toContain("`quarter` = 3 months");
+    expect(prompt).toContain(
+      "RxArgo `trialDays` does not create the Apple trial",
+    );
+    expect(prompt).toContain("create a Non-Consumable In-App Purchase");
+    expect(prompt).toContain("create a Consumable");
+    expect(prompt).toContain("select Version 2");
+    expect(prompt).toContain("StoreKit sandbox purchase tested");
   });
 });
 

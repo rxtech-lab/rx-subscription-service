@@ -94,6 +94,35 @@ describe("plan entitlement tool schema", () => {
     ).toBe(false);
   });
 
+  it("accepts separate trial and non-trial balance grants", () => {
+    expect(
+      writeToolSchemas.addPlanEntitlement.parse({
+        planId: "plan-pro",
+        kind: "balance_grant",
+        unitId: "unit-points",
+        amount: 10_000,
+        trialAmount: 1_000,
+      }),
+    ).toMatchObject({ amount: 10_000, trialAmount: 1_000 });
+  });
+
+  it("allows zero but rejects negative trial balance grants", () => {
+    const grant = {
+      planId: "plan-pro",
+      kind: "balance_grant" as const,
+      unitId: "unit-points",
+      amount: 10_000,
+    };
+    expect(
+      writeToolSchemas.addPlanEntitlement.safeParse({ ...grant, trialAmount: 0 })
+        .success,
+    ).toBe(true);
+    expect(
+      writeToolSchemas.addPlanEntitlement.safeParse({ ...grant, trialAmount: -1 })
+        .success,
+    ).toBe(false);
+  });
+
   it("requires the exact plan and entitlement ids when removing a grant", () => {
     expect(
       writeToolSchemas.removePlanEntitlement.parse({

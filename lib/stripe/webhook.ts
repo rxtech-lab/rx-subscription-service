@@ -4,12 +4,12 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appUsers,
+  ledgerEntries,
   purchases,
   stripeWebhookEvents,
   topupProducts,
   type SubscriptionStatus,
 } from "@/lib/db/schema";
-import { newId } from "@/lib/subscription/shared";
 import {
   markRedemptionProcessing,
   markRedemptionPaid,
@@ -18,10 +18,14 @@ import {
 } from "@/lib/subscription/coupons";
 import { checkTopupEligibility } from "@/lib/subscription/topups";
 import {
+  buildEntitlementSnapshot,
   grantPeriodBalances,
   upsertSubscriptionFromStripe,
 } from "@/lib/subscription/subscriptions";
-import { creditBalance, debitBalance } from "@/lib/subscription/users";
+import {
+  creditBalance,
+  debitBalanceAllowingNegative,
+} from "@/lib/subscription/users";
 import { scheduleTrialWatch } from "@/lib/workflows/schedule";
 import { referenceId, stripe, webhookSecretFor, type StripeMode } from "./client";
 
@@ -133,6 +137,7 @@ async function fulfillTopup(purchase: typeof purchases.$inferSelect) {
         status: "paid",
         paidAt: new Date(),
         unitsGranted: 0,
+        fulfillmentFailureCode: "topup_not_eligible",
         updatedAt: new Date(),
       })
       .where(eq(purchases.id, purchase.id));
@@ -323,6 +328,9 @@ export async function fulfillPaidPurchase(input: {
   await db
     .update(purchases)
     .set({
+      billingProvider: "stripe",
+      providerTransactionId:
+        input.stripePaymentIntentId ?? purchase.stripeCheckoutSessionId,
       stripePaymentIntentId: input.stripePaymentIntentId,
       stripeInvoiceId: invoice?.id ?? null,
       hostedInvoiceUrl: invoice?.hosted_invoice_url ?? null,
@@ -337,9 +345,17 @@ export async function fulfillPaidPurchase(input: {
   }
 
   // One-time plan: mark paid and hand out its balance grants once.
+  const entitlementSnapshot = purchase.planId
+    ? await buildEntitlementSnapshot(purchase.planId)
+    : null;
   await db
     .update(purchases)
-    .set({ status: "paid", paidAt: new Date(), updatedAt: new Date() })
+    .set({
+      status: "paid",
+      paidAt: new Date(),
+      entitlementSnapshot,
+      updatedAt: new Date(),
+    })
     .where(eq(purchases.id, purchase.id));
 
   if (purchase.planId) {
@@ -348,6 +364,10 @@ export async function fulfillPaidPurchase(input: {
       appUserId: purchase.appUserId,
       planId: purchase.planId,
       periodKey: `one_time:${purchase.id}`,
+      entitlements: (entitlementSnapshot?.entitlements ?? []) as never[],
+      idempotencyPrefix: "stripe_one_time_grant",
+      referenceType: "purchase",
+      referenceId: purchase.id,
     });
   }
   return true;
@@ -384,6 +404,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
     currentPeriodStart,
     currentPeriodEnd,
     cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+    providerProductId: item?.price?.id ?? null,
   });
 
   // Balance grants ride on the period, keyed so a replay cannot double-grant.
@@ -395,6 +416,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
       periodKey: String(currentPeriodStart.getTime()),
       periodEnd: currentPeriodEnd,
       subscriptionId: row.id,
+      status,
     });
   }
 
@@ -423,112 +445,64 @@ async function reverseTopup(input: {
     .from(purchases)
     .where(eq(purchases.stripePaymentIntentId, input.paymentIntentId))
     .limit(1);
-  if (!purchase || !purchase.unitId || purchase.unitsGranted <= 0) return false;
+  if (!purchase) return false;
 
-  const targetReversed =
+  const targetRefundedAmount =
     input.kind === "dispute_reversal"
       ? 0
-      : Math.min(
-          purchase.unitsGranted,
-          Math.floor(
-            (purchase.unitsGranted * input.refundedAmountCents) /
-              Math.max(1, purchase.amountCents),
-          ),
-        );
-  const delta = targetReversed - purchase.reversedUnits;
-  if (delta === 0) return false;
+      : Math.min(purchase.amountCents, input.refundedAmountCents);
+  const deltaRefundedAmount = targetRefundedAmount - purchase.refundedAmountCents;
+  if (deltaRefundedAmount === 0 && purchase.status !== "paid") return false;
 
-  const mutation = {
-    appUserId: purchase.appUserId,
-    unitId: purchase.unitId,
-    amount: Math.abs(delta),
-    kind: input.kind === "dispute_reversal" ? ("dispute_reversal" as const) : input.kind,
-    description:
-      input.kind === "dispute_reversal"
-        ? "Dispute resolved in your favour"
-        : `Reversal — ${input.kind}`,
-    idempotencyKey: `reversal:${input.eventId}:${purchase.id}`,
-    referenceType: "purchase",
-    referenceId: purchase.id,
-  };
-
-  // A balance already spent can go negative here; that debt is real and is
-  // settled by the next credit rather than being silently forgiven.
-  if (delta > 0) {
-    await db.transaction(async () => {
-      await debitBalanceAllowingNegative(mutation);
-    });
-  } else {
-    await creditBalance(mutation);
+  const grants = await db
+    .select()
+    .from(ledgerEntries)
+    .where(
+      and(
+        eq(ledgerEntries.referenceType, "purchase"),
+        eq(ledgerEntries.referenceId, purchase.id),
+      ),
+    );
+  let reversedUnits = 0;
+  for (const grant of grants.filter((entry) => entry.delta > 0)) {
+    const amount = Math.floor(
+      (grant.delta * Math.abs(deltaRefundedAmount)) / Math.max(1, purchase.amountCents),
+    );
+    if (amount <= 0) continue;
+    const mutation = {
+      appUserId: purchase.appUserId,
+      unitId: grant.unitId,
+      amount,
+      kind:
+        input.kind === "dispute_reversal"
+          ? ("dispute_reversal" as const)
+          : input.kind,
+      description:
+        input.kind === "dispute_reversal"
+          ? "Dispute resolved in your favour"
+          : `Reversal — ${input.kind}`,
+      idempotencyKey: `reversal:${input.eventId}:${purchase.id}:${grant.id}`,
+      referenceType: "purchase",
+      referenceId: purchase.id,
+    };
+    if (deltaRefundedAmount > 0) await debitBalanceAllowingNegative(mutation);
+    else await creditBalance(mutation);
+    reversedUnits += amount;
   }
 
   await db
     .update(purchases)
     .set({
       status: input.kind === "dispute_reversal" ? "paid" : input.kind === "dispute" ? "disputed" : "refunded",
-      refundedAmountCents: input.refundedAmountCents,
-      reversedUnits: targetReversed,
+      refundedAmountCents: targetRefundedAmount,
+      reversedUnits:
+        deltaRefundedAmount >= 0
+          ? purchase.reversedUnits + reversedUnits
+          : Math.max(0, purchase.reversedUnits - reversedUnits),
       updatedAt: new Date(),
     })
     .where(eq(purchases.id, purchase.id));
   return true;
-}
-
-/**
- * Reversals must apply even when the user has already spent the units, so this
- * bypasses the sufficiency check that guards ordinary debits.
- */
-async function debitBalanceAllowingNegative(input: {
-  appUserId: string;
-  unitId: string;
-  amount: number;
-  kind: "refund" | "dispute" | "dispute_reversal";
-  description: string;
-  idempotencyKey: string;
-  referenceType: string;
-  referenceId: string;
-}) {
-  try {
-    await debitBalance(input);
-  } catch {
-    const { balances, ledgerEntries } = await import("@/lib/db/schema");
-    const { drainLots } = await import("@/lib/subscription/balance-lots");
-    const now = new Date();
-    await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(balances)
-        .set({ amount: sql`${balances.amount} - ${input.amount}`, updatedAt: now })
-        .where(
-          and(
-            eq(balances.appUserId, input.appUserId),
-            eq(balances.unitId, input.unitId),
-          ),
-        )
-        .returning();
-      if (!updated) return;
-
-      // Empty what tranches remain. Whatever the lots cannot cover is the debt
-      // this reversal leaves behind, carried on the negative balance until the
-      // next credit settles it.
-      await drainLots(tx, input.appUserId, input.unitId, input.amount, now);
-      await tx
-        .insert(ledgerEntries)
-        .values({
-          id: newId(),
-          appUserId: input.appUserId,
-          unitId: input.unitId,
-          kind: input.kind,
-          delta: -input.amount,
-          balanceAfter: updated.amount,
-          description: input.description,
-          referenceType: input.referenceType,
-          referenceId: input.referenceId,
-          idempotencyKey: input.idempotencyKey,
-          createdAt: now,
-        })
-        .onConflictDoNothing();
-    });
-  }
 }
 
 export async function processStripeWebhook(

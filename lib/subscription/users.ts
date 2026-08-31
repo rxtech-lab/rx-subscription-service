@@ -500,6 +500,51 @@ export async function debitBalance(input: BalanceMutation) {
   return { entry, duplicate: false as const };
 }
 
+/**
+ * Reverse a provider grant even after the user spent it. Any uncovered amount
+ * becomes a negative balance and is settled by later credits.
+ */
+export async function debitBalanceAllowingNegative(input: BalanceMutation) {
+  const amount = assertPositiveInteger(input.amount, "amount");
+  const existing = await findLedgerEntry(input.idempotencyKey);
+  if (existing) return { entry: existing, duplicate: true as const };
+
+  await ensureBalanceRow(input.appUserId, input.unitId);
+  const now = new Date();
+  const entry = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(balances)
+      .set({ amount: sql`${balances.amount} - ${amount}`, updatedAt: now })
+      .where(
+        and(
+          eq(balances.appUserId, input.appUserId),
+          eq(balances.unitId, input.unitId),
+        ),
+      )
+      .returning();
+    await drainLots(tx, input.appUserId, input.unitId, amount, now);
+    const [row] = await tx
+      .insert(ledgerEntries)
+      .values({
+        id: newId(),
+        appUserId: input.appUserId,
+        unitId: input.unitId,
+        kind: input.kind,
+        delta: -amount,
+        balanceAfter: updated.amount,
+        description: input.description,
+        referenceType: input.referenceType ?? null,
+        referenceId: input.referenceId ?? null,
+        idempotencyKey: input.idempotencyKey,
+        metadata: input.metadata ?? null,
+        createdAt: now,
+      })
+      .returning();
+    return row;
+  });
+  return { entry, duplicate: false as const };
+}
+
 export const LEDGER_PAGE_SIZE = 25;
 
 export async function getLedger(appUserId: string, page = 1) {

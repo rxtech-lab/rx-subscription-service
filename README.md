@@ -6,7 +6,7 @@ balance units, and usage items, and each user gets independent balances per app.
 
 - **Next.js 16** App Router, server actions for the console
 - **Turso / libSQL + Drizzle** for storage
-- **Stripe** for payments
+- **Stripe and Apple StoreKit 2** for payments
 - **@rxtech-lab/authjs-rxlab** for admin sign-in; applications come from
   rxlab-auth's admin OAuth-client API
 - **AI SDK 6 + Vercel AI Gateway** for the assistant
@@ -109,6 +109,9 @@ between environments after creation; rotate a key if its environment changes.
 | `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility |
 | `POST /api/v1/coupons/validate` | Validate an app-local coupon for a user and plan or topup before checkout |
 | `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, with an optional `couponCode`, or the billing portal |
+| `POST /api/v1/iap/apple/account-token` | Get the stable environment-specific StoreKit `appAccountToken` for a user |
+| `PUT /api/v1/iap/apple/consumption-consent` | Store or withdraw refund-review consumption-data consent |
+| `POST /api/v1/iap/apple/transactions` | Verify, reconcile, and fulfill a StoreKit 2 signed transaction or restore |
 
 Use `invoices` for customer-facing receipts and renewals from Stripe. Use
 `purchases` when the application needs RxArgo's local fulfillment state; a paid
@@ -148,6 +151,47 @@ Point a webhook at `/api/stripe/webhook` for `checkout.session.*`,
 `charge.dispute.*`. Events are claimed in a dedupe table before processing, so
 Stripe's retries are safe. Topup eligibility is re-checked at fulfillment, not
 just at checkout, so a plan cancelled mid-payment cannot unlock a gated pack.
+
+## App Store in-app purchases
+
+Apple purchases use StoreKit 2 and the official App Store Server Node library.
+Configure the shared issuer, key ID, base64 `.p8` key, and Apple root
+certificates in deployment secrets. Configure each application's bundle ID and
+numeric Apple app ID under **Settings → App Store**, then map an App Store
+Connect product ID on each plan or top-up. Product IDs are shared between
+sandbox and production; the API key environment must match the environment in
+Apple's signed data.
+
+The StoreKit client sequence is:
+
+1. Call `POST /api/v1/iap/apple/account-token` and attach the returned UUID as
+   `appAccountToken` to `Product.purchase`.
+2. After StoreKit verifies the result locally, send
+   `Transaction.jwsRepresentation` to `POST /api/v1/iap/apple/transactions`.
+3. Wait for successful server fulfillment, then call `finish()` on the StoreKit
+   transaction. Send restored transactions through the same endpoint.
+
+Set App Store Server Notifications to the exact Notifications V2 URL shown in
+the application's App Store settings. Notifications are signature-verified
+before acknowledgement, claimed in a durable event inbox, and replay-safe.
+Hourly reconciliation overlaps its notification-history cursor and rechecks
+active subscriptions so a missed notification cannot permanently drift access.
+
+Auto-renewable subscriptions map by Apple's `originalTransactionId`; grace
+period keeps access, billing retry becomes `past_due`, expiry ends access, and
+revocation removes it immediately. Non-consumable plans retain a frozen
+entitlement snapshot. Consumables multiply the top-up grant by StoreKit
+quantity. Refunds reverse each transaction's grants and may make a spent balance
+negative; refund reversals restore the same grants idempotently.
+
+Consumption information is sent only while the user has explicitly consented.
+For consumables, the consumed percentage is derived from the balance lot opened
+by that exact transaction. See [Apple's sandbox testing documentation](https://developer.apple.com/documentation/storekit/testing-in-app-purchases-with-sandbox)
+for account and renewal testing. Legacy receipts, Notifications V1, Family
+Sharing, promotional-offer creation, and price management are intentionally out
+of scope. Google Play is reserved in the provider schema and adapter contract,
+but has no credentials, verification code, notification endpoint, or public API
+in this release.
 
 Every plan belongs to a plan group, defaulting to `default`. A user can own one
 active or in-progress plan in each group: repeat purchases of the same plan and

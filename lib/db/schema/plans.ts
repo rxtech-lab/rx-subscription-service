@@ -93,8 +93,9 @@ export type BalanceExpiryPolicy = (typeof BALANCE_EXPIRY_POLICIES)[number];
  * What a plan grants. One row per grant so the console (and the AI) can add or
  * remove a single entitlement without rewriting the plan.
  *
- * `balance_grant` credits `amount` units every billing period; `usage_limit`
- * sets the per-period allowance for a usage item.
+ * `balance_grant` credits `amount` units every non-trial billing period and
+ * optionally `trialAmount` during a trial; `usage_limit` sets the per-period
+ * allowance for a usage item.
  */
 export const planEntitlements = sqliteTable(
   "plan_entitlements",
@@ -122,7 +123,10 @@ export const planEntitlements = sqliteTable(
     unitId: text("unit_id").references(() => balanceUnits.id, {
       onDelete: "cascade",
     }),
+    /** Units granted after the trial ends (and for plans without a trial). */
     amount: integer("amount"),
+    /** Units granted while the subscription is trialing. Null inherits `amount`. */
+    trialAmount: integer("trial_amount"),
     /** `balance_grant` only. See `BALANCE_EXPIRY_POLICIES`. */
     balanceExpiryPolicy: text("balance_expiry_policy", {
       enum: BALANCE_EXPIRY_POLICIES,

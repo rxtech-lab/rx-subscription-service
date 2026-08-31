@@ -140,6 +140,7 @@ async function grantFirstPaidPeriod(context: TrialContext) {
     periodKey: String(row.currentPeriodStart.getTime()),
     periodEnd: row.currentPeriodEnd,
     subscriptionId: row.id,
+    status: row.status,
   });
   return results.filter((result) => !result.duplicate).length;
 }

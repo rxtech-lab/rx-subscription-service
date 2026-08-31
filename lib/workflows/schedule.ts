@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { subscriptions } from "@/lib/db/schema";
 import { trialWatchWorkflow } from "./trial-watch";
 import { balanceExpirySweepWorkflow } from "./balance-expiry-sweep";
+import { appleNotificationWorkflow } from "./apple-notification";
+import { appleReconciliationWorkflow } from "./apple-reconciliation";
 
 /**
  * Starting workflow runs from ordinary server code.
@@ -80,5 +82,16 @@ export async function scheduleTrialWatch(input: {
 /** Kick off a full expiry sweep. Called by the cron route. */
 export async function startBalanceExpirySweep() {
   const run = await start(balanceExpirySweepWorkflow, []);
+  return run.runId;
+}
+
+/** Dispatch one already-verified App Store event into the durable inbox worker. */
+export async function startAppleNotificationProcessing(eventId: string) {
+  const run = await start(appleNotificationWorkflow, [eventId]);
+  return run.runId;
+}
+
+export async function startAppleReconciliation() {
+  const run = await start(appleReconciliationWorkflow, []);
   return run.runId;
 }

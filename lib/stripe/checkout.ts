@@ -269,6 +269,8 @@ export async function createPlanCheckout(input: {
         amountCents: plan.priceAmountCents,
         currency: plan.currency,
         status: "pending",
+        billingProvider: "stripe",
+        providerProductId: priceId,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -425,6 +427,8 @@ export async function createTopupCheckout(input: {
       amountCents: product.priceAmountCents,
       currency: product.currency,
       status: "pending",
+      billingProvider: "stripe",
+      providerProductId: priceId,
       createdAt: new Date(),
       updatedAt: new Date(),
     });

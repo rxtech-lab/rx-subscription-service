@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/balance-expiry",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/apple-reconciliation",
+      "schedule": "15 * * * *"
     }
   ]
 }
