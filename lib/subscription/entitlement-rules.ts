@@ -18,3 +18,23 @@ export function usageLimitForSubscriptionStatus(
   }
   return entitlement.limitValue;
 }
+
+/**
+ * Pick the balance grant that applies to one subscription status.
+ *
+ * Both null database values and missing fields in older entitlement snapshots
+ * inherit the regular amount. Zero is intentionally preserved so a plan can
+ * grant no stored units during its trial.
+ */
+export function balanceAmountForSubscriptionStatus(
+  entitlement: {
+    amount: number | null;
+    trialAmount?: number | null;
+  },
+  status: string,
+): number | null {
+  if (status === "trialing" && typeof entitlement.trialAmount === "number") {
+    return entitlement.trialAmount;
+  }
+  return entitlement.amount;
+}

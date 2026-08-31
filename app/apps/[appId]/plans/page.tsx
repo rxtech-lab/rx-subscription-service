@@ -218,7 +218,9 @@ export default async function PlansPage({
                                       ? `${labelFor.usage(entitlement.usageItemId)}: trial ${entitlement.trialLimitValue ?? "unlimited"}, non-trial ${entitlement.limitValue ?? "unlimited"}`
                                       : `${labelFor.usage(entitlement.usageItemId)}: ${entitlement.limitValue ?? "unlimited"}`
                                     : entitlement.kind === "balance_grant"
-                                      ? `${entitlement.amount} ${labelFor.unit(entitlement.unitId)}/period`
+                                      ? plan.trialDays > 0
+                                        ? `${labelFor.unit(entitlement.unitId)}: trial ${entitlement.trialAmount ?? entitlement.amount}, non-trial ${entitlement.amount}/period`
+                                        : `${entitlement.amount} ${labelFor.unit(entitlement.unitId)}/period`
                                       : entitlement.kind === "permission"
                                         ? `${entitlement.permissionKey}:${entitlement.permissionScope === "all" ? "all" : (entitlement.permissionTargetIds ?? []).join(",")}`
                                         : `${entitlement.featureKey}=${entitlement.featureValue ?? "on"}`}
@@ -521,7 +523,7 @@ export default async function PlansPage({
                   <Input name="trialLimitValue" type="number" min="0" />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 md:grid-cols-3">
                 <Field label="Balance unit">
                   <Select name="unitId">
                     <option value="">—</option>
@@ -532,8 +534,11 @@ export default async function PlansPage({
                     ))}
                   </Select>
                 </Field>
-                <Field label="Amount per period">
+                <Field label="Non-trial amount per period">
                   <Input name="amount" type="number" min="1" />
+                </Field>
+                <Field label="Trial amount" hint="Blank = same as non-trial">
+                  <Input name="trialAmount" type="number" min="0" />
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-3">

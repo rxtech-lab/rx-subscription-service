@@ -20,6 +20,7 @@ import {
 } from "./shared";
 import { creditBalance } from "./users";
 import { resolveExpiresAt } from "./balance-expiry-rules";
+import { balanceAmountForSubscriptionStatus } from "./entitlement-rules";
 import { stampLotsForPlanEnd } from "./balance-lots";
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due"] as const;
@@ -108,6 +109,7 @@ export interface BalanceGrantEntitlement {
   kind: string;
   unitId: string | null;
   amount: number | null;
+  trialAmount?: number | null;
   balanceExpiryPolicy?: BalanceExpiryPolicy | null;
   balanceExpiryMonths?: number | null;
 }
@@ -287,6 +289,8 @@ export async function grantPeriodBalances(input: {
   /** Recorded on each lot so plan end can find `after_plan_end` grants. */
   subscriptionId?: string | null;
   entitlements?: BalanceGrantEntitlement[];
+  /** Selects a trial-specific grant amount when status is `trialing`. */
+  status?: string;
   /** Defaults preserve the existing Stripe/local ledger contract. */
   idempotencyPrefix?: string;
   referenceType?: string;
@@ -300,23 +304,35 @@ export async function grantPeriodBalances(input: {
       .where(eq(planEntitlements.planId, input.planId)));
 
   const grants = entitlements.filter(
-    (entitlement) =>
-      entitlement.kind === "balance_grant" && entitlement.unitId && entitlement.amount,
+    (entitlement) => entitlement.kind === "balance_grant" && entitlement.unitId,
   );
 
   const grantedAt = new Date();
   const results = [];
   for (const grant of grants) {
+    const amount = balanceAmountForSubscriptionStatus(
+      grant,
+      input.status ?? "active",
+    );
+    if (!amount || amount < 0) continue;
     const policy = grant.balanceExpiryPolicy ?? "never";
     const months = grant.balanceExpiryMonths ?? null;
+    // Existing grants retain their historical key. Only a newly configured
+    // stage-specific grant needs the stage suffix so trial and paid credits can
+    // both land when a provider reuses the same period anchor at the boundary.
+    const hasDistinctTrialAmount =
+      typeof grant.trialAmount === "number" && grant.trialAmount !== grant.amount;
+    const stageKey = hasDistinctTrialAmount
+      ? `${input.periodKey}:${input.status === "trialing" ? "trial" : "non_trial"}`
+      : input.periodKey;
     results.push(
       await creditBalance({
         appUserId: input.appUserId,
         unitId: grant.unitId!,
-        amount: grant.amount!,
+        amount,
         kind: "plan_grant",
         description: "Plan allowance",
-        idempotencyKey: `${input.idempotencyPrefix ?? "plan_grant"}:${input.appUserId}:${input.planId}:${grant.unitId}:${input.periodKey}`,
+        idempotencyKey: `${input.idempotencyPrefix ?? "plan_grant"}:${input.appUserId}:${input.planId}:${grant.unitId}:${stageKey}`,
         referenceType: input.referenceType ?? "plan",
         referenceId: input.referenceId ?? input.planId,
         expiresAt: resolveExpiresAt({

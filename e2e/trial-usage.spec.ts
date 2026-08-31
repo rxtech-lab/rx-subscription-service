@@ -10,6 +10,7 @@ import {
   E2E_SANDBOX_API_KEY,
   E2E_SECOND_PLAN_ID,
   E2E_SECRET,
+  E2E_UNIT_ID,
 } from "./fixtures";
 
 test.describe.serial("trial usage allowance", () => {
@@ -90,6 +91,13 @@ test.describe.serial("trial usage allowance", () => {
   test("keeps usage when a trialing subscriber transitions to active", async () => {
     const user = await createTrialUser(api, "Trial to paid allowance");
 
+    const trialBalance = await api.get("/api/v1/balances", {
+      params: { rxlabUserId: user.rxlabUserId },
+    });
+    await expect(trialBalance.json()).resolves.toMatchObject({
+      balances: [{ unit: "points", amount: 1_000 }],
+    });
+
     const trialAllowance = await record(
       api,
       user.rxlabUserId,
@@ -111,6 +119,18 @@ test.describe.serial("trial usage allowance", () => {
       },
     });
     expect(activated.ok()).toBe(true);
+    await expect(activated.json()).resolves.toMatchObject({
+      entitlements: {
+        balanceGrants: [{ unitId: E2E_UNIT_ID, amount: 10_000 }],
+      },
+    });
+
+    const paidBalance = await api.get("/api/v1/balances", {
+      params: { rxlabUserId: user.rxlabUserId },
+    });
+    await expect(paidBalance.json()).resolves.toMatchObject({
+      balances: [{ unit: "points", amount: 11_000 }],
+    });
 
     const paidAllowance = await record(
       api,
@@ -158,6 +178,7 @@ async function createTrialUser(api: APIRequestContext, displayName: string) {
     subscription: { status: "trialing" },
     entitlements: {
       usageLimits: { [E2E_POINTS_USAGE_ITEM_ID]: 1_000 },
+      balanceGrants: [{ unitId: E2E_UNIT_ID, amount: 1_000 }],
     },
   });
   return user;

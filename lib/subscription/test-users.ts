@@ -26,6 +26,7 @@ import { resolveEntitlements } from "./entitlements";
 import { requireRole } from "./roles";
 import { clampClockOffset } from "./test-clock";
 import {
+  grantPeriodBalances,
   getSubscriptionByStripeId,
   upsertSubscriptionFromStripe,
 } from "./subscriptions";
@@ -232,6 +233,16 @@ export async function grantTestSubscription(input: {
     currentPeriodStart,
     currentPeriodEnd: new Date(now.getTime() + periodDays * 86_400_000),
     cancelAtPeriodEnd: false,
+  });
+
+  await grantPeriodBalances({
+    applicationId: input.applicationId,
+    appUserId: user.id,
+    planId: plan.id,
+    periodKey: String((subscription.currentPeriodStart ?? now).getTime()),
+    periodEnd: subscription.currentPeriodEnd,
+    subscriptionId: subscription.id,
+    status,
   });
 
   await recordAudit({

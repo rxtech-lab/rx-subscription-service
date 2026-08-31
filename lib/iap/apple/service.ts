@@ -292,6 +292,7 @@ async function fulfillSubscription(input: {
       periodKey: input.transaction.transactionId!,
       periodEnd: date(input.transaction.expiresDate),
       subscriptionId: saved.id,
+      status,
       entitlements: (snapshot?.entitlements ?? []) as never[],
       idempotencyPrefix: "apple_plan_grant",
       referenceType: "store_transaction",

@@ -416,6 +416,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
       periodKey: String(currentPeriodStart.getTime()),
       periodEnd: currentPeriodEnd,
       subscriptionId: row.id,
+      status,
     });
   }
 

@@ -282,6 +282,17 @@ await db.insert(schema.planEntitlements).values([
     createdAt: now,
     updatedAt: now,
   },
+  {
+    id: "e2e-plus-balance-grant",
+    planId: E2E_SECOND_PLAN_ID,
+    kind: "balance_grant",
+    unitId: E2E_UNIT_ID,
+    amount: 10_000,
+    trialAmount: 1_000,
+    balanceExpiryPolicy: "never",
+    createdAt: now,
+    updatedAt: now,
+  },
 ]);
 
 await db.insert(schema.appUsers).values([

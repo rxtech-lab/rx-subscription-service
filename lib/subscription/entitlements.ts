@@ -16,7 +16,10 @@ import {
   parsePermissionList,
   serializePermissionList,
 } from "@/lib/permissions/expression";
-import { usageLimitForSubscriptionStatus } from "./entitlement-rules";
+import {
+  balanceAmountForSubscriptionStatus,
+  usageLimitForSubscriptionStatus,
+} from "./entitlement-rules";
 import { getRolePermissions, listRoles } from "./roles";
 
 const ACTIVE_STATUSES = ["trialing", "active", "past_due"] as const;
@@ -259,10 +262,15 @@ export async function resolveEntitlements(input: {
           break;
         }
         case "balance_grant":
-          if (entitlement.unitId && entitlement.amount) {
+          if (entitlement.unitId) {
+            const amount = balanceAmountForSubscriptionStatus(
+              entitlement,
+              row.status,
+            );
+            if (!amount || amount < 0) break;
             balanceGrants.push({
               unitId: entitlement.unitId,
-              amount: entitlement.amount,
+              amount,
             });
           }
           break;

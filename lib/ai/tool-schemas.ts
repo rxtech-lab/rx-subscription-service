@@ -231,7 +231,18 @@ export const writeToolSchemas = {
         "Allowance while trialing. Omit to use limitValue; null means unlimited",
       ),
     unitId: z.string().optional(),
-    amount: z.number().int().positive().optional(),
+    amount: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Units granted per non-trial period"),
+    trialAmount: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Units granted while trialing. Omit to use amount; zero grants none"),
     balanceExpiryPolicy: balanceExpiryPolicySchema,
     balanceExpiryMonths: balanceExpiryMonthsSchema,
     featureKey: z.string().optional(),
