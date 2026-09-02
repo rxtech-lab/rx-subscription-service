@@ -111,7 +111,7 @@ the request fails with `401 missing_user_token` — and it accepts tokens only
 from the OAuth clients listed when it was created, so a key extracted from your
 iOS app cannot be replayed through some other client.
 
-Publishable keys reach: `catalog`, `entitlements`, `usage` (read),
+Publishable keys reach: `catalog`, `paywall`, `entitlements`, `usage` (read),
 `usage/statistics`, `balances` (read), `balances/ledger`,
 `balances/consumption`, `invoices`, `purchases`, `coupons/validate`,
 `checkout`, and the three `iap/apple/*` endpoints. Everything else — crediting
@@ -154,11 +154,35 @@ which takes a publishable key and a closure that hands it a fresh access token.
 | `GET /api/v1/balances/ledger` | Paginated, application-scoped balance history |
 | `GET /api/v1/purchases` | Paginated local one-time purchase and fulfillment history |
 | `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility |
+| `GET /api/v1/paywall` | The application's published paywall as a layout tree, with its plans filled in |
 | `POST /api/v1/coupons/validate` | Validate an app-local coupon for a user and plan or topup before checkout |
 | `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, with an optional `couponCode`, or the billing portal |
 | `POST /api/v1/iap/apple/account-token` | Get the stable environment-specific StoreKit `appAccountToken` for a user |
 | `PUT /api/v1/iap/apple/consumption-consent` | Store or withdraw refund-review consumption-data consent |
 | `POST /api/v1/iap/apple/transactions` | Verify, reconcile, and fulfill a StoreKit 2 signed transaction or restore |
+
+### Paywalls
+
+The console's **Paywalls** section is a shared library of paywall templates.
+Each application picks one on its Paywall page, and `GET /api/v1/paywall`
+returns the last *published* version of that template — drafts never reach an
+app. The response is a nested layout tree named after SwiftUI and Compose
+primitives (`ScrollView`, `VStack`, `HStack`, `ZStack`, `Grid`, `List`) with
+leaf nodes (`Text`, `Image`, `Button`, `Badge`, `FeatureRow`, `Link`, `Spacer`,
+`Divider`, `ProductList`), each carrying optional `modifiers` (padding, frame,
+background, cornerRadius, border, opacity, hidden). Every `ProductList` arrives
+with `products` already filled from the application's active plans — including
+the StoreKit `productId` where one is mapped — and a `highlightedProductId`.
+Buttons carry one of five actions: `purchase`, `restorePurchases`, `dismiss`,
+`openUrl`, or `selectProduct`. A client renders the tree natively; nothing in it
+needs evaluating.
+
+```bash
+curl "$BASE/api/v1/paywall" \
+  -H "X-Api-Key: $PUBLISHABLE_KEY" \
+  -H "Authorization: Bearer $USER_ACCESS_TOKEN"
+# => 404 paywall_not_configured until a published template is assigned
+```
 
 Use `invoices` for customer-facing receipts and renewals from Stripe. Use
 `purchases` when the application needs RxArgo's local fulfillment state; a paid

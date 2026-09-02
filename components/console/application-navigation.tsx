@@ -12,6 +12,7 @@ import {
   RefreshCcw,
   Settings2,
   ShieldCheck,
+  Smartphone,
   TicketPercent,
   UsersRound,
 } from "lucide-react";
@@ -37,6 +38,7 @@ const SECTIONS: NavigationItem[] = [
   { href: "/users", label: "Users", icon: UsersRound },
   { href: "/test", label: "Test", icon: FlaskConical },
   { href: "/subscriptions", label: "Subscriptions", icon: RefreshCcw },
+  { href: "/paywall", label: "Paywall", icon: Smartphone },
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 

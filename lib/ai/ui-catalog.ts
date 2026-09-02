@@ -401,19 +401,22 @@ function holdsChildren(type: string): boolean {
   return Boolean(catalogComponents()[type]?.slots?.length);
 }
 
-interface JsonSchemaNode {
+export interface JsonSchemaNode {
   type?: string | string[];
   enum?: unknown[];
   const?: unknown;
   anyOf?: JsonSchemaNode[];
+  oneOf?: JsonSchemaNode[];
   items?: JsonSchemaNode;
   properties?: Record<string, JsonSchemaNode>;
   required?: string[];
 }
 
-function describeNode(node: JsonSchemaNode): string {
+export function describeNode(node: JsonSchemaNode): string {
+  if (node.const !== undefined) return JSON.stringify(node.const);
   if (node.enum) return node.enum.map((value) => JSON.stringify(value)).join("|");
   if (node.anyOf) return node.anyOf.map(describeNode).join("|");
+  if (node.oneOf) return node.oneOf.map(describeNode).join(" | ");
   if (node.type === "array") {
     const item = node.items ?? {};
     // `(string|number)[]` — an unparenthesized union would read as an array of
@@ -426,10 +429,14 @@ function describeNode(node: JsonSchemaNode): string {
 }
 
 function isUnion(node: JsonSchemaNode): boolean {
-  return (node.enum?.length ?? 0) > 1 || (node.anyOf?.length ?? 0) > 1;
+  return (
+    (node.enum?.length ?? 0) > 1 ||
+    (node.anyOf?.length ?? 0) > 1 ||
+    (node.oneOf?.length ?? 0) > 1
+  );
 }
 
-function describeShape(node: JsonSchemaNode): string {
+export function describeShape(node: JsonSchemaNode): string {
   const required = new Set(node.required ?? []);
   const fields = Object.entries(node.properties ?? {}).map(
     ([name, child]) =>

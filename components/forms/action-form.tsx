@@ -16,7 +16,7 @@ import type { ActionState } from "@/app/actions/shared";
 
 type CopyStatus = "idle" | "copied" | "error";
 
-async function copyText(text: string) {
+export async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
     return;

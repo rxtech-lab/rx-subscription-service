@@ -5,6 +5,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { paywalls } from "./paywalls";
 
 export const API_ENVIRONMENTS = ["sandbox", "production"] as const;
 export type ApiEnvironment = (typeof API_ENVIRONMENTS)[number];
@@ -27,6 +28,10 @@ export const applications = sqliteTable("applications", {
   runTestsOnChange: integer("run_tests_on_change", { mode: "boolean" })
     .notNull()
     .default(false),
+  /** The paywall template this app shows; deleting the template clears it. */
+  paywallId: text("paywall_id").references(() => paywalls.id, {
+    onDelete: "set null",
+  }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   syncedAt: integer("synced_at", { mode: "timestamp_ms" }),

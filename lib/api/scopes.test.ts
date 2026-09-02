@@ -42,6 +42,7 @@ describe("key scopes", () => {
   it("lets a publishable key read its user and start a purchase", () => {
     for (const operation of [
       "catalog.read",
+      "paywall.read",
       "entitlements.read",
       "checkout.create",
       "apple.transactions.submit",
