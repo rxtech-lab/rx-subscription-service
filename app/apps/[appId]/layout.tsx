@@ -43,7 +43,7 @@ export default async function ApplicationLayout({
 
   return (
     <div className="min-h-full bg-[#f7f8fc]">
-      <div className="mx-auto flex min-h-full w-full max-w-[1920px] items-start">
+      <div className="flex min-h-full w-full items-start">
         <div className="min-w-0 flex-1">
           <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
             <div className="flex h-16 w-full items-center justify-between gap-4 px-5 sm:px-8">

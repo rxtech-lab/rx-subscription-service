@@ -13,9 +13,6 @@ import {
   ChevronDown,
   Loader2,
   PanelRightClose,
-  Send,
-  Sparkles,
-  Square,
   Trash2,
   X,
   XCircle,
@@ -33,6 +30,16 @@ import {
 } from "react";
 import { clearAssistantConversationAction } from "@/app/actions/assistant";
 import {
+  AgentComposer,
+  AgentEmptyState,
+  AgentError,
+  AgentMessageList,
+  AgentToolCard,
+  AgentTypingIndicator,
+  humanizeToolName,
+  type AgentToolPart,
+} from "@/components/ai/agent-chat";
+import {
   findLatestPendingApproval,
   latestUserTextAfter,
 } from "@/components/ai/assistant-approval-state";
@@ -43,7 +50,6 @@ import {
   MIN_ASSISTANT_PANEL_WIDTH,
 } from "@/components/ai/assistant-panel-width";
 import { GeneratedUi } from "@/components/ai/generated-ui";
-import { MarkdownMessage } from "@/components/ai/markdown-message";
 import {
   calculatePinnedBottomSpacing,
   shouldReleasePinnedMessage,
@@ -52,14 +58,6 @@ import { TestRunCard } from "@/components/testing/test-run-card";
 import { Button } from "@/components/ui/primitives";
 import type { RunSnapshot } from "@/lib/testing/runs";
 import { cn } from "@/lib/utils";
-
-interface DisplayToolPart {
-  state: string;
-  input?: unknown;
-  output?: unknown;
-  errorText?: string;
-  approval?: { id: string; approved?: boolean };
-}
 
 interface ConfirmationInput {
   title?: unknown;
@@ -73,6 +71,11 @@ const DESKTOP_PANEL_MEDIA_QUERY = "(min-width: 80rem)";
 const MAX_WORKSPACE_WIDTH = 1920;
 /** Slack in pixels before the transcript counts as scrolled away from the end. */
 const SCROLL_TO_BOTTOM_THRESHOLD = 48;
+const SUGGESTIONS = [
+  "Add a Pro plan at $19/month with a 14-day trial",
+  "Give Pro 10,000 points every month",
+  "Create an api_calls usage item that resets every 24 hours",
+];
 const SCROLL_KEYS = new Set([
   "ArrowUp",
   "ArrowDown",
@@ -82,13 +85,6 @@ const SCROLL_KEYS = new Set([
   "End",
   " ",
 ]);
-
-/** Turn `createPlan` into `Create plan` for the approval card. */
-function humanizeTool(name: string): string {
-  const bare = name.replace(/^tool-/, "");
-  const spaced = bare.replace(/([A-Z])/g, " $1").toLowerCase();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 function ArgumentList({ input }: { input: unknown }) {
   if (!input || typeof input !== "object") return null;
@@ -132,7 +128,7 @@ function ConfirmationCard({
   toolPart,
   onResponse,
 }: {
-  toolPart: DisplayToolPart;
+  toolPart: AgentToolPart;
   onResponse: (approved: boolean) => void;
 }) {
   const input = (toolPart.input ?? {}) as ConfirmationInput;
@@ -209,7 +205,7 @@ function ApprovalCard({
   onResponse,
 }: {
   label: string;
-  toolPart: DisplayToolPart;
+  toolPart: AgentToolPart;
   onResponse: (approved: boolean) => void;
 }) {
   const output = toolPart.output as { ok?: boolean; error?: string } | null;
@@ -308,25 +304,6 @@ function ApprovalCard({
           </Button>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function TypingIndicator() {
-  return (
-    <div
-      className="flex items-center gap-1 py-2"
-      role="status"
-      aria-label="Assistant is responding"
-    >
-      {[0, 1, 2].map((index) => (
-        <span
-          key={index}
-          className="size-1.5 animate-bounce rounded-full bg-slate-400"
-          style={{ animationDelay: `${index * 140}ms` }}
-          aria-hidden="true"
-        />
-      ))}
     </div>
   );
 }
@@ -859,202 +836,126 @@ export function AssistantPanel({
         onKeyDown={noteReaderScrollKey}
         onPointerDown={noteReaderScrollbarDrag}
       >
-        <div ref={messagesContentRef} className="space-y-4">
-          {messages.length === 0 ? (
-            <div className="mx-auto flex max-w-sm flex-col items-center px-1 py-6 text-center">
-              <span className="flex size-11 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-blue-600">
-                <Sparkles className="size-5" aria-hidden="true" />
-              </span>
-              <p className="mt-4 text-sm font-semibold text-slate-950">
-                Build your subscription setup
-              </p>
-              <p className="mt-1.5 text-xs leading-5 text-slate-500">
-                Ask the agent to create, connect, or explain anything in this
-                workspace.
-              </p>
-              <div className="mt-5 grid w-full gap-2 text-left">
-                {[
-                  "Add a Pro plan at $19/month with a 14-day trial",
-                  "Give Pro 10,000 points every month",
-                  "Create an api_calls usage item that resets every 24 hours",
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => setDraft(suggestion)}
-                    className="rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-xs leading-5 text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-blue-200 hover:text-slate-950 hover:shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+        <AgentMessageList
+          messages={messages}
+          contentRef={messagesContentRef}
+          messageRef={(messageId) =>
+            messageId === pinnedUserMessageId ? pinnedUserMessageRef : undefined
+          }
+          empty={
+            <AgentEmptyState
+              title="Build your subscription setup"
+              description="Ask the agent to create, connect, or explain anything in this workspace."
+              suggestions={SUGGESTIONS}
+              onSuggestionSelect={setDraft}
+            />
+          }
+          renderToolPart={({ part }) => {
+            const label = humanizeToolName(part.type);
 
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              ref={
-                message.id === pinnedUserMessageId
-                  ? pinnedUserMessageRef
-                  : undefined
+            // A generated view replaces the tool card entirely — the point
+            // of the call is the chart, not a "done" line.
+            if (part.type === "tool-renderUI") {
+              const output = part.output as { ok?: boolean } | null;
+              if (
+                part.state === "output-error" ||
+                part.state === "output-denied"
+              ) {
+                return null;
               }
-              className="space-y-2"
-            >
-              {message.role === "assistant" ? (
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                  <span className="flex size-5 items-center justify-center rounded-md bg-blue-100 text-blue-600">
-                    <Bot className="size-3" aria-hidden="true" />
-                  </span>
-                  Agent
-                </div>
-              ) : null}
-              {message.parts.map((part, index) => {
-                if (part.type === "text") {
-                  if (message.role !== "user") {
-                    return (
-                      <div key={index} className="w-full pr-0 text-sm">
-                        <MarkdownMessage>{part.text}</MarkdownMessage>
-                      </div>
-                    );
-                  }
+              if (part.state !== "output-available") {
+                return <AgentToolCard label="Preparing view…" status="running" />;
+              }
+              if (!output?.ok) return null;
+              const input = part.input as { spec?: unknown } | null;
+              return <GeneratedUi spec={input?.spec} />;
+            }
 
-                  return (
-                    <div
-                      key={index}
-                      className="ml-auto w-fit max-w-[calc(100%-2rem)] break-words whitespace-pre-wrap rounded-2xl rounded-br-md bg-blue-600 px-3.5 py-2.5 text-sm text-white shadow-sm shadow-blue-600/10"
-                    >
-                      {part.text}
-                    </div>
-                  );
-                }
-
-                if (!part.type.startsWith("tool-")) return null;
-                const toolPart = part as typeof part & DisplayToolPart;
-                const label = humanizeTool(part.type);
-
-                // A generated view replaces the tool card entirely — the point
-                // of the call is the chart, not a "done" line.
-                if (part.type === "tool-renderUI") {
-                  const output = toolPart.output as { ok?: boolean } | null;
-                  if (
-                    toolPart.state === "output-error" ||
-                    toolPart.state === "output-denied"
-                  ) {
-                    return null;
-                  }
-                  if (toolPart.state !== "output-available") {
-                    return (
-                      <p key={index} className="text-xs text-neutral-400">
-                        Preparing view…
-                      </p>
-                    );
-                  }
-                  if (!output?.ok) return null;
-                  const input = toolPart.input as { spec?: unknown } | null;
-                  return <GeneratedUi key={index} spec={input?.spec} />;
-                }
-
-                // An approved run replaces its "Applied" card with the live run
-                // itself — the point of the call is watching it, not being told
-                // it started.
-                if (
-                  part.type === "tool-runTestSuite" &&
-                  toolPart.state === "output-available"
-                ) {
-                  const output = toolPart.output as {
-                    ok?: boolean;
-                    result?: { runId?: string; suiteName?: string };
-                  } | null;
-                  if (output?.ok && output.result?.runId) {
-                    return (
-                      <TestRunCard
-                        key={index}
-                        runId={output.result.runId}
-                        initial={runSnapshots?.[output.result.runId] ?? null}
-                        suiteName={output.result.suiteName}
-                        applicationId={applicationId}
-                        compact
-                      />
-                    );
-                  }
-                }
-
-                if (part.type === "tool-confirmation" && toolPart.approval) {
-                  const approvalId = toolPart.approval.id;
-                  return (
-                    <ConfirmationCard
-                      key={index}
-                      toolPart={toolPart}
-                      onResponse={(approved) => {
-                        clearChatError();
-                        void addToolApprovalResponse({ id: approvalId, approved });
-                      }}
-                    />
-                  );
-                }
-
-                // Write tools keep their existing detailed approval card.
-                if (toolPart.approval) {
-                  const approvalId = toolPart.approval.id;
-                  return (
-                    <ApprovalCard
-                      key={index}
-                      label={label}
-                      toolPart={toolPart}
-                      onResponse={(approved) => {
-                        clearChatError();
-                        void addToolApprovalResponse({ id: approvalId, approved });
-                      }}
-                    />
-                  );
-                }
-
-                if (toolPart.state === "output-denied") {
-                  return (
-                    <p key={index} className="text-xs text-neutral-500">
-                      {label} — rejected
-                    </p>
-                  );
-                }
-
-                if (toolPart.state === "output-error") {
-                  return (
-                    <p key={index} className="text-xs text-red-600">
-                      {label} — {toolPart.errorText ?? "failed"}
-                    </p>
-                  );
-                }
-
-                if (toolPart.state === "output-available") {
-                  const output = toolPart.output as {
-                    ok?: boolean;
-                    error?: string;
-                  } | null;
-                  if (output && output.ok === false) {
-                    return (
-                      <p key={index} className="text-xs text-red-600">
-                        {label} — {output.error}
-                      </p>
-                    );
-                  }
-                  return (
-                    <p key={index} className="text-xs text-neutral-500">
-                      {label} — done
-                    </p>
-                  );
-                }
-
+            // An approved run replaces its "Applied" card with the live run
+            // itself — the point of the call is watching it, not being told
+            // it started.
+            if (
+              part.type === "tool-runTestSuite" &&
+              part.state === "output-available"
+            ) {
+              const output = part.output as {
+                ok?: boolean;
+                result?: { runId?: string; suiteName?: string };
+              } | null;
+              if (output?.ok && output.result?.runId) {
                 return (
-                  <p key={index} className="text-xs text-neutral-400">
-                    {label}…
-                  </p>
+                  <TestRunCard
+                    runId={output.result.runId}
+                    initial={runSnapshots?.[output.result.runId] ?? null}
+                    suiteName={output.result.suiteName}
+                    applicationId={applicationId}
+                    compact
+                  />
                 );
-              })}
-            </div>
-          ))}
+              }
+            }
 
-          {busy ? <TypingIndicator /> : null}
+            if (part.type === "tool-confirmation" && part.approval) {
+              const approvalId = part.approval.id;
+              return (
+                <ConfirmationCard
+                  toolPart={part}
+                  onResponse={(approved) => {
+                    clearChatError();
+                    void addToolApprovalResponse({ id: approvalId, approved });
+                  }}
+                />
+              );
+            }
+
+            // Write tools keep their existing detailed approval card.
+            if (part.approval) {
+              const approvalId = part.approval.id;
+              return (
+                <ApprovalCard
+                  label={label}
+                  toolPart={part}
+                  onResponse={(approved) => {
+                    clearChatError();
+                    void addToolApprovalResponse({ id: approvalId, approved });
+                  }}
+                />
+              );
+            }
+
+            if (part.state === "output-denied") {
+              return <AgentToolCard label={`${label} — rejected`} status="skipped" />;
+            }
+
+            if (part.state === "output-error") {
+              return (
+                <AgentToolCard
+                  label={`${label} — ${part.errorText ?? "failed"}`}
+                  status="failed"
+                />
+              );
+            }
+
+            if (part.state === "output-available") {
+              const output = part.output as {
+                ok?: boolean;
+                error?: string;
+              } | null;
+              if (output && output.ok === false) {
+                return (
+                  <AgentToolCard
+                    label={`${label} — ${output.error}`}
+                    status="failed"
+                  />
+                );
+              }
+              return <AgentToolCard label={label} status="done" />;
+            }
+
+            return <AgentToolCard label={`${label}…`} status="running" />;
+          }}
+        >
+          {busy ? <AgentTypingIndicator /> : null}
 
           {canResumePendingApproval && !busy ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
@@ -1076,16 +977,10 @@ export function AssistantPanel({
           ) : null}
 
           {error && !canResumePendingApproval ? (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error.message}
-            </p>
+            <AgentError>{error.message}</AgentError>
           ) : null}
-          {clearError ? (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {clearError}
-            </p>
-          ) : null}
-        </div>
+          {clearError ? <AgentError>{clearError}</AgentError> : null}
+        </AgentMessageList>
         <div
           style={{ height: bottomSpacing }}
           aria-hidden="true"
@@ -1103,56 +998,23 @@ export function AssistantPanel({
         </button>
       ) : null}
 
-      <form
-        className="absolute inset-x-3 bottom-3 z-10 flex items-end gap-2 rounded-2xl border border-slate-200/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.72),rgba(241,245,249,0.42))] p-2 backdrop-blur-2xl backdrop-saturate-150 transition focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-100/70"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-          rows={2}
-          disabled={busy || pendingApproval !== null}
-          placeholder={
-            pendingApproval
-              ? canResumePendingApproval
-                ? "Resume the pending change first"
-                : "Approve or reject the pending change first"
-              : "Ask the agent…"
-          }
-          className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-        />
-        {busy ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className="size-9 shrink-0 shadow-none"
-            onClick={() => void stopResponse()}
-            aria-label="Stop response"
-          >
-            <Square className="h-3.5 w-3.5 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            size="icon"
-            className="size-9 shrink-0 shadow-none"
-            disabled={pendingApproval !== null || !draft.trim()}
-            aria-label="Send message"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        )}
-      </form>
+      <AgentComposer
+        className="absolute inset-x-3 bottom-3 z-10"
+        value={draft}
+        onChange={setDraft}
+        onSubmit={submit}
+        onStop={() => void stopResponse()}
+        busy={busy}
+        disabled={pendingApproval !== null}
+        label="Message the workspace agent"
+        placeholder={
+          pendingApproval
+            ? canResumePendingApproval
+              ? "Resume the pending change first"
+              : "Approve or reject the pending change first"
+            : "Ask the agent…"
+        }
+      />
     </aside>
     </>
   );

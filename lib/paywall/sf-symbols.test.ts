@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { buildSymbolIndex } from "../../scripts/generate-sf-symbol-index";
+import SYMBOL_INDEX from "./sf-symbol-index.json";
 import { SUGGESTED_SYMBOLS } from "./sf-symbols";
 import { getSymbolDefinition, searchSymbols } from "./sf-symbols.server";
 import { TEMPLATES, TEMPLATE_KEYS } from "./templates";
 import type { PaywallNode } from "./schema";
 
 describe("sf symbols", () => {
+  it("has a checked-in index matching the installed catalog", () => {
+    // The index is generated, not derived at run time, so a package bump that
+    // adds or renames symbols has to be followed by
+    // `bun run scripts/generate-sf-symbol-index.ts`.
+    expect(SYMBOL_INDEX).toEqual(buildSymbolIndex());
+  });
+
   it("returns real vector definitions from the npm package", () => {
     expect(getSymbolDefinition("bolt.fill")?.sourceName).toBe("bolt.fill");
     expect(getSymbolDefinition("person.2.fill")?.svgPathData.length).toBeGreaterThan(0);

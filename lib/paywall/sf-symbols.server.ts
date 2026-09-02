@@ -1,13 +1,24 @@
 import "server-only";
 
-import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import SYMBOL_MODULES from "./sf-symbol-index.json";
 import { rankSymbols } from "./sf-symbols";
 
-// The package's ESM barrel omits file extensions, which native Node rejects
-// when Next externalizes it. Its CommonJS export resolves the same generated
-// definitions correctly and keeps the catalog out of the compiled app bundle.
-const require = createRequire(import.meta.url);
-const symbolExports = require("@bradleyhodges/sfsymbols") as Record<string, unknown>;
+// The package ships one CommonJS module per symbol plus a barrel that requires
+// every one of them — half a second and ~12 MB of heap to answer a name search
+// that only needs the names. `sf-symbol-index.json` (see
+// `scripts/generate-sf-symbol-index.ts`) carries the name list, so a request
+// loads at most the single module whose vectors it is about to draw.
+//
+// The package's `exports` map has no subpath for those modules, so they are
+// required by absolute path off the resolved entry point — resolving does not
+// load the barrel. `node:module` is reached through `process.getBuiltinModule`
+// rather than an import so the bundler cannot follow that require and fail on
+// its computed path at build time.
+const loadModule = process
+  .getBuiltinModule("node:module")
+  .createRequire(import.meta.url);
+const SYMBOLS_DIR = dirname(loadModule.resolve("@bradleyhodges/sfsymbols"));
 
 export interface SymbolDefinition {
   sourceName: string;
@@ -25,23 +36,25 @@ function isSymbolDefinition(value: unknown): value is SymbolDefinition {
   return typeof candidate.sourceName === "string" && Array.isArray(candidate.svgPathData);
 }
 
-const SYMBOL_DEFINITIONS = Object.values(symbolExports).filter(isSymbolDefinition);
-const SYMBOLS_BY_NAME = new Map<string, SymbolDefinition>();
-for (const symbol of SYMBOL_DEFINITIONS) {
-  if (!SYMBOLS_BY_NAME.has(symbol.sourceName)) SYMBOLS_BY_NAME.set(symbol.sourceName, symbol);
-}
-
 /** Deprecated Apple names that still appear in existing paywall documents. */
 const LEGACY_ALIASES: Record<string, string> = {
   "wand.and.stars": "wand.and.sparkles",
   "wand.and.stars.inverse": "wand.and.sparkles.inverse",
 };
 
-export const SF_SYMBOL_NAMES = [...SYMBOLS_BY_NAME.keys()].sort();
+const SYMBOL_MODULES_BY_NAME: Record<string, string | undefined> = SYMBOL_MODULES;
+
+export const SF_SYMBOL_NAMES = Object.keys(SYMBOL_MODULES);
 
 export function getSymbolDefinition(name: string): SymbolDefinition | undefined {
   const trimmed = name.trim();
-  return SYMBOLS_BY_NAME.get(LEGACY_ALIASES[trimmed] ?? trimmed);
+  const moduleName = SYMBOL_MODULES_BY_NAME[LEGACY_ALIASES[trimmed] ?? trimmed];
+  if (!moduleName) return undefined;
+
+  // `require` memoizes, so a repeatedly drawn symbol is loaded once per process.
+  const loaded = loadModule(join(SYMBOLS_DIR, `${moduleName}.js`)) as Record<string, unknown>;
+  const definition = loaded[moduleName];
+  return isSymbolDefinition(definition) ? definition : undefined;
 }
 
 export function searchSymbols(query: string, limit = 40): string[] {
