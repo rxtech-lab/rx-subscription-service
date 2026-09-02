@@ -630,3 +630,35 @@ export async function listTestUsers(
       })),
   }));
 }
+
+export interface TestUserIdentity {
+  /** The rxlab identity every record below belongs to. */
+  rxlabUserId: string;
+  /** One record per environment this identity exists in, newest first. */
+  records: TestUserSummary[];
+}
+
+/**
+ * The Test tab renders one row per rxlab identity rather than one per
+ * `app_users` row.
+ *
+ * The same signed-in tester gets an independent record in each environment, so
+ * a device that has called both the sandbox and the Xcode API produces two rows
+ * carrying the same visible id — which reads as a duplicate rather than as the
+ * two separate data planes it is. Grouping here lets the row show the
+ * environments side by side and switch between them.
+ */
+export async function listTestUserIdentities(
+  applicationId: string,
+): Promise<TestUserIdentity[]> {
+  const summaries = await listTestUsers(applicationId);
+  const groups = new Map<string, TestUserSummary[]>();
+  for (const summary of summaries) {
+    const records = groups.get(summary.user.rxlabUserId);
+    if (records) records.push(summary);
+    else groups.set(summary.user.rxlabUserId, [summary]);
+  }
+  // `listTestUsers` is newest-first, so both the group order and the records
+  // within each group already lead with what was touched most recently.
+  return Array.from(groups, ([rxlabUserId, records]) => ({ rxlabUserId, records }));
+}
