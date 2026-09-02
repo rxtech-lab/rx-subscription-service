@@ -127,6 +127,57 @@ test("the Test users action opens an Xcode-created user in Xcode data", async ({
   await context.close();
 });
 
+test("the Test users tab shows one row per identity, switchable by environment", async ({
+  browser,
+  request,
+}) => {
+  const rxlabUserId = `collapsed-${crypto.randomUUID()}`;
+  // The same identity in both test environments: two `app_users` rows carrying
+  // one visible id, which is exactly the pair the Test tab has to collapse.
+  for (const [apiKey, amount] of [
+    [E2E_SANDBOX_API_KEY, 11],
+    [E2E_XCODE_API_KEY, 22],
+  ] as const) {
+    const credit = await request.post(`${E2E_BASE_URL}/api/v1/balances`, {
+      headers: headers(apiKey),
+      data: {
+        rxlabUserId,
+        unit: "points",
+        amount,
+        operation: "credit",
+        description: "Collapsed row check",
+        idempotencyKey: `collapsed-credit-${crypto.randomUUID()}`,
+      },
+    });
+    expect(credit.ok()).toBe(true);
+  }
+
+  const context = await browser.newContext({
+    baseURL: E2E_BASE_URL,
+    extraHTTPHeaders: { "X-E2E-Secret": E2E_SECRET },
+  });
+  const page = await context.newPage();
+  await page.goto(`/apps/${E2E_APPLICATION_ID}/test`);
+
+  const row = page.getByRole("row").filter({ hasText: rxlabUserId });
+  await expect(row).toHaveCount(1);
+
+  const environment = row.getByRole("group", {
+    name: `Environment for ${rxlabUserId}`,
+  });
+  await expect(row.getByText("22 Points", { exact: true })).toBeVisible();
+  await expect(
+    environment.getByRole("button", { name: "Xcode" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await environment.getByRole("button", { name: "Sandbox" }).click();
+  await expect(row.getByText("11 Points", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "Actions for test user" }).click();
+  await expect(page.getByRole("link", { name: "View sandbox data" })).toBeVisible();
+
+  await context.close();
+});
+
 test("the dashboard switches an external user between production and sandbox data", async ({
   browser,
   request,
