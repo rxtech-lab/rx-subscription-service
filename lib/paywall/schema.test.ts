@@ -40,15 +40,16 @@ describe("validatePaywallSpec", () => {
         android: { id: "android-title", type: "Text", props: { text: "No" } },
       },
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       error: expect.stringContaining("deviceLayouts.android"),
+      nodeId: "android-title",
     });
   });
 
   it("rejects a leaf root", () => {
     const result = validatePaywallSpec(spec({ id: "root", type: "Text", props: { text: "x" } }));
-    expect(result).toEqual({ ok: false, error: expect.stringContaining("layout node") });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("layout node") });
   });
 
   it("rejects children on a leaf", () => {
@@ -76,7 +77,7 @@ describe("validatePaywallSpec", () => {
         ],
       }),
     );
-    expect(result).toEqual({ ok: false, error: 'Duplicate node id "dup".' });
+    expect(result).toMatchObject({ ok: false, error: 'Duplicate node id "dup".', nodeId: "dup" });
   });
 
   it("rejects an unknown color and an unknown action", () => {
@@ -105,7 +106,7 @@ describe("validatePaywallSpec", () => {
     const none = validatePaywallSpec(
       spec({ id: "root", type: "VStack", props: {}, children: [{ id: "i", type: "Image", props: {} }] }),
     );
-    expect(none.ok).toBe(false);
+    expect(none).toMatchObject({ ok: false, error: expect.stringContaining("i (Image)"), nodeId: "i" });
     const both = validatePaywallSpec(
       spec({
         id: "root",
@@ -119,7 +120,7 @@ describe("validatePaywallSpec", () => {
     expect(both.ok).toBe(false);
   });
 
-  it("names the failing path", () => {
+  it("names the failing node rather than its position in the tree", () => {
     const result = validatePaywallSpec(
       spec({
         id: "root",
@@ -129,7 +130,37 @@ describe("validatePaywallSpec", () => {
       }),
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/^root\.children\.0\.props\.columns/);
+    if (!result.ok) {
+      expect(result.error).toMatch(/^g \(Grid\) columns:/);
+      expect(result.nodeId).toBe("g");
+    }
+  });
+
+  it("names a node nested deep inside a device layout", () => {
+    const base = TEMPLATES.classic.build();
+    const result = validatePaywallSpec({
+      ...base,
+      deviceLayouts: {
+        ipad: {
+          id: "ipad-root",
+          type: "VStack",
+          props: {},
+          children: [
+            {
+              id: "ipad-hero",
+              type: "VStack",
+              props: {},
+              children: [{ id: "ipad-icon", type: "Image", props: { width: 56 } }],
+            },
+          ],
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("deviceLayouts.ipad ipad-icon (Image)"),
+      nodeId: "ipad-icon",
+    });
   });
 
   it("caps the number of product lists", () => {
