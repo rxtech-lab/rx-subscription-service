@@ -5,7 +5,9 @@ import {
   type APIRequestContext,
 } from "@playwright/test";
 import {
+  E2E_ADDON_PLAN_ID,
   E2E_API_KEY,
+  E2E_APPLICATION_ID,
   E2E_BASE_URL,
   E2E_ONE_TIME_PLAN_ID,
   E2E_PLAN_ID,
@@ -151,6 +153,79 @@ test.describe.serial("Apple StoreKit fulfillment", () => {
       expect.objectContaining({ unit: "points", amount: 100 }),
     ]);
     expect(sandboxBody.balances).toEqual([]);
+  });
+
+  test("deletes a local Xcode subscription from the admin dashboard", async ({
+    browser,
+  }) => {
+    const productId = "com.rxlab.e2e.xcode-addon";
+    const rxlabUserId = "e2e-apple-xcode-subscription-user";
+    const configured = await admin.post("/api/e2e/apple/configure", {
+      data: { productId, planId: E2E_ADDON_PLAN_ID },
+    });
+    expect(configured.ok()).toBe(true);
+
+    const tokenResponse = await xcodeApi.post(
+      "/api/v1/iap/apple/account-token",
+      { data: { rxlabUserId } },
+    );
+    expect(tokenResponse.ok()).toBe(true);
+    const { appAccountToken } = (await tokenResponse.json()) as {
+      appAccountToken: string;
+    };
+    const purchasedAt = Date.now();
+    const signedTransaction = signed({
+      transactionId: "apple-e2e-xcode-subscription-1",
+      originalTransactionId: "apple-e2e-xcode-subscription-1",
+      bundleId: "com.rxlab.e2e",
+      productId,
+      purchaseDate: purchasedAt,
+      originalPurchaseDate: purchasedAt,
+      expiresDate: purchasedAt + 30 * 24 * 60 * 60_000,
+      quantity: 1,
+      type: "Auto-Renewable Subscription",
+      appAccountToken,
+      signedDate: purchasedAt,
+      environment: "Xcode",
+      currency: "USD",
+      price: 9_000,
+    });
+    const fulfilled = await xcodeApi.post(
+      "/api/v1/iap/apple/transactions",
+      { data: { rxlabUserId, signedTransaction } },
+    );
+    expect(fulfilled.ok()).toBe(true);
+    await expect(fulfilled.json()).resolves.toMatchObject({
+      subscription: {
+        billingProvider: "apple_app_store",
+        planId: E2E_ADDON_PLAN_ID,
+      },
+    });
+
+    const context = await browser.newContext({
+      baseURL: E2E_BASE_URL,
+      extraHTTPHeaders: { "X-E2E-Secret": E2E_SECRET },
+    });
+    const page = await context.newPage();
+    await page.goto(`/apps/${E2E_APPLICATION_ID}/subscriptions`);
+
+    const row = page
+      .getByRole("row")
+      .filter({ has: page.getByText("Add-on", { exact: true }) });
+    await expect(row).toContainText("App Store");
+    await row.getByRole("button", { name: "Actions for Add-on" }).click();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("button", { name: "Delete Xcode subscription" })
+      .click();
+    await expect(row).toHaveCount(0);
+
+    const entitlements = await xcodeApi.get("/api/v1/entitlements", {
+      params: { rxlabUserId },
+    });
+    expect(entitlements.ok()).toBe(true);
+    await expect(entitlements.json()).resolves.toMatchObject({ plans: [] });
+    await context.close();
   });
 
   test("publishes StoreKit purchase options and fulfills quantity once", async () => {
