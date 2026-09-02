@@ -7,11 +7,17 @@ const nextConfig: NextConfig = {
   distDir: process.env.IS_E2E === "true" ? ".next-e2e" : ".next",
 
   // The symbol catalog contains thousands of generated modules and is used
-  // only by the Node route that serves search results and SVGs. Loading it at
-  // runtime avoids making Turbopack compile the entire catalog into the app.
+  // only by the Node route that serves search results and SVGs. Keeping it
+  // external stops Turbopack from ever compiling the catalog into the app.
   serverExternalPackages: ["@bradleyhodges/sfsymbols"],
 
   outputFileTracingIncludes: {
+    // The symbol route requires one generated module per drawn symbol, by
+    // absolute path off `sf-symbol-index.json`. Nothing imports them
+    // statically, so tracing cannot infer them and every symbol would 404
+    // once deployed.
+    "/api/sf-symbols": ["./node_modules/@bradleyhodges/sfsymbols/dist/main/*.js"],
+
     "/**": [
       // The test harness is read from disk at run time and shipped into a
       // sandbox, so nothing imports it and tracing cannot infer it. Without
