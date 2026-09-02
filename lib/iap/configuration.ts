@@ -6,9 +6,11 @@ import {
   plans,
   storeAccountLinks,
   storeProductMappings,
+  storeProductPrices,
   storeTransactions,
   topupProducts,
   type AppUser,
+  type StoreProductMapping,
   type StoreProductType,
 } from "@/lib/db/schema";
 import {
@@ -134,10 +136,41 @@ export async function saveAppleIntegration(input: {
   return saved;
 }
 
-export async function listStoreProductMappings(applicationId: string) {
+/**
+ * A mapping plus its store price override, when one is set.
+ * `priceAmountCents` is null whenever the store quotes the local plan or
+ * top-up price. An alias rather than an interface because `recordAudit` takes
+ * a `Record<string, unknown>`, which only aliases satisfy implicitly.
+ */
+export type StoreProductMappingWithPrice = StoreProductMapping & {
+  priceAmountCents: number | null;
+  currency: string | null;
+};
+
+const mappingWithPriceColumns = {
+  id: storeProductMappings.id,
+  applicationId: storeProductMappings.applicationId,
+  provider: storeProductMappings.provider,
+  productId: storeProductMappings.productId,
+  productType: storeProductMappings.productType,
+  planId: storeProductMappings.planId,
+  topupProductId: storeProductMappings.topupProductId,
+  createdAt: storeProductMappings.createdAt,
+  updatedAt: storeProductMappings.updatedAt,
+  priceAmountCents: storeProductPrices.priceAmountCents,
+  currency: storeProductPrices.currency,
+};
+
+export async function listStoreProductMappings(
+  applicationId: string,
+): Promise<StoreProductMappingWithPrice[]> {
   return db
-    .select()
+    .select(mappingWithPriceColumns)
     .from(storeProductMappings)
+    .leftJoin(
+      storeProductPrices,
+      eq(storeProductPrices.storeProductMappingId, storeProductMappings.id),
+    )
     .where(eq(storeProductMappings.applicationId, applicationId))
     .orderBy(asc(storeProductMappings.productId));
 }
@@ -146,10 +179,14 @@ export async function getStoreProductMapping(input: {
   applicationId: string;
   provider: "apple_app_store" | "google_play";
   productId: string;
-}) {
+}): Promise<StoreProductMappingWithPrice | null> {
   const [mapping] = await db
-    .select()
+    .select(mappingWithPriceColumns)
     .from(storeProductMappings)
+    .leftJoin(
+      storeProductPrices,
+      eq(storeProductPrices.storeProductMappingId, storeProductMappings.id),
+    )
     .where(
       and(
         eq(storeProductMappings.applicationId, input.applicationId),
@@ -161,11 +198,92 @@ export async function getStoreProductMapping(input: {
   return mapping ?? null;
 }
 
+function normalizeStorePrice(input: {
+  priceAmountCents: number;
+  currency: string;
+}) {
+  if (
+    !Number.isSafeInteger(input.priceAmountCents) ||
+    input.priceAmountCents < 0
+  ) {
+    throw new ValidationError(
+      "Store price must be a non-negative whole number of cents",
+    );
+  }
+  const currency = input.currency.trim().toLowerCase();
+  if (!/^[a-z]{3}$/.test(currency)) {
+    throw new ValidationError("Store currency must be a 3-letter ISO code");
+  }
+  return { priceAmountCents: input.priceAmountCents, currency };
+}
+
+/**
+ * Set or clear one mapping's store price. A null amount removes the override,
+ * so the store falls back to the local plan or top-up price.
+ *
+ * The number is catalog metadata: Apple and Google charge from their own price
+ * tiers and the app renders StoreKit's localized string. What is stored here is
+ * what the console, the catalog, and the paywall report for that platform.
+ */
+async function saveStoreProductPrice(input: {
+  mappingId: string;
+  priceAmountCents: number | null;
+  currency: string;
+}) {
+  if (input.priceAmountCents === null) {
+    await db
+      .delete(storeProductPrices)
+      .where(eq(storeProductPrices.storeProductMappingId, input.mappingId));
+    return null;
+  }
+  const price = normalizeStorePrice({
+    priceAmountCents: input.priceAmountCents,
+    currency: input.currency,
+  });
+  const now = new Date();
+  const [saved] = await db
+    .insert(storeProductPrices)
+    .values({
+      id: newId(),
+      storeProductMappingId: input.mappingId,
+      priceAmountCents: price.priceAmountCents,
+      currency: price.currency,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: storeProductPrices.storeProductMappingId,
+      set: {
+        priceAmountCents: price.priceAmountCents,
+        currency: price.currency,
+        updatedAt: now,
+      },
+    })
+    .returning();
+  return saved;
+}
+
+async function storeProductPrice(mappingId: string) {
+  const [price] = await db
+    .select()
+    .from(storeProductPrices)
+    .where(eq(storeProductPrices.storeProductMappingId, mappingId))
+    .limit(1);
+  return price ?? null;
+}
+
 export async function saveAppleProductMapping(input: {
   applicationId: string;
   productId: string;
   planId?: string | null;
   topupProductId?: string | null;
+  /**
+   * The App Store price of this item, when it differs from the local one.
+   * `undefined` leaves any existing override alone; `null` removes it.
+   */
+  priceAmountCents?: number | null;
+  /** Defaults to the plan or top-up currency. */
+  currency?: string | null;
   actor: Actor;
 }) {
   const productId = input.productId.trim();
@@ -177,6 +295,7 @@ export async function saveAppleProductMapping(input: {
   }
 
   let productType: StoreProductType;
+  let localCurrency: string;
   if (input.planId) {
     const [plan] = await db
       .select()
@@ -193,9 +312,10 @@ export async function saveAppleProductMapping(input: {
       plan.billingInterval === "one_time"
         ? "non_consumable"
         : "auto_renewable_subscription";
+    localCurrency = plan.currency;
   } else {
     const [topup] = await db
-      .select({ id: topupProducts.id })
+      .select({ id: topupProducts.id, currency: topupProducts.currency })
       .from(topupProducts)
       .where(
         and(
@@ -206,6 +326,7 @@ export async function saveAppleProductMapping(input: {
       .limit(1);
     if (!topup) throw new NotFoundError("top-up", input.topupProductId!);
     productType = "consumable";
+    localCurrency = topup.currency;
   }
 
   const targetCondition = input.planId
@@ -240,6 +361,7 @@ export async function saveAppleProductMapping(input: {
     }
   }
 
+  const beforePrice = before ? await storeProductPrice(before.id) : null;
   const now = new Date();
   const [saved] = before
     ? await db
@@ -262,16 +384,37 @@ export async function saveAppleProductMapping(input: {
         })
         .returning();
 
+  const price =
+    input.priceAmountCents === undefined
+      ? beforePrice
+      : await saveStoreProductPrice({
+          mappingId: saved.id,
+          priceAmountCents: input.priceAmountCents,
+          currency:
+            input.currency?.trim() || beforePrice?.currency || localCurrency,
+        });
+
+  const after: StoreProductMappingWithPrice = {
+    ...saved,
+    priceAmountCents: price?.priceAmountCents ?? null,
+    currency: price?.currency ?? null,
+  };
   await recordAudit({
     applicationId: input.applicationId,
     actor: input.actor,
     action: before ? "store_product.update" : "store_product.create",
     entityType: "store_product_mapping",
     entityId: saved.id,
-    before,
-    after: saved,
+    before: before
+      ? {
+          ...before,
+          priceAmountCents: beforePrice?.priceAmountCents ?? null,
+          currency: beforePrice?.currency ?? null,
+        }
+      : undefined,
+    after,
   });
-  return saved;
+  return after;
 }
 
 export async function removeStoreProductMapping(input: {
@@ -306,6 +449,11 @@ export async function removeStoreProductMapping(input: {
       "This store product has verified purchases and cannot be removed",
     );
   }
+  // libsql does not enforce foreign keys by default, so the price row would
+  // otherwise outlive the mapping it belongs to.
+  await db
+    .delete(storeProductPrices)
+    .where(eq(storeProductPrices.storeProductMappingId, input.mappingId));
   await db
     .delete(storeProductMappings)
     .where(eq(storeProductMappings.id, input.mappingId));

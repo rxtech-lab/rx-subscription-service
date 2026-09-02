@@ -28,6 +28,38 @@ Use the App Store product action on each plan or top-up. Recurring plans require
 an Auto-Renewable Subscription, one-time plans require a Non-Consumable, and
 top-ups require a Consumable. One Apple product ID maps to one local item.
 
+## Platform pricing
+
+Apple sells from its own price tiers, so the same plan is routinely $9.99
+through Stripe and $12.99 in the App Store. The App Store product dialog takes
+that Apple amount alongside the product ID; leaving it empty means the store
+quotes the local catalog price.
+
+The override is catalog metadata — Apple still charges what App Store Connect
+says, and the app should render StoreKit's localized string. What it changes is
+what RxArgo reports: `GET /api/v1/catalog` and `GET /api/v1/paywall` price every
+plan and top-up in the response — and every paywall `priceLabel` and
+`savingsLabel` — from the App Store.
+
+A native app needs to ask for nothing. Both endpoints resolve the platform per
+request, in this order:
+
+1. `?platform=ios` (also `apple`, `apple_app_store`) or `?platform=web`.
+2. An `X-Platform: ios` header.
+3. The user agent. URLSession stamps every StoreKit client's request with its
+   CFNetwork and Darwin versions, and that is read as iOS.
+
+Everything else is web, deliberately including Safari on an iPhone: a mobile
+browser checks out through Stripe at the Stripe price, so quoting it App Store
+prices would misprice the purchase it is about to make. A server calling with a
+publishable key on a device's behalf should send the header rather than rely on
+its own user agent.
+
+Both responses name the `platform` they priced for, so a client can assert what
+it is holding. Either way each entry's `purchaseOptions` carries its own
+`priceAmountCents` and `currency`, so a client that shows both routes needs only
+one request.
+
 ## StoreKit client
 
 For the signed-in RxLab user, request an account token from

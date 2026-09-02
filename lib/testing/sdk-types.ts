@@ -290,6 +290,32 @@ declare global {
     usage: RxUsage[];
   }
 
+  /** How a catalog read is scoped. */
+  interface RxCatalogOptions {
+    /**
+     * Which store's prices to quote. "ios" uses the App Store price of any
+     * item priced differently there; the default, "web", uses the plan or
+     * top-up price.
+     */
+    platform?: "web" | "ios";
+  }
+
+  /** One way to buy a catalog item, and what it costs that way. */
+  interface RxPurchaseOption {
+    /** "stripe" or "apple_app_store". */
+    provider: string;
+    /** "checkout" or "storekit". */
+    flow: string;
+    /** The StoreKit product id, on store options only. */
+    productId?: string;
+    /** consumable, non_consumable, or auto_renewable_subscription. */
+    productType?: string;
+    /** Integer cents charged through this provider. */
+    priceAmountCents: number;
+    /** Lowercase ISO code. */
+    currency: string;
+  }
+
   /** A plan as the catalog presents it, without any per-user state. */
   interface RxCatalogPlan {
     /** The plan's id. */
@@ -306,12 +332,18 @@ declare global {
     billingInterval: string;
     /** How many intervals per period. 3 with "month" is quarterly. */
     intervalCount: number;
-    /** Integer cents. 999 is $9.99. */
+    /** Integer cents on the requested platform. 999 is $9.99. */
     priceAmountCents: number;
     /** Lowercase ISO code, e.g. "usd". */
     currency: string;
     /** Free days before the first charge. 0 for no trial. */
     trialDays: number;
+  }
+
+  /** A plan as 'rx.catalog()' returns it: priced for a platform, with its offers. */
+  interface RxCatalogPlanOffer extends RxCatalogPlan {
+    /** Every way to buy this plan, each with its own price. */
+    purchaseOptions: RxPurchaseOption[];
   }
 
   /** One rule that stood between a user and a purchase. */
@@ -349,12 +381,18 @@ declare global {
     blockedBy: RxBlockedBy[] | null;
   }
 
-  /** What is on sale right now. */
+  /** A pack as 'rx.catalog()' returns it: priced for a platform, with its offers. */
+  interface RxCatalogTopupOffer extends RxCatalogTopup {
+    /** Every way to buy this pack, each with its own price. */
+    purchaseOptions: RxPurchaseOption[];
+  }
+
+  /** What is on sale right now, priced for the platform that asked. */
   interface RxCatalog {
     /** Active plans, cheapest tier first is not guaranteed — sort if you care. */
-    plans: RxCatalogPlan[];
+    plans: RxCatalogPlanOffer[];
     /** Active topup packs, each with its eligibility verdict for the given user. */
-    topups: RxCatalogTopup[];
+    topups: RxCatalogTopupOffer[];
   }
 
   /** A subscription role this application defines. */
@@ -992,8 +1030,17 @@ declare global {
      * you assert that a gate holds without attempting a purchase.
      *
      * @param rxlabUserId Omit for the catalog with no eligibility verdicts.
+     * @param options 'platform: "ios"' quotes App Store prices for items that
+     * are priced differently there.
+     *
+     * @example
+     * const ios = await rx.catalog(user.rxlabUserId, { platform: "ios" });
+     * expect(ios.plans[0].priceAmountCents).toBe(1299);
      */
-    catalog(rxlabUserId?: string): Promise<RxCatalog>;
+    catalog(
+      rxlabUserId?: string,
+      options?: RxCatalogOptions,
+    ): Promise<RxCatalog>;
 
     /** Reading and reporting metered usage. */
     usage: RxUsageApi;

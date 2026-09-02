@@ -202,6 +202,15 @@ export default async function PlansPage({
                       <span className="font-mono text-xs text-neutral-500">
                         {appleByPlan.get(plan.id)?.productId ?? "Not mapped"}
                       </span>
+                      {appleByPlan.get(plan.id)?.priceAmountCents != null ? (
+                        <p className="text-xs text-neutral-500">
+                          {formatMoney(
+                            appleByPlan.get(plan.id)!.priceAmountCents!,
+                            appleByPlan.get(plan.id)!.currency ?? plan.currency,
+                          )}{" "}
+                          in the App Store
+                        </p>
+                      ) : null}
                     </Td>
                     <Td>
                       {entitlements.length === 0 ? (
@@ -315,7 +324,7 @@ export default async function PlansPage({
                           </ActionForm>
                         </FormDialog>
                         <FormDialog
-                          triggerLabel="App Store product"
+                          triggerLabel="App Store product & price"
                           title={`Map ${plan.name} in App Store Connect`}
                           description={`Expected type: ${plan.billingInterval === "one_time" ? "Non-Consumable" : "Auto-Renewable Subscription"}.`}
                           triggerVariant="menu"
@@ -323,7 +332,7 @@ export default async function PlansPage({
                         >
                           <ActionForm
                             action={saveApplePlanProductAction}
-                            submitLabel="Save product ID"
+                            submitLabel="Save App Store product"
                           >
                             <input type="hidden" name="applicationId" value={appId} />
                             <input type="hidden" name="targetId" value={plan.id} />
@@ -335,6 +344,37 @@ export default async function PlansPage({
                                 required
                               />
                             </Field>
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                              <Field
+                                label="App Store price"
+                                hint="Leave empty to charge the plan price. Apple bills its own tier; this is what the catalog and paywall report on iOS."
+                              >
+                                <Input
+                                  name="storePrice"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  defaultValue={
+                                    appleByPlan.get(plan.id)?.priceAmountCents != null
+                                      ? (
+                                          appleByPlan.get(plan.id)!.priceAmountCents! /
+                                          100
+                                        ).toFixed(2)
+                                      : ""
+                                  }
+                                  placeholder={(plan.priceAmountCents / 100).toFixed(2)}
+                                />
+                              </Field>
+                              <Field label="Currency">
+                                <Input
+                                  name="storeCurrency"
+                                  maxLength={3}
+                                  defaultValue={
+                                    appleByPlan.get(plan.id)?.currency ?? plan.currency
+                                  }
+                                />
+                              </Field>
+                            </div>
                           </ActionForm>
                         </FormDialog>
                         {appleByPlan.has(plan.id) ? (

@@ -5,7 +5,14 @@ import {
   requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
-import { appleMappingsByPlan, planPayload } from "@/lib/subscription/catalog-payload";
+import {
+  appleMappingsByPlan,
+  appleMappingsByTopup,
+  catalogPlatformForRequest,
+  planPayload,
+  platformPrice,
+  purchaseOptions,
+} from "@/lib/subscription/catalog-payload";
 import { listPlans } from "@/lib/subscription/plans";
 import { checkTopupEligibility, listTopupProducts } from "@/lib/subscription/topups";
 import { listBalanceUnits } from "@/lib/subscription/units";
@@ -18,6 +25,10 @@ import {
  * The purchasable catalog. When a user is supplied, each topup carries its
  * eligibility verdict so the app can render a locked pack with a reason instead
  * of failing at checkout.
+ *
+ * Prices follow the platform that asked: a StoreKit client is quoted App Store
+ * prices without passing anything, and `?platform=` or an `X-Platform` header
+ * overrides that. Every response also lists each purchase option's own price.
  */
 export async function GET(request: Request) {
   try {
@@ -26,6 +37,7 @@ export async function GET(request: Request) {
     const applicationId = context.application.id;
     const url = new URL(request.url);
     const rxlabUserId = url.searchParams.get("rxlabUserId");
+    const platform = catalogPlatformForRequest(request);
 
     const [plans, topups, units, appleIntegration, storeMappings] = await Promise.all([
       listPlans(applicationId),
@@ -39,13 +51,7 @@ export async function GET(request: Request) {
     const activePlans = plans.filter((plan) => plan.status === "active");
     const activeTopups = topups.filter((topup) => topup.status === "active");
     const appleByPlan = appleMappingsByPlan(storeMappings);
-    const appleByTopup = new Map(
-      storeMappings
-        .filter(
-          (mapping) => mapping.provider === "apple_app_store" && mapping.topupProductId,
-        )
-        .map((mapping) => [mapping.topupProductId!, mapping]),
-    );
+    const appleByTopup = appleMappingsByTopup(storeMappings);
 
     // A publishable key always has a user, so eligibility is computed whether
     // or not the client bothered to name one.
@@ -63,6 +69,11 @@ export async function GET(request: Request) {
             appUserId: user.id,
           })
         : null;
+      const apple = appleByTopup.get(topup.id);
+      const local = {
+        priceAmountCents: topup.priceAmountCents,
+        currency: topup.currency,
+      };
       topupPayload.push({
         id: topup.id,
         key: topup.key,
@@ -70,30 +81,20 @@ export async function GET(request: Request) {
         description: topup.description,
         unit: unitsById.get(topup.unitId)?.key ?? null,
         amount: topup.amount,
-        priceAmountCents: topup.priceAmountCents,
-        currency: topup.currency,
+        ...platformPrice({ local, platform, appleIntegration, apple }),
         eligible: eligibility?.eligible ?? null,
         blockedBy: eligibility?.failed ?? null,
-        purchaseOptions: [
-          { provider: "stripe", flow: "checkout" },
-          ...(appleIntegration?.enabled && appleByTopup.has(topup.id)
-            ? [
-                {
-                  provider: "apple_app_store",
-                  flow: "storekit",
-                  productId: appleByTopup.get(topup.id)!.productId,
-                  productType: appleByTopup.get(topup.id)!.productType,
-                },
-              ]
-            : []),
-        ],
+        purchaseOptions: purchaseOptions({ local, appleIntegration, apple }),
       });
     }
 
     return Response.json(
       {
+        // Named so a client can tell which store's prices it is holding —
+        // detection is automatic, and a misprice should be visible, not silent.
+        platform,
         plans: activePlans.map((plan) =>
-          planPayload(plan, appleIntegration, appleByPlan),
+          planPayload(plan, appleIntegration, appleByPlan, platform),
         ),
         topups: topupPayload,
       },

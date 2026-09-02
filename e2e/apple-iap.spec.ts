@@ -62,7 +62,13 @@ test.describe.serial("Apple StoreKit fulfillment", () => {
     topupId = ((await topup.json()) as { id: string }).id;
 
     const configured = await admin.post("/api/e2e/apple/configure", {
-      data: { productId: PRODUCT_ID, topupProductId: topupId },
+      data: {
+        productId: PRODUCT_ID,
+        topupProductId: topupId,
+        // Apple sells this pack from a pricier tier than Stripe does.
+        priceAmountCents: 129,
+        currency: "usd",
+      },
     });
     expect(configured.ok()).toBe(true);
 
@@ -94,17 +100,51 @@ test.describe.serial("Apple StoreKit fulfillment", () => {
       params: { rxlabUserId: USER_ID },
     });
     const catalogBody = (await catalog.json()) as {
-      topups: { id: string; purchaseOptions: unknown[] }[];
+      topups: { id: string; priceAmountCents: number; purchaseOptions: unknown[] }[];
     };
     expect(catalogBody.topups.find((topup) => topup.id === topupId)).toMatchObject({
+      // The default platform is the web, so the local price is quoted...
+      priceAmountCents: 99,
       purchaseOptions: expect.arrayContaining([
+        { provider: "stripe", flow: "checkout", priceAmountCents: 99, currency: "usd" },
         {
           provider: "apple_app_store",
           flow: "storekit",
           productId: PRODUCT_ID,
           productType: "consumable",
+          // ...while the StoreKit option always carries the App Store price.
+          priceAmountCents: 129,
+          currency: "usd",
         },
       ]),
+    });
+
+    const iosCatalog = await api.get("/api/v1/catalog", {
+      params: { rxlabUserId: USER_ID, platform: "ios" },
+    });
+    const iosBody = (await iosCatalog.json()) as {
+      platform: string;
+      topups: { id: string; priceAmountCents: number; currency: string }[];
+    };
+    expect(iosBody.platform).toBe("ios");
+    expect(iosBody.topups.find((topup) => topup.id === topupId)).toMatchObject({
+      priceAmountCents: 129,
+      currency: "usd",
+    });
+
+    // A StoreKit client asks for nothing: URLSession's own user agent is enough
+    // to be quoted App Store prices.
+    const nativeCatalog = await api.get("/api/v1/catalog", {
+      params: { rxlabUserId: USER_ID },
+      headers: { "User-Agent": "RxE2E/1.0 CFNetwork/1494.0.7 Darwin/23.4.0" },
+    });
+    const nativeBody = (await nativeCatalog.json()) as {
+      platform: string;
+      topups: { id: string; priceAmountCents: number }[];
+    };
+    expect(nativeBody.platform).toBe("ios");
+    expect(nativeBody.topups.find((topup) => topup.id === topupId)).toMatchObject({
+      priceAmountCents: 129,
     });
 
     purchasePayload = {
