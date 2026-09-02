@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import {
@@ -19,6 +20,7 @@ const schema = z.object({
 export async function PUT(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "apple.consumption-consent");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(400, "invalid_request", parsed.error.issues[0]?.message ?? "Invalid request");

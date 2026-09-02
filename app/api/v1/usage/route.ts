@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { getUsageItemByKey } from "@/lib/subscription/usage-items";
@@ -22,6 +23,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "usage.record");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(
@@ -82,6 +84,7 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "usage.read");
     const url = new URL(request.url);
     const user = await resolveRequestUser(context, {
       rxlabUserId: url.searchParams.get("rxlabUserId") ?? undefined,

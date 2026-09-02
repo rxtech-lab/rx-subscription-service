@@ -63,9 +63,28 @@ export function toActionState(error: unknown): ActionState {
     if ("digest" in error && typeof error.digest === "string") {
       if (error.digest.startsWith("NEXT_REDIRECT")) throw error;
     }
+    // An expired console session is the single most common way a mutation
+    // fails, and "something went wrong" is the least useful thing to say about
+    // it: the fix is to sign in again, and nothing on screen hinted at that.
+    if (error.name === "RxLabAdminApiError") {
+      const status = (error as Error & { status?: number }).status;
+      if (status === 401) {
+        return {
+          error: "Your console session has expired. Reload the page and sign in again.",
+        };
+      }
+      return { error: `RxLab admin API: ${error.message}` };
+    }
   }
   console.error("Console action failed:", error);
-  return { error: "Something went wrong. Please try again." };
+  // The server log has the stack; the browser had nothing at all, which made
+  // every unexpected failure look identical while developing. Production still
+  // gets the generic line — an internal message is not the user's business.
+  const detail =
+    process.env.NODE_ENV === "development" && error instanceof Error
+      ? ` (${error.name}: ${error.message})`
+      : "";
+  return { error: `Something went wrong. Please try again.${detail}` };
 }
 
 export function revalidateApp(applicationId: string, section?: string) {

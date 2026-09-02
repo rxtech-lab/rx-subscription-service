@@ -2,6 +2,7 @@ import {
   apiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
@@ -16,6 +17,7 @@ import { getUsageStatus } from "@/lib/subscription/usage";
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "entitlements.read");
     const url = new URL(request.url);
     const user = await resolveRequestUser(context, {
       rxlabUserId: url.searchParams.get("rxlabUserId") ?? undefined,

@@ -2,6 +2,7 @@ import {
   apiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { listPlans } from "@/lib/subscription/plans";
@@ -20,6 +21,7 @@ import {
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "catalog.read");
     const applicationId = context.application.id;
     const url = new URL(request.url);
     const rxlabUserId = url.searchParams.get("rxlabUserId");
@@ -48,9 +50,12 @@ export async function GET(request: Request) {
         .map((mapping) => [mapping.topupProductId!, mapping]),
     );
 
-    const user = rxlabUserId
-      ? await resolveRequestUser(context, { rxlabUserId })
-      : null;
+    // A publishable key always has a user, so eligibility is computed whether
+    // or not the client bothered to name one.
+    const user =
+      rxlabUserId || context.user
+        ? await resolveRequestUser(context, { rxlabUserId: rxlabUserId ?? undefined })
+        : null;
 
     const topupPayload = [];
     for (const topup of activeTopups) {

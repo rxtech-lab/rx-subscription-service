@@ -59,12 +59,29 @@ export function parseSeriesRange(url: URL): SeriesRange {
  *
  * Returns null when the caller wants the whole application. Scoped by
  * `isTest` so a sandbox key cannot read a production user's history.
+ *
+ * A publishable key never gets the application-wide series: omitting the
+ * filter narrows to the token's own user rather than widening to everyone,
+ * and naming somebody else is rejected.
  */
 export async function findSeriesUser(
   context: ApiContext,
   rxlabUserId: string | null,
 ): Promise<string | null> {
-  if (!rxlabUserId) return null;
+  let target = rxlabUserId;
+
+  if (context.user) {
+    if (target && target !== context.user.subject) {
+      throw new ApiError(
+        403,
+        "user_mismatch",
+        "A publishable key can only read the statistics of the user its access token identifies",
+      );
+    }
+    target = context.user.subject;
+  }
+
+  if (!target) return null;
 
   const [user] = await db
     .select({ id: appUsers.id })
@@ -72,14 +89,14 @@ export async function findSeriesUser(
     .where(
       and(
         eq(appUsers.applicationId, context.application.id),
-        eq(appUsers.rxlabUserId, rxlabUserId),
+        eq(appUsers.rxlabUserId, target),
         eq(appUsers.isTest, context.environment === "sandbox"),
       ),
     )
     .limit(1);
 
   if (!user) {
-    throw new ApiError(404, "user_not_found", `No user "${rxlabUserId}"`);
+    throw new ApiError(404, "user_not_found", `No user "${target}"`);
   }
   return user.id;
 }

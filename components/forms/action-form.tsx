@@ -104,7 +104,9 @@ export function ActionForm({
       {children}
       <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
         {state.error ? (
-          <p className="mr-auto text-sm text-rose-600">{state.error}</p>
+          <p className="mr-auto min-w-0 text-sm text-rose-600">
+            {state.error}
+          </p>
         ) : null}
         {closeDialog ? (
           <Button type="button" size="sm" variant="secondary" onClick={closeDialog}>
@@ -225,7 +227,9 @@ export function ApiKeyForm({
       {children}
       <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
         {state.error ? (
-          <p className="mr-auto text-sm text-rose-600">{state.error}</p>
+          <p className="mr-auto min-w-0 text-sm text-rose-600">
+            {state.error}
+          </p>
         ) : null}
         {closeDialog ? (
           <Button type="button" size="sm" variant="secondary" onClick={closeDialog}>

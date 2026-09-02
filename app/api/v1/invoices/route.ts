@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { listPaymentHistory } from "@/lib/stripe/invoices";
@@ -22,6 +23,7 @@ const querySchema = z
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "invoices.read");
     const url = new URL(request.url);
     const parsed = querySchema.safeParse({
       rxlabUserId: url.searchParams.get("rxlabUserId") ?? undefined,

@@ -80,8 +80,8 @@ changes mint a new Stripe Price; existing subscriptions keep billing on theirs.
 ## Machine API
 
 Your applications talk to `/api/v1` with an environment-scoped application API
-key (`X-Api-Key`, created under Settings). Users are addressed by their rxlab id.
-The endpoint URL stays the same; the key selects the data plane:
+key (`X-Api-Key`, created under Settings). The endpoint URL stays the same; the
+key selects the data plane:
 
 - **Sandbox** keys create and resolve isolated test users, use the Stripe sandbox
   account, and never read or mutate the matching production user's balances,
@@ -91,6 +91,53 @@ The endpoint URL stays the same; the key selects the data plane:
 
 The same `rxlabUserId` may exist in both environments. API keys cannot be moved
 between environments after creation; rotate a key if its environment changes.
+
+### Two kinds of key
+
+A key's *kind* decides what it may do and how it names its user. Kind is fixed
+at creation, like environment.
+
+|  | **Secret** `rxs_{env}_…` | **Publishable** `rxs_pk_{env}_…` |
+|---|---|---|
+| Where it lives | your backend, only | inside a client binary |
+| Extra credential | none | **required**: the end user's rxlab access token, as `Authorization: Bearer` |
+| Which user it acts for | whichever `rxlabUserId` the request names | the `sub` of the verified token; a request naming anyone else is refused with `403 user_mismatch` |
+| Reach | every endpoint | reads and purchases only (see below) |
+
+A secret key can credit any balance for any user, so shipping one inside an app
+is the same as publishing a coupon generator. That is what publishable keys are
+for. On its own a publishable key authenticates nothing — without a user token
+the request fails with `401 missing_user_token` — and it accepts tokens only
+from the OAuth clients listed when it was created, so a key extracted from your
+iOS app cannot be replayed through some other client.
+
+Publishable keys reach: `catalog`, `entitlements`, `usage` (read),
+`usage/statistics`, `balances` (read), `balances/ledger`,
+`balances/consumption`, `invoices`, `purchases`, `coupons/validate`,
+`checkout`, and the three `iap/apple/*` endpoints. Everything else — crediting
+a balance, recording usage, and the whole reservation family — answers
+`403 insufficient_key_scope`. The statistics endpoints also drop their
+application-wide mode: a publishable key always sees its own user's series.
+
+Submitting a StoreKit transaction *is* allowed, because the App Store signs it
+and this service verifies that signature. A forged call cannot invent a
+purchase.
+
+Set `AUTH_ISSUER` before creating a publishable key — it names the issuer whose
+JWKS verifies user tokens.
+
+```bash
+# From your backend
+curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $SECRET_KEY"
+
+# From your app
+curl "$BASE/api/v1/entitlements" \
+  -H "X-Api-Key: $PUBLISHABLE_KEY" \
+  -H "Authorization: Bearer $USER_ACCESS_TOKEN"
+```
+
+The iOS client for this is [RxSubscriptionIOS](https://github.com/rxtech-lab/RxSubscriptionIOS),
+which takes a publishable key and a closure that hands it a fresh access token.
 
 | Endpoint | Purpose |
 |---|---|
@@ -121,6 +168,7 @@ processed yet.
 ```bash
 curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" -H "X-Api-Key: $SANDBOX_KEY"
 ```
+
 
 ```json
 {

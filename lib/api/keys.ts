@@ -2,21 +2,25 @@ import "server-only";
 import { and, desc, eq, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
-  API_ENVIRONMENTS,
   applicationApiKeys,
   type ApiEnvironment,
+  type ApiKeyKind,
 } from "@/lib/db/schema";
 import { newId, NotFoundError, recordAudit, ValidationError, type Actor } from "@/lib/subscription/shared";
+import {
+  apiKeySecretPrefix,
+  isApiEnvironment,
+  isApiKeyKind,
+  looksLikeApiKey,
+  parseAllowedClientIds,
+} from "./key-format";
 
-const PREFIX = "rxs_";
-
-export function isApiEnvironment(value: string): value is ApiEnvironment {
-  return API_ENVIRONMENTS.some((environment) => environment === value);
-}
-
-export function apiKeySecretPrefix(environment: ApiEnvironment) {
-  return `${PREFIX}${environment}_`;
-}
+export {
+  apiKeySecretPrefix,
+  isApiEnvironment,
+  isApiKeyKind,
+  parseAllowedClientIds,
+} from "./key-format";
 
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -75,6 +79,8 @@ export async function listApiKeys(
       id: applicationApiKeys.id,
       name: applicationApiKeys.name,
       environment: applicationApiKeys.environment,
+      kind: applicationApiKeys.kind,
+      allowedClientIds: applicationApiKeys.allowedClientIds,
       keyPrefix: applicationApiKeys.keyPrefix,
       lastUsedAt: applicationApiKeys.lastUsedAt,
       createdAt: applicationApiKeys.createdAt,
@@ -99,19 +105,42 @@ export async function listApiKeys(
 /**
  * Mint an API key. The plaintext is returned exactly once — only its SHA-256
  * hash is stored, so a leaked database cannot be replayed against the API.
+ *
+ * A publishable key must name the OAuth clients whose user tokens it accepts.
+ * Minting one without that list would produce a credential that any signed-in
+ * rxlab user could point at this application, so it is rejected rather than
+ * defaulted to "all".
  */
 export async function createApiKey(input: {
   applicationId: string;
   name: string;
   environment: ApiEnvironment;
+  kind?: ApiKeyKind;
+  allowedClientIds?: string[];
   actor: Actor;
 }) {
   if (!input.name.trim()) throw new ValidationError("name is required");
   if (!isApiEnvironment(input.environment)) {
     throw new ValidationError("environment must be sandbox or production");
   }
+  const kind = input.kind ?? "secret";
+  if (!isApiKeyKind(kind)) {
+    throw new ValidationError("kind must be secret or publishable");
+  }
 
-  const secretPrefix = apiKeySecretPrefix(input.environment);
+  const clientIds = Array.from(
+    new Set((input.allowedClientIds ?? []).map((value) => value.trim()).filter(Boolean)),
+  );
+  if (kind === "publishable" && clientIds.length === 0) {
+    throw new ValidationError(
+      "a publishable key must list at least one allowed OAuth client id",
+    );
+  }
+  if (kind === "secret" && clientIds.length > 0) {
+    throw new ValidationError("allowedClientIds only applies to publishable keys");
+  }
+
+  const secretPrefix = apiKeySecretPrefix(input.environment, kind);
   const secret = `${secretPrefix}${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
   const hashedKey = await hashApiKey(secret);
   const keyPrefix = secret.slice(0, secretPrefix.length + 8);
@@ -123,6 +152,8 @@ export async function createApiKey(input: {
       applicationId: input.applicationId,
       name: input.name.trim(),
       environment: input.environment,
+      kind,
+      allowedClientIds: kind === "publishable" ? JSON.stringify(clientIds) : null,
       keyPrefix,
       hashedKey,
       createdAt: new Date(),
@@ -139,6 +170,8 @@ export async function createApiKey(input: {
       id: row.id,
       name: row.name,
       environment: row.environment,
+      kind: row.kind,
+      allowedClientIds: clientIds,
       keyPrefix,
     },
   });
@@ -147,6 +180,8 @@ export async function createApiKey(input: {
     id: row.id,
     name: row.name,
     environment: row.environment,
+    kind: row.kind,
+    allowedClientIds: clientIds,
     keyPrefix,
     secret,
   };
@@ -229,7 +264,7 @@ export async function revokeApiKey(input: {
 /** Resolve a presented key to its application, or null when it is invalid. */
 export async function resolveApiKey(secret: string) {
   const trimmed = secret.trim();
-  if (!trimmed.startsWith(PREFIX)) return null;
+  if (!looksLikeApiKey(trimmed)) return null;
 
   const hashedKey = await hashApiKey(trimmed);
   const [row] = await db
@@ -255,5 +290,7 @@ export async function resolveApiKey(secret: string) {
     applicationId: row.applicationId,
     keyId: row.id,
     environment: row.environment,
+    kind: row.kind,
+    allowedClientIds: parseAllowedClientIds(row.allowedClientIds),
   };
 }

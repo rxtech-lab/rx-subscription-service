@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import {
@@ -32,6 +33,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "checkout.create");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(

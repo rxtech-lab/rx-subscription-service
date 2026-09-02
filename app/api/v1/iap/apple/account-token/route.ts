@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import {
@@ -16,6 +17,7 @@ const schema = z.object({ rxlabUserId: z.string().min(1) });
 export async function POST(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "apple.account-token");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(400, "invalid_request", parsed.error.issues[0]?.message ?? "Invalid request");

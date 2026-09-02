@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { requireAppleIntegration } from "@/lib/iap/configuration";
@@ -17,6 +18,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "apple.transactions.submit");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(400, "invalid_request", parsed.error.issues[0]?.message ?? "Invalid transaction request");

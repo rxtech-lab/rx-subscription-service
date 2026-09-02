@@ -5,6 +5,7 @@ import {
   authenticateApiRequest,
   noStore,
   requireApiReservation,
+  requireKeyScope,
 } from "@/lib/api/context";
 import { apiReservationOperationKey } from "@/lib/api/idempotency";
 import { increaseBalanceReservation } from "@/lib/subscription/balance-reservations";
@@ -20,6 +21,7 @@ export async function POST(
 ) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "balances.reservations.increase");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(
