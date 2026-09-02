@@ -5,6 +5,7 @@ import {
   requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
+import { appleMappingsByPlan, planPayload } from "@/lib/subscription/catalog-payload";
 import { listPlans } from "@/lib/subscription/plans";
 import { checkTopupEligibility, listTopupProducts } from "@/lib/subscription/topups";
 import { listBalanceUnits } from "@/lib/subscription/units";
@@ -37,11 +38,7 @@ export async function GET(request: Request) {
 
     const activePlans = plans.filter((plan) => plan.status === "active");
     const activeTopups = topups.filter((topup) => topup.status === "active");
-    const appleByPlan = new Map(
-      storeMappings
-        .filter((mapping) => mapping.provider === "apple_app_store" && mapping.planId)
-        .map((mapping) => [mapping.planId!, mapping]),
-    );
+    const appleByPlan = appleMappingsByPlan(storeMappings);
     const appleByTopup = new Map(
       storeMappings
         .filter(
@@ -95,31 +92,9 @@ export async function GET(request: Request) {
 
     return Response.json(
       {
-        plans: activePlans.map((plan) => ({
-          id: plan.id,
-          key: plan.key,
-          name: plan.name,
-          description: plan.description,
-          planGroup: plan.planGroup,
-          billingInterval: plan.billingInterval,
-          intervalCount: plan.intervalCount,
-          priceAmountCents: plan.priceAmountCents,
-          currency: plan.currency,
-          trialDays: plan.trialDays,
-          purchaseOptions: [
-            { provider: "stripe", flow: "checkout" },
-            ...(appleIntegration?.enabled && appleByPlan.has(plan.id)
-              ? [
-                  {
-                    provider: "apple_app_store",
-                    flow: "storekit",
-                    productId: appleByPlan.get(plan.id)!.productId,
-                    productType: appleByPlan.get(plan.id)!.productType,
-                  },
-                ]
-              : []),
-          ],
-        })),
+        plans: activePlans.map((plan) =>
+          planPayload(plan, appleIntegration, appleByPlan),
+        ),
         topups: topupPayload,
       },
       { headers: noStore },

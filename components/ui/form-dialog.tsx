@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, PencilLine, Plus, X } from "lucide-react";
+import { Download, KeyRound, PencilLine, Plus, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -25,6 +25,7 @@ const iconFor = {
   plus: Plus,
   edit: PencilLine,
   key: KeyRound,
+  download: Download,
 };
 
 const widthFor = {

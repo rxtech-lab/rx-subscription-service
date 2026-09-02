@@ -113,6 +113,20 @@
       "when": 1788319049469,
       "tag": "0015_tough_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1788327778238,
+      "tag": "0016_wise_spiral",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788335188584,
+      "tag": "0017_mushy_sue_storm",
+      "breakpoints": true
     }
   ]
 }

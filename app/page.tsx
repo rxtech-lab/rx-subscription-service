@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Boxes, ShieldCheck, Sparkles } from "lucide-react";
 import { ApplicationGrid } from "@/components/console/application-grid";
 import { BrandMark } from "@/components/console/brand-mark";
-import { UserMenu } from "@/components/console/user-menu";
+import { ConsoleHeader } from "@/components/console/console-header";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { authStatus } from "@/lib/auth";
 import { getConsoleUser, getManagedApplications } from "@/lib/console/session";
@@ -46,24 +45,7 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-full bg-[#f7f8fc]">
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-5 sm:px-8">
-          <Link
-            href="/"
-            className="flex items-center gap-3 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-          >
-            <BrandMark />
-            <div className="leading-tight">
-              <p className="text-sm font-semibold tracking-tight text-slate-950">
-                RxLab
-              </p>
-              <p className="text-[11px] font-medium text-slate-400">Subscriptions</p>
-            </div>
-          </Link>
-
-          <UserMenu displayName={displayName} email={user.email} />
-        </div>
-      </header>
+      <ConsoleHeader displayName={displayName} email={user.email} />
 
       <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
         <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-slate-950 px-6 py-9 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.75)] sm:px-10 sm:py-11">

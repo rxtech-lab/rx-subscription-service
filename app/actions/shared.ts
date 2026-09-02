@@ -29,6 +29,17 @@ export async function withApplication<T>(
   });
 }
 
+/**
+ * A console-wide mutation — one that belongs to no application, such as editing
+ * a shared paywall template. Any signed-in console admin may perform it.
+ */
+export async function withConsoleUser<T>(
+  run: (context: { actor: Actor }) => Promise<T>,
+): Promise<T> {
+  const user = await requireConsoleUser();
+  return run({ actor: { type: "user", id: user.id } });
+}
+
 /** A configuration mutation followed by the application's optional test suites. */
 export async function withConfigurationUpdate<T>(
   applicationId: string,

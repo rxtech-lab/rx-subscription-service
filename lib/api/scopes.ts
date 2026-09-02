@@ -17,6 +17,7 @@ import { ApiError } from "./errors";
  */
 export const PUBLISHABLE_KEY_OPERATIONS = [
   "catalog.read",
+  "paywall.read",
   "entitlements.read",
   "usage.read",
   "usage.statistics.read",

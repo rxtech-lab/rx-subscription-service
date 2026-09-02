@@ -31,6 +31,12 @@ export default defineConfig({
         E2E_SECRET,
         // Pinned so a spec can mint the storefront session cookie itself.
         AUTH_SECRET: E2E_SECRET,
+        // The suite signs in through the X-E2E-Secret header, never RxLab
+        // OAuth. Blanking these keeps a developer's populated .env.local from
+        // making the console behave differently here than it does in CI.
+        AUTH_ISSUER: "",
+        AUTH_CLIENT_ID: "",
+        AUTH_CLIENT_SECRET: "",
         E2E_STRIPE_API_BASE: E2E_STRIPE_URL,
         STRIPE_SECRET_KEY: "sk_test_playwright",
         STRIPE_WEBHOOK_SECRET: E2E_SANDBOX_WEBHOOK_SECRET,

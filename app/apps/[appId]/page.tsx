@@ -13,6 +13,7 @@ import { listUsageItems } from "@/lib/subscription/usage-items";
 import { listBalanceUnits } from "@/lib/subscription/units";
 import { listAppUsers } from "@/lib/subscription/users";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
+import { getApplicationPaywall } from "@/lib/paywall/paywalls";
 
 export default async function OverviewPage({
   params,
@@ -24,7 +25,7 @@ export default async function OverviewPage({
   const { days } = await searchParams;
   const range = clampAnalyticsDays(Number(Array.isArray(days) ? days[0] : days));
 
-  const [plans, topups, roles, usageItems, units, users, subscriptions, analytics] =
+  const [plans, topups, roles, usageItems, units, users, subscriptions, analytics, paywall] =
     await Promise.all([
       listPlans(appId),
       listTopupProducts(appId),
@@ -34,6 +35,7 @@ export default async function OverviewPage({
       listAppUsers(appId),
       listSubscriptions(appId),
       getApplicationAnalytics(appId, { days: range }),
+      getApplicationPaywall(appId),
     ]);
 
   // Test users are excluded from the Users count by `listAppUsers`, so their
@@ -57,6 +59,7 @@ export default async function OverviewPage({
       value: activeSubscriptions.length,
       href: "subscriptions",
     },
+    { label: "Paywall", value: paywall?.name ?? "None", href: "paywall" },
   ];
 
   return (

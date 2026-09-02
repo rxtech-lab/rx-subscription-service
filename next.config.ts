@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
   // its build output separate avoids contending for the default `.next` lock.
   distDir: process.env.IS_E2E === "true" ? ".next-e2e" : ".next",
 
+  // The symbol catalog contains thousands of generated modules and is used
+  // only by the Node route that serves search results and SVGs. Loading it at
+  // runtime avoids making Turbopack compile the entire catalog into the app.
+  serverExternalPackages: ["@bradleyhodges/sfsymbols"],
+
   outputFileTracingIncludes: {
     "/**": [
       // The test harness is read from disk at run time and shipped into a

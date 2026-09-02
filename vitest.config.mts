@@ -4,6 +4,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      // The `@/` import alias from tsconfig, so shared modules resolve here too.
+      "@": fileURLToPath(new URL("./", import.meta.url)),
       // `server-only` throws on import outside a React Server Component, which
       // is exactly what it is for — it keeps modules like the suite
       // type-checker from dragging the TypeScript compiler into a client
