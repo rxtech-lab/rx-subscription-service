@@ -57,12 +57,13 @@ import {
   updateNodeProps,
   collectIds,
 } from "@/lib/paywall/operations";
-import type {
-  Modifiers,
-  NodeType,
-  PaywallNode,
-  PaywallSpec,
-  PaywallTheme,
+import {
+  validatePaywallSpec,
+  type Modifiers,
+  type NodeType,
+  type PaywallNode,
+  type PaywallSpec,
+  type PaywallTheme,
 } from "@/lib/paywall/schema";
 import { cn } from "@/lib/utils";
 import { AgentPanel } from "./agent-panel";
@@ -329,6 +330,12 @@ export function PaywallEditor({
 
   const specJson = useMemo(() => JSON.stringify(spec), [spec]);
   const dirty = specJson !== savedJson;
+
+  // The document is checked as it is edited, not only when it is sent: an
+  // Image whose symbol was cleared still renders in the preview, so without
+  // this the first sign of trouble would be a rejected save.
+  const validation = useMemo(() => validatePaywallSpec(spec), [spec]);
+  const invalid = validation.ok ? null : validation;
   const unpublished = publishedJson === null || specJson !== publishedJson;
 
   // The selection can point at a node the agent or an undo just removed, so it
@@ -349,6 +356,15 @@ export function PaywallEditor({
       dispatch({ type: "commit", spec: next, coalesceKey }),
     [],
   );
+
+  /** Point the editor at whatever is keeping the document from being saved. */
+  const revealIssue = useCallback(() => {
+    if (validation.ok) return;
+    toast.error(validation.error);
+    if (!validation.nodeId) return;
+    setSelectedId(validation.nodeId);
+    setTab("inspector");
+  }, [validation]);
   const endCoalesce = useCallback(() => dispatch({ type: "endCoalesce" }), []);
 
   /** Run a tree operation, surfacing its validation message as a toast. */
@@ -370,6 +386,10 @@ export function PaywallEditor({
 
   const save = useCallback(async () => {
     if (busy || restoringVersion !== null) return false;
+    if (!validation.ok) {
+      revealIssue();
+      return false;
+    }
     setBusy("save");
     const result = await savePaywallDraftAction({ paywallId: paywall.id, spec });
     setBusy(null);
@@ -386,10 +406,14 @@ export function PaywallEditor({
       toast.success("Draft saved");
     }
     return true;
-  }, [busy, paywall.id, restoringVersion, spec]);
+  }, [busy, paywall.id, restoringVersion, revealIssue, spec, validation.ok]);
 
   const publish = useCallback(async () => {
     if (busy || restoringVersion !== null) return;
+    if (!validation.ok) {
+      revealIssue();
+      return;
+    }
     setBusy("publish");
     const result = await publishPaywallAction({ paywallId: paywall.id, spec });
     setBusy(null);
@@ -411,7 +435,7 @@ export function PaywallEditor({
     } else {
       toast.success("Published. Assigned applications now show this version.");
     }
-  }, [busy, paywall.id, restoringVersion, spec]);
+  }, [busy, paywall.id, restoringVersion, revealIssue, spec, validation.ok]);
 
   const restoreVersion = useCallback(
     async (version: number) => {
@@ -664,6 +688,13 @@ export function PaywallEditor({
         <div className="flex items-center gap-1.5">
           {dirty ? <Badge tone="amber">Unsaved</Badge> : <Badge tone="neutral">Saved</Badge>}
           {unpublished ? <Badge tone="blue">Unpublished changes</Badge> : null}
+          {invalid ? (
+            <button type="button" onClick={revealIssue} title={invalid.error}>
+              <Badge tone="red" className="cursor-pointer">
+                Needs a fix
+              </Badge>
+            </button>
+          ) : null}
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -846,6 +877,7 @@ export function PaywallEditor({
                 <Inspector
                   node={selectedNode}
                   isRoot={selectedNode.id === activeSpec.root.id}
+                  issue={invalid?.nodeId === selectedNode.id ? invalid.error : undefined}
                   products={products}
                   materialYou={isMaterialDevice(previewDevice)}
                   onChangeProps={changeProps}

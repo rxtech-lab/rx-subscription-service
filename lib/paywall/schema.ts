@@ -182,7 +182,8 @@ export const nodeProps = {
     })
     .strict()
     .refine((value) => Boolean(value.url) !== Boolean(value.systemName), {
-      message: "Image needs exactly one of url or systemName",
+      message:
+        "an Image needs one source — either an SF Symbol name in systemName or a remote url, but not both",
     }),
   Button: z
     .object({
@@ -397,7 +398,57 @@ export const MAX_PRODUCT_LISTS = 3;
 
 export type ValidationResult =
   | { ok: true; spec: PaywallSpec }
-  | { ok: false; error: string };
+  | { ok: false; error: string; nodeId?: string };
+
+function isNodeLike(value: unknown): value is { id: string; type: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    typeof (value as { type?: unknown }).type === "string"
+  );
+}
+
+/**
+ * Anchor a zod issue on the node the editor shows rather than on its position
+ * in the tree: `root.children.0.children.0.children.0.props` means nothing to
+ * someone looking at a canvas, `hero-icon (Image)` is the layer they clicked.
+ * Paths that never reach a node — the theme, the version — keep their dotted
+ * form, and a node inside a device layout keeps that scope as a prefix.
+ */
+function locateIssue(
+  input: unknown,
+  path: readonly PropertyKey[],
+): { label: string; nodeId?: string } {
+  const segments: string[] = [];
+  const trailing: string[] = [];
+  let cursor: unknown = input;
+  let node: { id: string; type: string } | null = null;
+  let scope = "";
+
+  for (const raw of path) {
+    const key = String(raw);
+    cursor =
+      typeof cursor === "object" && cursor !== null
+        ? (cursor as Record<string, unknown>)[key]
+        : undefined;
+    segments.push(key);
+    if (isNodeLike(cursor)) {
+      node = cursor;
+      scope = segments
+        .slice(0, -1)
+        .filter((segment) => segment !== "root" && segment !== "children" && !/^\d+$/.test(segment))
+        .join(".");
+      trailing.length = 0;
+    } else if (node && key !== "props") {
+      trailing.push(key);
+    }
+  }
+
+  if (!node) return { label: segments.join(".") || "spec" };
+  const where = `${scope ? `${scope} ` : ""}${node.id} (${node.type})`;
+  return { label: trailing.length ? `${where} ${trailing.join(".")}` : where, nodeId: node.id };
+}
 
 /**
  * Check a paywall before it is stored, rendered, or handed back to the agent.
@@ -411,34 +462,40 @@ export function validatePaywallSpec(input: unknown): ValidationResult {
   const parsed = paywallSpecSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return {
-      ok: false,
-      error: issue
-        ? `${issue.path.join(".") || "spec"}: ${issue.message}`
-        : "The paywall is not a valid node tree.",
-    };
+    if (!issue) return { ok: false, error: "The paywall is not a valid node tree." };
+    const location = locateIssue(input, issue.path);
+    return { ok: false, error: `${location.label}: ${issue.message}`, nodeId: location.nodeId };
   }
 
   const spec = parsed.data as PaywallSpec;
 
-  const validateRoot = (root: PaywallNode, path: string): string | null => {
+  type Failure = { error: string; nodeId?: string };
+
+  const validateRoot = (root: PaywallNode, path: string): Failure | null => {
     if (!isLayoutType(root.type)) {
-      return `${path}: must be a layout node such as VStack or ScrollView.`;
+      return {
+        error: `${path}: must be a layout node such as VStack or ScrollView.`,
+        nodeId: root.id,
+      };
     }
     const seen = new Set<string>();
     let count = 0;
     let productLists = 0;
 
-    const walk = (node: PaywallNode, depth: number): string | null => {
-      if (depth > MAX_DEPTH) return `${node.id}: nested deeper than ${MAX_DEPTH} levels.`;
-      if (seen.has(node.id)) return `Duplicate node id "${node.id}".`;
+    const walk = (node: PaywallNode, depth: number): Failure | null => {
+      if (depth > MAX_DEPTH) {
+        return { error: `${node.id}: nested deeper than ${MAX_DEPTH} levels.`, nodeId: node.id };
+      }
+      if (seen.has(node.id)) {
+        return { error: `Duplicate node id "${node.id}".`, nodeId: node.id };
+      }
       seen.add(node.id);
       count += 1;
-      if (count > MAX_NODES) return `The paywall has more than ${MAX_NODES} nodes.`;
+      if (count > MAX_NODES) return { error: `The paywall has more than ${MAX_NODES} nodes.` };
       if (node.type === "ProductList") {
         productLists += 1;
         if (productLists > MAX_PRODUCT_LISTS) {
-          return `At most ${MAX_PRODUCT_LISTS} ProductList nodes are allowed.`;
+          return { error: `At most ${MAX_PRODUCT_LISTS} ProductList nodes are allowed.` };
         }
       }
       for (const child of node.children ?? []) {
@@ -460,7 +517,7 @@ export function validatePaywallSpec(input: unknown): ValidationResult {
       if (failure) break;
     }
   }
-  if (failure) return { ok: false, error: failure };
+  if (failure) return { ok: false, error: failure.error, nodeId: failure.nodeId };
   return { ok: true, spec };
 }
 

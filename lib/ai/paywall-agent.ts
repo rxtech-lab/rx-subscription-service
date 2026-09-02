@@ -244,6 +244,7 @@ export function paywallSystemPrompt(context: PaywallAgentContext): string {
     "- Colors are hex or a theme token (primary, background, foreground, muted, accent, success, warning, danger). Prefer tokens so a theme change recolours the whole paywall.",
     "- Sizes are in points, as on iOS. Body text is 17pt; keep the CTA at least 48pt tall by giving it padding.",
     "- Icons (`Image.systemName`, `FeatureRow.icon`) are SF Symbol names such as `checkmark.circle.fill`, `bolt.fill`, `infinity`, `lock.open.fill`, `person.2.fill`, `cloud.fill`, `sparkles`, `star.fill`, `gift.fill`, `shield.fill`. Prefer names from the editor's installed SF Symbols catalog; unknown names show a placeholder.",
+    "- An Image carries exactly one source: `systemName` for an SF Symbol or `url` for a remote image. A node with neither, or with both, is rejected.",
     "",
     "Paywall craft:",
     "- Structure top to bottom: a hero (icon or image, headline, one-line value statement), three to five FeatureRows of concrete benefits, the ProductList, one primary Button with the purchase action, then fine print, a restorePurchases button, and Terms/Privacy links.",
