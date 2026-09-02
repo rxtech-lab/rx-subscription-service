@@ -82,6 +82,34 @@ export const storeProductMappings = sqliteTable(
   ],
 );
 
+/**
+ * What a mapped item costs on one store, when that differs from the local
+ * catalog price. Apple and Google sell from their own price tiers, so the same
+ * plan is routinely $9.99 through Stripe and $12.99 in the App Store. A missing
+ * row means the store charges the plan or top-up price.
+ *
+ * Kept beside the mapping rather than on it because `store_product_mappings`
+ * carries a CHECK constraint, and `drizzle-kit push` rebuilds every
+ * check-constrained table on each run with an `INSERT ... SELECT` that names
+ * the new columns before they exist — so a column added there fails the deploy
+ * that introduces it.
+ */
+export const storeProductPrices = sqliteTable(
+  "store_product_prices",
+  {
+    id: text("id").primaryKey(),
+    storeProductMappingId: text("store_product_mapping_id")
+      .notNull()
+      .references(() => storeProductMappings.id, { onDelete: "cascade" })
+      .unique(),
+    priceAmountCents: integer("price_amount_cents").notNull(),
+    /** Lowercase ISO 4217, e.g. "usd". */
+    currency: text("currency").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+);
+
 /** Stable provider-owned account token for one environment-specific app user. */
 export const storeAccountLinks = sqliteTable(
   "store_account_links",
@@ -225,5 +253,6 @@ export const storeReconciliationCursors = sqliteTable(
 
 export type AppleStoreIntegration = typeof appleStoreIntegrations.$inferSelect;
 export type StoreProductMapping = typeof storeProductMappings.$inferSelect;
+export type StoreProductPrice = typeof storeProductPrices.$inferSelect;
 export type StoreAccountLink = typeof storeAccountLinks.$inferSelect;
 export type StoreTransaction = typeof storeTransactions.$inferSelect;

@@ -1,10 +1,12 @@
 import "server-only";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appUsers,
   plans,
   purchases,
+  storeProductMappings,
+  storeProductPrices,
   subscriptions,
   topupProducts,
 } from "@/lib/db/schema";
@@ -94,14 +96,29 @@ export async function getApplicationAnalytics(
         startedAt: subscriptions.startedAt,
         endedAt: subscriptions.endedAt,
         planName: plans.name,
-        priceAmountCents: plans.priceAmountCents,
+        // A subscription sold through a store is worth the store's price, not
+        // the local one, whenever the two differ.
+        priceAmountCents: sql<number>`COALESCE(${storeProductPrices.priceAmountCents}, ${plans.priceAmountCents})`,
         billingInterval: plans.billingInterval,
         intervalCount: plans.intervalCount,
-        currency: plans.currency,
+        currency: sql<string>`COALESCE(${storeProductPrices.currency}, ${plans.currency})`,
       })
       .from(subscriptions)
       .innerJoin(plans, eq(subscriptions.planId, plans.id))
       .innerJoin(appUsers, eq(subscriptions.appUserId, appUsers.id))
+      // No mapping row carries the `stripe` provider, so a Stripe subscription
+      // finds nothing here and keeps the plan price.
+      .leftJoin(
+        storeProductMappings,
+        and(
+          eq(storeProductMappings.planId, plans.id),
+          eq(storeProductMappings.provider, subscriptions.billingProvider),
+        ),
+      )
+      .leftJoin(
+        storeProductPrices,
+        eq(storeProductPrices.storeProductMappingId, storeProductMappings.id),
+      )
       .where(
         and(
           eq(subscriptions.applicationId, applicationId),

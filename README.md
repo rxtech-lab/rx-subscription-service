@@ -153,7 +153,7 @@ which takes a publishable key and a closure that hands it a fresh access token.
 | `POST /api/v1/balances/reservations/:id/release` | Close an operation and release its remaining hold |
 | `GET /api/v1/balances/ledger` | Paginated, application-scoped balance history |
 | `GET /api/v1/purchases` | Paginated local one-time purchase and fulfillment history |
-| `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility |
+| `GET /api/v1/catalog` | Purchasable plans and topups, with per-user eligibility and per-platform prices |
 | `GET /api/v1/paywall` | The application's published paywall as a layout tree, with its plans filled in |
 | `POST /api/v1/coupons/validate` | Validate an app-local coupon for a user and plan or topup before checkout |
 | `POST /api/v1/checkout` | Stripe Checkout for a plan or topup, with an optional `couponCode`, or the billing portal |
@@ -173,6 +173,9 @@ leaf nodes (`Text`, `Image`, `Button`, `Badge`, `FeatureRow`, `Link`, `Spacer`,
 background, cornerRadius, border, opacity, hidden). Every `ProductList` arrives
 with `products` already filled from the application's active plans — including
 the StoreKit `productId` where one is mapped — and a `highlightedProductId`.
+A StoreKit client is labelled with App Store prices automatically — both this
+endpoint and `catalog` resolve the platform from `?platform=`, an `X-Platform`
+header, or the user agent, and name the result as `platform` in the response.
 Buttons carry one of five actions: `purchase`, `restorePurchases`, `dismiss`,
 `openUrl`, or `selectProduct`. A client renders the tree natively; nothing in it
 needs evaluating.

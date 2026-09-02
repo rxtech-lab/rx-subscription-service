@@ -186,6 +186,9 @@ export function buildTools(applicationId: string, actor: Actor) {
               productType: mapping.productType,
               planId: mapping.planId,
               topupProductId: mapping.topupProductId,
+              // null means the App Store quotes the local catalog price.
+              storePriceAmountCents: mapping.priceAmountCents,
+              storeCurrency: mapping.currency,
             })),
         };
       },

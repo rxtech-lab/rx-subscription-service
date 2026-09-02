@@ -10,6 +10,9 @@ const schema = z.object({
   productId: z.string().min(1),
   planId: z.string().optional(),
   topupProductId: z.string().optional(),
+  /** The App Store price, when it differs from the local one. */
+  priceAmountCents: z.number().int().nonnegative().nullish(),
+  currency: z.string().min(3).max(3).nullish(),
 });
 
 export async function POST(request: Request) {
@@ -30,6 +33,8 @@ export async function POST(request: Request) {
       productId: input.productId,
       planId: input.planId,
       topupProductId: input.topupProductId,
+      priceAmountCents: input.priceAmountCents,
+      currency: input.currency,
       actor,
     });
     return Response.json({ integration, mapping });

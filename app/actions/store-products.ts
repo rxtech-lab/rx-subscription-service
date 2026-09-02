@@ -5,6 +5,7 @@ import {
   saveAppleProductMapping,
 } from "@/lib/iap/configuration";
 import {
+  optionalMoneyToCents,
   revalidateApp,
   text,
   toActionState,
@@ -21,6 +22,10 @@ async function saveMapping(formData: FormData, target: "plan" | "topup") {
         productId: text(formData, "productId"),
         planId: target === "plan" ? text(formData, "targetId") : null,
         topupProductId: target === "topup" ? text(formData, "targetId") : null,
+        // An empty price field clears the override, so the App Store quotes
+        // the same price as the rest of the catalog.
+        priceAmountCents: optionalMoneyToCents(formData, "storePrice"),
+        currency: text(formData, "storeCurrency") || null,
         actor,
       });
     });

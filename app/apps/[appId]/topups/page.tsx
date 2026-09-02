@@ -111,6 +111,15 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                       <span className="font-mono text-xs text-neutral-500">
                         {appleByTopup.get(topup.id)?.productId ?? "Not mapped"}
                       </span>
+                      {appleByTopup.get(topup.id)?.priceAmountCents != null ? (
+                        <p className="text-xs text-neutral-500">
+                          {formatMoney(
+                            appleByTopup.get(topup.id)!.priceAmountCents!,
+                            appleByTopup.get(topup.id)!.currency ?? topup.currency,
+                          )}{" "}
+                          in the App Store
+                        </p>
+                      ) : null}
                     </Td>
                     <Td>
                       {rules.length === 0 ? (
@@ -215,7 +224,7 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                           </ActionForm>
                         </FormDialog>
                         <FormDialog
-                          triggerLabel="App Store product"
+                          triggerLabel="App Store product & price"
                           title={`Map ${topup.name} in App Store Connect`}
                           description="Expected type: Consumable."
                           triggerVariant="menu"
@@ -223,7 +232,7 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                         >
                           <ActionForm
                             action={saveAppleTopupProductAction}
-                            submitLabel="Save product ID"
+                            submitLabel="Save App Store product"
                           >
                             <input type="hidden" name="applicationId" value={appId} />
                             <input type="hidden" name="targetId" value={topup.id} />
@@ -235,6 +244,37 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
                                 required
                               />
                             </Field>
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                              <Field
+                                label="App Store price"
+                                hint="Leave empty to charge the top-up price. Apple bills its own tier; this is what the catalog and paywall report on iOS."
+                              >
+                                <Input
+                                  name="storePrice"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  defaultValue={
+                                    appleByTopup.get(topup.id)?.priceAmountCents != null
+                                      ? (
+                                          appleByTopup.get(topup.id)!.priceAmountCents! /
+                                          100
+                                        ).toFixed(2)
+                                      : ""
+                                  }
+                                  placeholder={(topup.priceAmountCents / 100).toFixed(2)}
+                                />
+                              </Field>
+                              <Field label="Currency">
+                                <Input
+                                  name="storeCurrency"
+                                  maxLength={3}
+                                  defaultValue={
+                                    appleByTopup.get(topup.id)?.currency ?? topup.currency
+                                  }
+                                />
+                              </Field>
+                            </div>
                           </ActionForm>
                         </FormDialog>
                         {appleByTopup.has(topup.id) ? (

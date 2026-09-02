@@ -15,6 +15,9 @@ export interface PurchaseOption {
   flow: string;
   productId?: string;
   productType?: string;
+  /** What this way of buying costs. A store may price the item differently. */
+  priceAmountCents: number;
+  currency: string;
 }
 
 /** The plan payload of `GET /api/v1/catalog`, plus display strings. */
@@ -255,7 +258,9 @@ export const SAMPLE_PRODUCTS: CatalogProduct[] = [
     priceAmountCents: 999,
     currency: "usd",
     trialDays: 7,
-    purchaseOptions: [{ provider: "stripe", flow: "checkout" }],
+    purchaseOptions: [
+      { provider: "stripe", flow: "checkout", priceAmountCents: 999, currency: "usd" },
+    ],
   },
   {
     id: "sample-yearly",
@@ -268,7 +273,9 @@ export const SAMPLE_PRODUCTS: CatalogProduct[] = [
     priceAmountCents: 7999,
     currency: "usd",
     trialDays: 7,
-    purchaseOptions: [{ provider: "stripe", flow: "checkout" }],
+    purchaseOptions: [
+      { provider: "stripe", flow: "checkout", priceAmountCents: 7999, currency: "usd" },
+    ],
   },
   {
     id: "sample-lifetime",
@@ -281,6 +288,13 @@ export const SAMPLE_PRODUCTS: CatalogProduct[] = [
     priceAmountCents: 19_900,
     currency: "usd",
     trialDays: 0,
-    purchaseOptions: [{ provider: "stripe", flow: "checkout" }],
+    purchaseOptions: [
+      {
+        provider: "stripe",
+        flow: "checkout",
+        priceAmountCents: 19_900,
+        currency: "usd",
+      },
+    ],
   },
 ];

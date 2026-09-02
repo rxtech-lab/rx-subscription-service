@@ -179,12 +179,15 @@ function ExportPanel({
             <code>ProductList.products</code> arrives filled per application — filtered, sorted,
             and with overrides applied — each with <code>priceLabel</code>,{" "}
             <code>periodLabel</code>, <code>savingsLabel</code>, <code>badge</code>, and{" "}
-            <code>purchaseOptions</code> (StoreKit product id when mapped). Tapping one selects it; a <code>purchase</code>{" "}
+            <code>purchaseOptions</code> (StoreKit product id when mapped, and what each way of
+            buying costs). Tapping one selects it; a <code>purchase</code>{" "}
             action without <code>productId</code> buys the selection.
           </li>
           <li>
             Apps fetch this from <code>GET /api/v1/paywall</code> with a publishable key once the
-            template is published and assigned.
+            template is published and assigned. A StoreKit client is served App Store prices
+            automatically, so every label matches what Apple will charge for a plan priced
+            differently there.
           </li>
         </ul>
       </div>
