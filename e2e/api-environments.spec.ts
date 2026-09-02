@@ -91,6 +91,42 @@ test("Xcode, sandbox, and production keys isolate the same external user", async
   expect(productionEntry.entryId).not.toBe(sandboxEntry.entryId);
 });
 
+test("the Test users action opens an Xcode-created user in Xcode data", async ({
+  browser,
+  request,
+}) => {
+  const rxlabUserId = `xcode-dashboard-${crypto.randomUUID()}`;
+  const response = await request.get(`${E2E_BASE_URL}/api/v1/entitlements`, {
+    headers: headers(E2E_XCODE_API_KEY),
+    params: { rxlabUserId },
+  });
+  expect(response.ok()).toBe(true);
+  const created = (await response.json()) as { user: { id: string } };
+
+  const context = await browser.newContext({
+    baseURL: E2E_BASE_URL,
+    extraHTTPHeaders: { "X-E2E-Secret": E2E_SECRET },
+  });
+  const page = await context.newPage();
+  await page.goto(`/apps/${E2E_APPLICATION_ID}/test`);
+
+  const row = page.getByRole("row").filter({ hasText: rxlabUserId });
+  await row.getByRole("button", { name: "Actions for test user" }).click();
+  const xcodeData = page.getByRole("link", { name: "View Xcode data" });
+  await expect(xcodeData).toHaveAttribute(
+    "href",
+    `/apps/${E2E_APPLICATION_ID}/users/${created.user.id}?environment=xcode`,
+  );
+
+  await xcodeData.click();
+  await expect(page).toHaveURL(
+    `/apps/${E2E_APPLICATION_ID}/users/${created.user.id}?environment=xcode`,
+  );
+  await expect(page.getByText(rxlabUserId, { exact: true })).toBeVisible();
+
+  await context.close();
+});
+
 test("the dashboard switches an external user between production and sandbox data", async ({
   browser,
   request,
