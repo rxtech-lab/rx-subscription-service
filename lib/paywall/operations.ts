@@ -1,5 +1,6 @@
 import {
   isLayoutType,
+  MAX_TABS,
   type NodeType,
   type Modifiers,
   type PaywallNode,
@@ -136,6 +137,67 @@ function mergeDropUndefined(
   return next;
 }
 
+/**
+ * A TabView's `tabs` are positional — the nth entry titles the nth child — so
+ * every structural edit has to carry them along. Adding a child adds a title,
+ * removing one drops its title, and a move (a remove plus an insert) takes the
+ * title with the content. Without this the labels would silently slide onto
+ * the wrong pages the first time anyone reordered a tab.
+ */
+interface TabEntry {
+  title: string;
+  icon?: string;
+  badge?: string;
+}
+
+function tabsOf(props: Record<string, unknown>): TabEntry[] {
+  return Array.isArray(props.tabs) ? ([...props.tabs] as TabEntry[]) : [];
+}
+
+function withTabInserted(props: Record<string, unknown>, index: number): Record<string, unknown> {
+  const tabs = tabsOf(props);
+  tabs.splice(Math.min(index, tabs.length), 0, { title: `Tab ${tabs.length + 1}` });
+  return { ...props, tabs };
+}
+
+function withTabRemoved(props: Record<string, unknown>, index: number): Record<string, unknown> {
+  const tabs = tabsOf(props);
+  if (index >= tabs.length) return props;
+  tabs.splice(index, 1);
+  return { ...props, tabs };
+}
+
+/** The entry titling the child at `index`, or null if the parent has no tabs. */
+function tabEntryAt(parent: PaywallNode | undefined, index: number): TabEntry | null {
+  if (!parent || parent.type !== "TabView" || index < 0) return null;
+  return tabsOf(parent.props)[index] ?? null;
+}
+
+/**
+ * Re-title the tab now holding `id` with the entry its content arrived with.
+ * A move is a removal and an insertion, and the insertion only knows how to
+ * mint a fresh "Tab 3"; this puts the real title back where the content went.
+ */
+function withCarriedTab(
+  spec: PaywallSpec,
+  id: string,
+  entry: TabEntry | null,
+): PaywallSpec {
+  if (!entry) return spec;
+  const location = findParent(spec, id);
+  if (!location || location.parent.type !== "TabView") return spec;
+  return withRoot(
+    spec,
+    mapTree(spec.root, (node) => {
+      if (node.id !== location.parent.id) return node;
+      const tabs = tabsOf(node.props);
+      if (location.index >= tabs.length) return node;
+      tabs[location.index] = entry;
+      return { ...node, props: { ...node.props, tabs } };
+    }),
+  );
+}
+
 export function insertNode(
   spec: PaywallSpec,
   parentId: string,
@@ -150,6 +212,9 @@ export function insertNode(
   for (const id of collectIds(node)) {
     if (existing.has(id)) throw new PaywallEditError(`A node with id "${id}" already exists.`);
   }
+  if (parent.type === "TabView" && (parent.children?.length ?? 0) >= MAX_TABS) {
+    throw new PaywallEditError(`A TabView holds at most ${MAX_TABS} tabs.`);
+  }
   return withRoot(
     spec,
     mapTree(spec.root, (candidate) => {
@@ -157,7 +222,8 @@ export function insertNode(
       const children = [...(candidate.children ?? [])];
       const at = clampIndex(index, children.length);
       children.splice(at, 0, node);
-      return { ...candidate, children };
+      if (candidate.type !== "TabView") return { ...candidate, children };
+      return { ...candidate, children, props: withTabInserted(candidate.props, at) };
     }),
   );
 }
@@ -167,11 +233,13 @@ export function removeNode(spec: PaywallSpec, id: string): PaywallSpec {
   requireNode(spec, id);
   return withRoot(
     spec,
-    mapTree(spec.root, (node) =>
-      node.children?.some((child) => child.id === id)
-        ? { ...node, children: node.children.filter((child) => child.id !== id) }
-        : node,
-    ),
+    mapTree(spec.root, (node) => {
+      const at = node.children?.findIndex((child) => child.id === id) ?? -1;
+      if (at < 0) return node;
+      const children = node.children!.filter((child) => child.id !== id);
+      if (node.type !== "TabView") return { ...node, children };
+      return { ...node, children, props: withTabRemoved(node.props, at) };
+    }),
   );
 }
 
@@ -191,11 +259,12 @@ export function moveNode(
     throw new PaywallEditError("A node cannot be moved into itself.");
   }
   const location = findParent(spec, id);
+  const carried = tabEntryAt(location?.parent, location?.index ?? -1);
   const detached = removeNode(spec, id);
   // Removing an earlier sibling shifts the indices after it by one.
   const adjusted =
     location && location.parent.id === parentId && location.index < index ? index - 1 : index;
-  return insertNode(detached, parentId, adjusted, node);
+  return withCarriedTab(insertNode(detached, parentId, adjusted, node), id, carried);
 }
 
 /** Move a node one place among its siblings. */
@@ -224,7 +293,9 @@ export function duplicateNode(spec: PaywallSpec, id: string): PaywallSpec {
   const node = requireNode(spec, id);
   const location = findParent(spec, id);
   if (!location) throw new PaywallEditError(`No node with id "${id}".`);
-  return insertNode(spec, location.parent.id, location.index + 1, cloneNode(node, collectIds(spec.root)));
+  const copy = cloneNode(node, collectIds(spec.root));
+  const inserted = insertNode(spec, location.parent.id, location.index + 1, copy);
+  return withCarriedTab(inserted, copy.id, tabEntryAt(location.parent, location.index));
 }
 
 /**
@@ -275,6 +346,33 @@ export function defaultNodeFor(type: NodeType, taken?: ReadonlySet<string>): Pay
       return { id, type, props: { spacing: 0, showsSeparators: true }, children: [] };
     case "ScrollView":
       return { id, type, props: { axis: "vertical" }, children: [] };
+    case "TabView": {
+      // Two pages so the node is usable the moment it lands on the canvas;
+      // both ids are reserved against the same set so they cannot collide.
+      const used = new Set(taken ?? []);
+      used.add(id);
+      const pages = ["Monthly", "Yearly"].map(() => {
+        const pageId = newNodeId("VStack", used);
+        used.add(pageId);
+        return pageId;
+      });
+      return {
+        id,
+        type,
+        props: {
+          tabs: [{ title: "Monthly" }, { title: "Yearly" }],
+          selectedIndex: 0,
+          style: "segmented",
+          spacing: 16,
+        },
+        children: pages.map((pageId) => ({
+          id: pageId,
+          type: "VStack" as const,
+          props: { spacing: 12, alignment: "center" },
+          children: [],
+        })),
+      };
+    }
     case "Text":
       return { id, type, props: { text: "New text", style: "body" } };
     case "Image":

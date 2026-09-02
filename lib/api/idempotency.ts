@@ -2,8 +2,8 @@ import type { ApiEnvironment } from "@/lib/db/schema";
 
 /**
  * Production retains its original namespace so in-flight retries from existing
- * clients remain idempotent after this feature ships. Sandbox adds an explicit
- * segment so the same caller key can safely be exercised in both environments.
+ * clients remain idempotent after this feature ships. Test environments add an
+ * explicit segment so the same caller key can safely be exercised everywhere.
  */
 function environmentNamespace(
   applicationId: string,
@@ -11,7 +11,7 @@ function environmentNamespace(
 ) {
   return environment === "production"
     ? `api:${applicationId}`
-    : `api:${applicationId}:sandbox`;
+    : `api:${applicationId}:${environment}`;
 }
 
 /** Caller keys are application-local; these prefixes isolate API operations. */

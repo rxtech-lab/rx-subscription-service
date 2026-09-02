@@ -10,6 +10,8 @@ import {
 import type { ApiEnvironment, AppleStoreIntegration } from "@/lib/db/schema";
 import { ValidationError } from "@/lib/subscription/shared";
 
+type AppleServerEnvironment = Exclude<ApiEnvironment, "xcode">;
+
 const verifierCache = new Map<string, SignedDataVerifier>();
 const clientCache = new Map<string, AppStoreServerAPIClient>();
 
@@ -39,7 +41,14 @@ function rootCertificates(): Buffer[] {
 }
 
 export function appleEnvironment(environment: ApiEnvironment): Environment {
-  return environment === "sandbox" ? Environment.SANDBOX : Environment.PRODUCTION;
+  switch (environment) {
+    case "xcode":
+      return Environment.XCODE;
+    case "sandbox":
+      return Environment.SANDBOX;
+    case "production":
+      return Environment.PRODUCTION;
+  }
 }
 
 function verifier(
@@ -49,9 +58,10 @@ function verifier(
   const key = `${integration.id}:${environment}`;
   const cached = verifierCache.get(key);
   if (cached) return cached;
+  const xcode = environment === "xcode";
   const created = new SignedDataVerifier(
-    rootCertificates(),
-    true,
+    xcode ? [] : rootCertificates(),
+    !xcode,
     appleEnvironment(environment),
     integration.bundleId,
     environment === "production" ? integration.appAppleId : undefined,
@@ -64,6 +74,11 @@ export function appleApiClient(
   integration: AppleStoreIntegration,
   environment: ApiEnvironment,
 ): AppStoreServerAPIClient {
+  if (environment === "xcode") {
+    throw new ValidationError(
+      "The App Store Server API is unavailable for Xcode StoreKit testing",
+    );
+  }
   const key = `${integration.id}:${environment}`;
   const cached = clientCache.get(key);
   if (cached) return cached;
@@ -121,23 +136,36 @@ export async function verifyAppleRenewalInfo(
 }
 
 /** Decode only enough to select sandbox vs production; the result is never trusted. */
-export function unverifiedAppleEnvironment(signedPayload: string): ApiEnvironment {
+export function unverifiedAppleEnvironment(
+  signedPayload: string,
+): AppleServerEnvironment {
   const e2e = decodeE2E<ResponseBodyV2DecodedPayload>(signedPayload);
-  if (e2e) return e2e.data?.environment === Environment.SANDBOX ? "sandbox" : "production";
+  if (e2e) return notificationEnvironment(e2e.data?.environment);
   try {
     const payload = JSON.parse(
       Buffer.from(signedPayload.split(".")[1] ?? "", "base64url").toString("utf8"),
     ) as ResponseBodyV2DecodedPayload;
-    return payload.data?.environment === Environment.SANDBOX ? "sandbox" : "production";
+    return notificationEnvironment(payload.data?.environment);
   } catch {
     throw new ValidationError("Malformed App Store notification");
   }
 }
 
+function notificationEnvironment(
+  environment: string | undefined,
+): AppleServerEnvironment {
+  if (environment === Environment.SANDBOX) return "sandbox";
+  if (environment === Environment.PRODUCTION) return "production";
+  throw new ValidationError("Xcode StoreKit testing does not send server notifications");
+}
+
 export async function verifyAppleNotification(
   integration: AppleStoreIntegration,
   signedPayload: string,
-): Promise<{ environment: ApiEnvironment; payload: ResponseBodyV2DecodedPayload }> {
+): Promise<{
+  environment: AppleServerEnvironment;
+  payload: ResponseBodyV2DecodedPayload;
+}> {
   const environment = unverifiedAppleEnvironment(signedPayload);
   const payload =
     decodeE2E<ResponseBodyV2DecodedPayload>(signedPayload) ??

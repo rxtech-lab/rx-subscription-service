@@ -139,10 +139,12 @@ curl "$BASE/api/v1/paywall" -H "X-Api-Key: $SECRET_KEY"
           <Smartphone className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden="true" />
           <p>
             Render <code className="rounded bg-slate-100 px-1">spec.root</code> recursively: layout
-            nodes map to VStack/HStack/ZStack/Grid/List/ScrollView (or Column/Row/Box/LazyVerticalGrid/
-            LazyColumn in Compose), leaves to Text, Image, Button, Badge, FeatureRow, Link, Spacer,
-            Divider, and ProductList. The Export dialog in the editor documents the modifiers and
-            actions.
+            nodes map to VStack/HStack/ZStack/Grid/List/ScrollView/TabView (or Column/Row/Box/
+            LazyVerticalGrid/LazyColumn/TabRow in Compose), leaves to Text, Image, Button, Badge,
+            FeatureRow, Link, Spacer, Divider, and ProductList. A TabView shows one child at a time —
+            the one at the selected tab — and a ProductList with{" "}
+            <code className="rounded bg-slate-100 px-1">periodOptions</code> shows a period switcher
+            over its cards. The Export dialog in the editor documents the modifiers and actions.
             The root is the iPhone fallback; use the matching <code>deviceLayouts</code> root when
             present. Android and foldable apps derive Material You roles from{" "}
             <code>materialYou.seedColor</code>.

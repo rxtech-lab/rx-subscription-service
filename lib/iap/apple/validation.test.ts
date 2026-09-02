@@ -72,8 +72,12 @@ describe("Apple transaction validation", () => {
     }
   });
 
-  it("keeps sandbox and production isolated", () => {
+  it("keeps Xcode, sandbox, and production isolated", () => {
+    expect(() => assertAppleEnvironment("Xcode", "xcode")).not.toThrow();
     expect(() => assertAppleEnvironment("Sandbox", "sandbox")).not.toThrow();
+    expect(() => assertAppleEnvironment("Sandbox", "xcode")).toThrow(
+      /environment mismatch/i,
+    );
     expect(() => assertAppleEnvironment("Production", "sandbox")).toThrow(
       /environment mismatch/i,
     );

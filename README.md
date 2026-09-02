@@ -167,12 +167,18 @@ The console's **Paywalls** section is a shared library of paywall templates.
 Each application picks one on its Paywall page, and `GET /api/v1/paywall`
 returns the last *published* version of that template — drafts never reach an
 app. The response is a nested layout tree named after SwiftUI and Compose
-primitives (`ScrollView`, `VStack`, `HStack`, `ZStack`, `Grid`, `List`) with
-leaf nodes (`Text`, `Image`, `Button`, `Badge`, `FeatureRow`, `Link`, `Spacer`,
-`Divider`, `ProductList`), each carrying optional `modifiers` (padding, frame,
-background, cornerRadius, border, opacity, hidden). Every `ProductList` arrives
-with `products` already filled from the application's active plans — including
-the StoreKit `productId` where one is mapped — and a `highlightedProductId`.
+primitives (`ScrollView`, `VStack`, `HStack`, `ZStack`, `Grid`, `List`,
+`TabView`) with leaf nodes (`Text`, `Image`, `Button`, `Badge`, `FeatureRow`,
+`Link`, `Spacer`, `Divider`, `ProductList`), each carrying optional `modifiers`
+(padding, frame, background, cornerRadius, border, opacity, hidden). A
+`TabView` draws a tab bar from its `tabs` and shows one child at a time — tab
+*n* is child *n* — so monthly and yearly offers can each get their own page.
+Every `ProductList` arrives with `products` already filled from the
+application's active plans — including the StoreKit `productId` where one is
+mapped — and a `highlightedProductId`. Its `periodOptions` are the period
+switcher (monthly, yearly, one-time), each option naming the `productIds` it
+shows and the product to preselect; the array is empty when the list has no
+period filter.
 A StoreKit client is labelled with App Store prices automatically — both this
 endpoint and `catalog` resolve the platform from `?platform=`, an `X-Platform`
 header, or the user agent, and name the result as `platform` in the response.
@@ -233,9 +239,19 @@ Apple purchases use StoreKit 2 and the official App Store Server Node library.
 Configure the shared issuer, key ID, base64 `.p8` key, and Apple root
 certificates in deployment secrets. Configure each application's bundle ID and
 numeric Apple app ID under **Settings → App Store**, then map an App Store
-Connect product ID on each plan or top-up. Product IDs are shared between
-sandbox and production; the API key environment must match the environment in
-Apple's signed data.
+Connect product ID on each plan or top-up. API keys support `xcode`, `sandbox`,
+and `production`, with Xcode selected by default when creating a key. Product
+IDs are shared across all three; the API key environment must match the
+environment in StoreKit's signed data.
+
+The `xcode` environment accepts transactions produced by an active Xcode
+StoreKit configuration. Those transactions are kept in their own user and
+idempotency data plane, never call the App Store Server API, and use Stripe test
+mode for any non-StoreKit checkout. Xcode does not send App Store Server
+Notifications, so renewals, expiration, and restore state arrive through the
+app's `Transaction.updates` and `Transaction.currentEntitlements` submissions.
+Apple's server library does not cryptographically verify Xcode JWS payloads;
+use this environment only for local development data, never production value.
 
 The StoreKit client sequence is:
 

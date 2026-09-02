@@ -151,7 +151,7 @@ export async function createApiKeyAction(
   try {
     const environment = text(formData, "environment");
     if (!isApiEnvironment(environment)) {
-      throw new ValidationError("Choose sandbox or production");
+      throw new ValidationError("Choose Xcode, sandbox, or production");
     }
     const kind = text(formData, "kind") || "secret";
     if (!isApiKeyKind(kind)) {

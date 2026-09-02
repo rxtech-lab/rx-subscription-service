@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     });
     const history = await listPaymentHistory({
       appUserId: user.id,
-      mode: context.environment === "sandbox" ? "sandbox" : "live",
+      mode: context.environment === "production" ? "live" : "sandbox",
       after: parsed.data.after,
       before: parsed.data.before,
     });

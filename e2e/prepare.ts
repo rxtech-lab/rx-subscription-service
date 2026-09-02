@@ -23,6 +23,7 @@ import {
   E2E_UNIT_ID,
   E2E_USAGE_DEFAULT_LIMIT,
   E2E_USAGE_ITEM_ID,
+  E2E_XCODE_API_KEY,
 } from "./fixtures";
 
 const databaseUrl = process.env.TURSO_DATABASE_URL ?? E2E_DATABASE_URL;
@@ -82,6 +83,15 @@ await db.insert(schema.applicationApiKeys).values([
     environment: "production",
     keyPrefix: E2E_API_KEY.slice(0, 12),
     hashedKey: await sha256(E2E_API_KEY),
+    createdAt: now,
+  },
+  {
+    id: "e2e-xcode-api-key",
+    applicationId: E2E_APPLICATION_ID,
+    name: "Playwright Xcode",
+    environment: "xcode",
+    keyPrefix: E2E_XCODE_API_KEY.slice(0, 19),
+    hashedKey: await sha256(E2E_XCODE_API_KEY),
     createdAt: now,
   },
   {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import {
   resolvePaywall,
   type CatalogProduct,
@@ -745,14 +745,273 @@ function Node({ node, context }: { node: PaywallNode; context: RenderContext }) 
           {String(props.text ?? "")}
         </NodeShell>
       );
+    case "TabView":
+      return <TabViewNode node={node} context={context} style={{ ...stretch, ...base }} />;
     case "ProductList":
       return <ProductListNode node={node as ResolvedProductList} context={context} style={{ ...stretch, ...base }} />;
   }
 }
 
+interface TabEntry {
+  title?: string;
+  icon?: string;
+  badge?: string;
+}
+
+interface SegmentItem {
+  key: string;
+  label: string;
+  icon?: string;
+  badge?: string;
+}
+
+/**
+ * The one control behind both a TabView's tab bar and a ProductList's period
+ * switcher: the same segmented, pill, underline, and chip looks, so a paywall
+ * that uses both does not end up with two different-looking pickers.
+ */
+function SegmentedBar({
+  items,
+  activeIndex,
+  variant,
+  tint,
+  bar,
+  colors,
+  material,
+  alignment,
+  role,
+  onPick,
+}: {
+  items: SegmentItem[];
+  activeIndex: number;
+  variant: string;
+  tint: string;
+  bar: string;
+  colors: ReturnType<typeof surfaceColors>;
+  material: MaterialYouColors | null;
+  alignment?: string;
+  role: "tablist" | "group";
+  onPick: (index: number) => void;
+}) {
+  const underline = variant === "underline";
+  const chips = variant === "chips";
+  const fill = !chips;
+  return (
+    <div
+      role={role}
+      style={{
+        display: "flex",
+        alignSelf: fill && !alignment ? "stretch" : ALIGN_ITEMS[String(alignment ?? "leading")],
+        flexWrap: chips ? "wrap" : undefined,
+        gap: chips ? 8 : underline ? 4 : 2,
+        padding: underline || chips ? 0 : 3,
+        borderRadius: variant === "pill" ? 999 : 10,
+        background: underline || chips ? "transparent" : bar,
+        borderBottom: underline
+          ? `1px solid ${material?.outlineVariant ?? withAlpha(colors.muted, 0.25)}`
+          : undefined,
+      }}
+    >
+      {items.map((item, index) => {
+        const selected = index === activeIndex;
+        const filled = selected && (variant === "pill" || chips);
+        const labelColor = filled
+          ? material?.onPrimary ?? readableOn(tint)
+          : selected
+            ? tint
+            : material?.onSurfaceVariant ?? colors.muted;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            role={role === "tablist" ? "tab" : "radio"}
+            aria-selected={role === "tablist" ? selected : undefined}
+            aria-checked={role === "tablist" ? undefined : selected}
+            onClick={(event: MouseEvent) => {
+              event.stopPropagation();
+              onPick(index);
+            }}
+            style={{
+              flex: fill ? "1 1 0" : "0 0 auto",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              minWidth: 0,
+              padding: underline ? "8px 10px 10px" : chips ? "6px 14px" : "7px 10px",
+              border: chips
+                ? `1px solid ${selected ? tint : material?.outline ?? withAlpha(colors.muted, 0.4)}`
+                : "none",
+              borderRadius: variant === "pill" || chips ? 999 : 8,
+              borderBottom: underline ? `2px solid ${selected ? tint : "transparent"}` : undefined,
+              marginBottom: underline ? -1 : undefined,
+              background: filled
+                ? tint
+                : selected && !underline && !chips
+                  ? material?.surface ?? colors.background
+                  : "transparent",
+              boxShadow:
+                selected && variant === "segmented" && !material
+                  ? "0 1px 2px rgba(15, 23, 42, 0.12)"
+                  : undefined,
+              color: labelColor,
+              fontFamily: "inherit",
+              fontSize: 14,
+              fontWeight: selected ? 600 : 500,
+              lineHeight: "18px",
+              cursor: "pointer",
+            }}
+          >
+            {item.icon ? <SymbolIcon name={item.icon} size={14} color={labelColor} /> : null}
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.label}
+            </span>
+            {item.badge ? (
+              <span
+                style={{
+                  padding: "1px 6px",
+                  borderRadius: 999,
+                  background: withAlpha(filled ? colors.background : selected ? tint : colors.muted, 0.18),
+                  color: labelColor,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  lineHeight: "14px",
+                }}
+              >
+                {item.badge}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface TabViewProps {
+  tabs?: TabEntry[];
+  selectedIndex?: number;
+  style?: string;
+  tint?: string;
+  barBackground?: string;
+  spacing?: number;
+}
+
+function containsNode(node: PaywallNode, id: string): boolean {
+  if (node.id === id) return true;
+  return (node.children ?? []).some((child) => containsNode(child, id));
+}
+
+/**
+ * A tab bar over one page per child.
+ *
+ * The active tab is local to the preview: the document only says which tab the
+ * paywall opens on, and clicking a tab here is the designer looking at another
+ * page, not an edit. Selecting a node that lives inside a hidden page pulls
+ * that page forward, so the canvas can never be showing tab 1 while the
+ * inspector edits something on tab 2.
+ */
+function TabViewNode({
+  node,
+  context,
+  style,
+}: {
+  node: PaywallNode;
+  context: RenderContext;
+  style: CSSProperties;
+}) {
+  const { theme, scheme, material } = context;
+  const colors = surfaceColors(theme, scheme);
+  const props = node.props as TabViewProps;
+  const children = node.children ?? [];
+  const tabs = Array.isArray(props.tabs) ? props.tabs : [];
+  const count = Math.max(tabs.length, children.length);
+  const last = Math.max(count - 1, 0);
+  const preferred = Math.min(Math.max(props.selectedIndex ?? 0, 0), last);
+
+  // Remembering which default a click was made against is what lets a new
+  // `selectedIndex` from the inspector win back a tab the designer clicked,
+  // without an effect that resets it a render late.
+  const [choice, setChoice] = useState<{ against: number; index: number } | null>(null);
+  const chosen = choice?.against === preferred ? choice.index : null;
+
+  const revealed =
+    context.mode === "edit" && context.selectedId
+      ? children.findIndex((child) => containsNode(child, context.selectedId!))
+      : -1;
+  const active = revealed >= 0 ? revealed : Math.min(chosen ?? preferred, last);
+
+  const variant = String(props.style ?? "segmented");
+  const tint = material?.primary ?? resolveColor(props.tint, theme, scheme, colors.primary);
+  const bar = material
+    ? material.surfaceContainer
+    : props.barBackground
+      ? resolveColor(props.barBackground, theme, scheme)
+      : withAlpha(colors.muted, 0.14);
+  const page = children[active];
+
+  return (
+    <NodeShell
+      node={node}
+      context={context}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: props.spacing ?? 12,
+        ...style,
+      }}
+    >
+      <SegmentedBar
+        items={Array.from({ length: Math.max(count, 1) }, (_, index) => ({
+          key: String(index),
+          label: tabs[index]?.title?.trim() || `Tab ${index + 1}`,
+          icon: tabs[index]?.icon,
+          badge: tabs[index]?.badge,
+        }))}
+        activeIndex={active}
+        variant={variant}
+        tint={tint}
+        bar={bar}
+        colors={colors}
+        material={material}
+        role="tablist"
+        onPick={(index) => {
+          setChoice({ against: preferred, index });
+          if (context.mode === "edit") context.onSelect?.(node.id);
+        }}
+      />
+      {page ? (
+        <Node node={page} context={{ ...context, parentAxis: "column" }} />
+      ) : (
+        <div
+          style={{
+            alignSelf: "stretch",
+            padding: 16,
+            border: `1px dashed ${withAlpha(colors.muted, 0.5)}`,
+            borderRadius: 10,
+            color: colors.muted,
+            fontSize: 13,
+            textAlign: "center",
+          }}
+        >
+          {context.mode === "edit"
+            ? "This tab has no content yet — drop a node into the TabView."
+            : ""}
+        </div>
+      )}
+    </NodeShell>
+  );
+}
+
+interface PeriodFilterProps {
+  style?: string;
+  alignment?: string;
+}
+
 interface ProductListProps {
   layout?: string;
   style?: string;
+  periodFilter?: PeriodFilterProps;
   showTrialBadge?: boolean;
   showSavings?: boolean;
   showDescription?: boolean;
@@ -836,31 +1095,42 @@ function ProductListNode({
   context: RenderContext;
   style: CSSProperties;
 }) {
-  const { theme, scheme } = context;
+  const { theme, scheme, material } = context;
   const colors = surfaceColors(theme, scheme);
   const props = node.props as ProductListProps;
   const horizontal = props.layout === "horizontal";
   const compact = props.style === "row";
-  const products = node.products ?? [];
   const card = cardStyleFor(props, theme, scheme, colors, context.material);
   const responsiveGrid = !horizontal && !compact && context.device.contentMaxWidth >= 680;
 
-  return (
-    <NodeShell
-      node={node}
-      context={context}
-      style={{
-        display: responsiveGrid ? "grid" : "flex",
-        flexDirection: responsiveGrid ? undefined : horizontal ? "row" : "column",
-        gridTemplateColumns: responsiveGrid
-          ? `repeat(${context.device.kind === "desktop" ? 3 : 2}, minmax(0, 1fr))`
-          : undefined,
-        gap: props.spacing ?? 10,
-        overflowX: horizontal ? "auto" : undefined,
-        paddingBottom: horizontal ? 4 : undefined,
-        ...style,
-      }}
-    >
+  // The switcher is the viewer's, not the document's: the spec says which
+  // period the paywall opens on, and picking another one here only changes
+  // what this preview shows.
+  const periods = node.periodOptions ?? [];
+  const initial = Math.max(periods.findIndex((option) => option.selected), 0);
+  const [choice, setChoice] = useState<{ against: number; index: number } | null>(null);
+  const period = choice?.against === initial ? choice.index : null;
+  const active = periods.length ? periods[Math.min(period ?? initial, periods.length - 1)] : null;
+
+  const all = node.products ?? [];
+  const products = active
+    ? all.filter((product) => active.productIds.includes(product.id))
+    : all;
+  const highlightedId = active ? active.highlightedProductId : node.highlightedProductId;
+
+  const listStyle: CSSProperties = {
+    display: responsiveGrid ? "grid" : "flex",
+    flexDirection: responsiveGrid ? undefined : horizontal ? "row" : "column",
+    gridTemplateColumns: responsiveGrid
+      ? `repeat(${context.device.kind === "desktop" ? 3 : 2}, minmax(0, 1fr))`
+      : undefined,
+    gap: props.spacing ?? 10,
+    overflowX: horizontal ? "auto" : undefined,
+    paddingBottom: horizontal ? 4 : undefined,
+  };
+
+  const cards = (
+    <>
       {products.length === 0 ? (
         <div
           style={{
@@ -882,7 +1152,7 @@ function ProductListNode({
           <ProductCard
             key={product.id}
             product={product}
-            highlighted={product.id === node.highlightedProductId}
+            highlighted={product.id === highlightedId}
             compact={compact}
             horizontal={horizontal}
             card={card}
@@ -890,6 +1160,37 @@ function ProductListNode({
           />
         ))
       )}
+    </>
+  );
+
+  if (!active) {
+    return (
+      <NodeShell node={node} context={context} style={{ ...listStyle, ...style }}>
+        {cards}
+      </NodeShell>
+    );
+  }
+
+  const filter = props.periodFilter ?? {};
+  return (
+    <NodeShell
+      node={node}
+      context={context}
+      style={{ display: "flex", flexDirection: "column", gap: 12, ...style }}
+    >
+      <SegmentedBar
+        items={periods.map((option) => ({ key: option.key, label: option.label }))}
+        activeIndex={periods.indexOf(active)}
+        variant={filter.style === "chips" ? "chips" : "segmented"}
+        tint={card.highlightColor}
+        bar={material?.surfaceContainer ?? withAlpha(colors.muted, 0.14)}
+        colors={colors}
+        material={material}
+        alignment={filter.alignment}
+        role="group"
+        onPick={(index) => setChoice({ against: initial, index })}
+      />
+      <div style={listStyle}>{cards}</div>
     </NodeShell>
   );
 }

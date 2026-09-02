@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applyProductFilter,
+  buildPeriodOptions,
   labelProducts,
   pickHighlighted,
   resolvePaywall,
+  resolveProductList,
   SAMPLE_PRODUCTS,
   type ResolvedProductList,
 } from "./export";
@@ -134,5 +136,75 @@ describe("resolveProductList", () => {
       overrides: [{ productKey: "monthly", badge: "Starter" }],
     });
     expect(alt.products[0].badge).toBe("Starter");
+  });
+});
+
+describe("buildPeriodOptions", () => {
+  const labelled = labelProducts(SAMPLE_PRODUCTS);
+
+  it("offers the periods the plans actually use, in interval order", () => {
+    const options = buildPeriodOptions(labelled, {}, "first");
+    expect(options.map((option) => option.key)).toEqual(["month", "year", "one_time"]);
+    expect(options.map((option) => option.label)).toEqual(["Monthly", "Yearly", "One-time"]);
+    expect(options[0].productIds).toEqual(["sample-monthly"]);
+    expect(options.filter((option) => option.selected)).toHaveLength(1);
+    expect(options[0].selected).toBe(true);
+  });
+
+  it("narrows to the named intervals and drops the ones with no plans", () => {
+    const options = buildPeriodOptions(labelled, { intervals: ["month", "quarter", "year"] }, "first");
+    expect(options.map((option) => option.key)).toEqual(["month", "year"]);
+  });
+
+  it("gives every period its own highlight", () => {
+    const options = buildPeriodOptions(labelled, { intervals: ["month", "year"] }, "cheapest");
+    expect(options[0].highlightedProductId).toBe("sample-monthly");
+    expect(options[1].highlightedProductId).toBe("sample-yearly");
+  });
+
+  it("opens on the named period, and prepends an All option", () => {
+    const options = buildPeriodOptions(labelled, { showAll: true, defaultInterval: "year" }, "first");
+    expect(options.map((option) => option.key)).toEqual(["all", "month", "year", "one_time"]);
+    expect(options[0].productIds).toHaveLength(3);
+    expect(options.find((option) => option.selected)?.key).toBe("year");
+  });
+
+  it("stays away unless there is something to switch between", () => {
+    expect(buildPeriodOptions(labelled, undefined, "first")).toEqual([]);
+    expect(buildPeriodOptions(labelled, { intervals: ["month"] }, "first")).toEqual([]);
+    const monthlyOnly = labelled.filter((product) => product.billingInterval === "month");
+    expect(buildPeriodOptions(monthlyOnly, {}, "first")).toEqual([]);
+  });
+});
+
+describe("resolveProductList with a period filter", () => {
+  const labelled = labelProducts(SAMPLE_PRODUCTS);
+
+  it("preselects the opening period's product and badges each period's highlight", () => {
+    const resolved = resolveProductList(labelled, {
+      periodFilter: { intervals: ["month", "year"], defaultInterval: "year" },
+      highlight: "cheapest",
+      highlightBadge: "Most popular",
+    });
+    expect(resolved.highlightedProductId).toBe("sample-yearly");
+    // Every card the switcher can land on keeps its badge, so switching to
+    // another period does not reveal an unbadged "most popular" plan.
+    const badged = resolved.products.filter((product) => product.badge === "Most popular");
+    expect(badged.map((product) => product.id)).toEqual(["sample-monthly", "sample-yearly"]);
+    expect(resolved.products).toHaveLength(3);
+  });
+
+  it("leaves the list untouched when there is no period filter", () => {
+    const resolved = resolveProductList(labelled, { highlight: "first" });
+    expect(resolved.periodOptions).toEqual([]);
+    expect(resolved.highlightedProductId).toBe("sample-monthly");
+  });
+
+  it("only offers periods that survived the list's own filter", () => {
+    const resolved = resolveProductList(labelled, {
+      filter: { billingIntervals: ["month", "year"] },
+      periodFilter: {},
+    });
+    expect(resolved.periodOptions.map((option) => option.key)).toEqual(["month", "year"]);
   });
 });

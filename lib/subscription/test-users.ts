@@ -83,6 +83,7 @@ export async function createTestUser(input: {
       displayName,
       level,
       levelKey: input.levelKey?.trim() || null,
+      environment: "sandbox",
       isTest: true,
       testNote: input.note?.trim() || null,
       createdAt: now,

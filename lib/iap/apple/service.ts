@@ -89,7 +89,11 @@ async function authoritativeState(input: {
   let status: number | undefined;
   let renewal: JWSRenewalInfoDecodedPayload | null = null;
 
-  if (input.fetchAuthoritative && process.env.IS_E2E !== "true") {
+  if (
+    input.fetchAuthoritative &&
+    input.environment !== "xcode" &&
+    process.env.IS_E2E !== "true"
+  ) {
     if (!transaction.transactionId) {
       throw new ValidationError("Apple transaction ID is missing");
     }
@@ -217,6 +221,7 @@ async function fulfillSubscription(input: {
     .where(
       and(
         eq(subscriptions.billingProvider, "apple_app_store"),
+        eq(subscriptions.appUserId, input.user.id),
         eq(subscriptions.providerSubscriptionId, originalTransactionId),
       ),
     )
@@ -315,6 +320,7 @@ async function fulfillOneTime(input: {
     .where(
       and(
         eq(purchases.billingProvider, "apple_app_store"),
+        eq(purchases.appUserId, input.user.id),
         eq(purchases.providerTransactionId, input.transaction.transactionId!),
       ),
     )
@@ -506,6 +512,7 @@ export async function fulfillAppleTransaction(input: {
     .where(
       and(
         eq(storeTransactions.provider, "apple_app_store"),
+        eq(storeTransactions.appUserId, user.id),
         eq(storeTransactions.transactionId, transaction.transactionId!),
       ),
     )

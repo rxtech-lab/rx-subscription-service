@@ -7,6 +7,7 @@ import {
   ledgerEntries,
   usageItems,
   usageRecords,
+  type ApiEnvironment,
 } from "@/lib/db/schema";
 import {
   assertWithinRowLimit,
@@ -144,8 +145,8 @@ export interface ConsumptionQuery {
   granularity: Granularity;
   /** `description` carries the model name on usage debits. */
   groupBy?: "kind" | "description" | null;
-  /** Sandbox and production users are never mixed into one series. */
-  isTest: boolean;
+  /** Xcode, sandbox, and production users are never mixed into one series. */
+  environment: ApiEnvironment;
 }
 
 export async function getConsumptionSeries(
@@ -165,7 +166,7 @@ export async function getConsumptionSeries(
     .where(
       and(
         eq(appUsers.applicationId, input.applicationId),
-        eq(appUsers.isTest, input.isTest),
+        eq(appUsers.environment, input.environment),
         input.appUserId ? eq(ledgerEntries.appUserId, input.appUserId) : undefined,
         input.unitId ? eq(ledgerEntries.unitId, input.unitId) : undefined,
         gte(ledgerEntries.createdAt, input.from),
@@ -274,7 +275,7 @@ export interface UsageQuery {
   to: Date;
   granularity: Granularity;
   groupBy?: "item" | null;
-  isTest: boolean;
+  environment: ApiEnvironment;
 }
 
 export async function getUsageSeries(input: UsageQuery): Promise<UsageSeries> {
@@ -295,7 +296,7 @@ export async function getUsageSeries(input: UsageQuery): Promise<UsageSeries> {
       .where(
         and(
           eq(appUsers.applicationId, input.applicationId),
-          eq(appUsers.isTest, input.isTest),
+          eq(appUsers.environment, input.environment),
           input.appUserId ? eq(usageRecords.appUserId, input.appUserId) : undefined,
           input.usageItemId
             ? eq(usageRecords.usageItemId, input.usageItemId)

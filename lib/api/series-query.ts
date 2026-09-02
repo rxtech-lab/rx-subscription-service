@@ -58,7 +58,7 @@ export function parseSeriesRange(url: URL): SeriesRange {
  * Resolve the optional `rxlabUserId` filter without creating anything.
  *
  * Returns null when the caller wants the whole application. Scoped by
- * `isTest` so a sandbox key cannot read a production user's history.
+ * environment so an Xcode, sandbox, or production key cannot cross data planes.
  *
  * A publishable key never gets the application-wide series: omitting the
  * filter narrows to the token's own user rather than widening to everyone,
@@ -90,7 +90,7 @@ export async function findSeriesUser(
       and(
         eq(appUsers.applicationId, context.application.id),
         eq(appUsers.rxlabUserId, target),
-        eq(appUsers.isTest, context.environment === "sandbox"),
+        eq(appUsers.environment, context.environment),
       ),
     )
     .limit(1);

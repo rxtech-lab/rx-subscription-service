@@ -160,7 +160,14 @@ function ExportPanel({
             <code>VStack</code>/<code>HStack</code>/<code>ZStack</code>/<code>Grid</code>/
             <code>List</code>/<code>ScrollView</code> map to the SwiftUI views of the same name, or
             to <code>Column</code>/<code>Row</code>/<code>Box</code>/<code>LazyVerticalGrid</code>/
-            <code>LazyColumn</code>/vertical scroll in Compose. Only these carry <code>children</code>.
+            <code>LazyColumn</code>/vertical scroll in Compose. Only these — and{" "}
+            <code>TabView</code> — carry <code>children</code>.
+          </li>
+          <li>
+            <code>TabView</code> draws a tab bar from <code>props.tabs</code> and shows exactly one
+            child at a time: tab <em>n</em> shows child <em>n</em>. It opens on{" "}
+            <code>selectedIndex</code>, and switching tabs is local to the device — nothing is
+            fetched again.
           </li>
           <li>
             <code>modifiers</code> apply in order: padding, frame, background, cornerRadius, border,
@@ -182,6 +189,13 @@ function ExportPanel({
             <code>purchaseOptions</code> (StoreKit product id when mapped, and what each way of
             buying costs). Tapping one selects it; a <code>purchase</code>{" "}
             action without <code>productId</code> buys the selection.
+          </li>
+          <li>
+            <code>ProductList.periodOptions</code> is the period switcher — monthly, yearly,
+            one-time — already resolved. Draw one control per option, show the{" "}
+            <code>productIds</code> of the option in play, and preselect its{" "}
+            <code>highlightedProductId</code>. It arrives empty when the list has no period filter,
+            in which case there is nothing to draw.
           </li>
           <li>
             Apps fetch this from <code>GET /api/v1/paywall</code> with a publishable key once the

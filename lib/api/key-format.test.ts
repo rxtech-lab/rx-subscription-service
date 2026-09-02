@@ -1,20 +1,31 @@
 import { describe, expect, it } from "vitest";
+import { isTestApiEnvironment } from "@/lib/db/schema";
 import { apiKeySecretPrefix, isApiKeyKind, parseAllowedClientIds } from "./key-format";
 
 describe("apiKeySecretPrefix", () => {
   it("keeps the existing shape for secret keys so old credentials still resolve", () => {
+    expect(apiKeySecretPrefix("xcode")).toBe("rxs_xcode_");
     expect(apiKeySecretPrefix("sandbox")).toBe("rxs_sandbox_");
     expect(apiKeySecretPrefix("production")).toBe("rxs_production_");
     expect(apiKeySecretPrefix("production", "secret")).toBe("rxs_production_");
   });
 
   it("marks publishable keys so a leaked one is recognisable on sight", () => {
+    expect(apiKeySecretPrefix("xcode", "publishable")).toBe("rxs_pk_xcode_");
     expect(apiKeySecretPrefix("sandbox", "publishable")).toBe("rxs_pk_sandbox_");
     expect(apiKeySecretPrefix("production", "publishable")).toBe("rxs_pk_production_");
   });
 
   it("still starts with rxs_, which is what the bearer disambiguation keys off", () => {
     expect(apiKeySecretPrefix("sandbox", "publishable").startsWith("rxs_")).toBe(true);
+  });
+});
+
+describe("API environments", () => {
+  it("treats Xcode and sandbox as test data planes", () => {
+    expect(isTestApiEnvironment("xcode")).toBe(true);
+    expect(isTestApiEnvironment("sandbox")).toBe(true);
+    expect(isTestApiEnvironment("production")).toBe(false);
   });
 });
 

@@ -64,7 +64,7 @@ export async function GET(request: Request) {
       to,
       granularity,
       groupBy,
-      isTest: context.environment === "sandbox",
+      environment: context.environment,
     });
 
     return Response.json(series, { headers: noStore });

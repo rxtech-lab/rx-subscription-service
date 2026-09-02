@@ -1,5 +1,5 @@
 import { formatInterval, formatMoney } from "@/lib/utils";
-import type { PaywallNode, PaywallSpec } from "./schema";
+import { BILLING_INTERVAL_OPTIONS, type PaywallNode, type PaywallSpec } from "./schema";
 
 /**
  * Turn a template into the document an app renders.
@@ -52,6 +52,12 @@ export interface ResolvedProductList extends PaywallNode {
   type: "ProductList";
   products: ResolvedProduct[];
   highlightedProductId: string | null;
+  /**
+   * The period switcher to draw above the list, already resolved to the
+   * products each option reveals. Empty when the list has no period filter —
+   * a client that ignores this field keeps showing every product, as before.
+   */
+  periodOptions: ProductPeriodOption[];
 }
 
 export interface ResolvedPaywall {
@@ -67,6 +73,30 @@ interface ProductFilter {
   billingIntervals?: string[];
 }
 
+/** The `periodFilter` props the resolver reads. */
+export interface PeriodFilterOptions {
+  intervals?: string[];
+  defaultInterval?: string;
+  showAll?: boolean;
+  allLabel?: string;
+  style?: string;
+  alignment?: string;
+}
+
+/** One choice in the period switcher, with the products it reveals. */
+export interface ProductPeriodOption {
+  /** A billing interval, or "all" for the option that clears the filter. */
+  key: string;
+  /** "Monthly", "Yearly", … */
+  label: string;
+  /** The products this option shows, in the list's order. */
+  productIds: string[];
+  /** Which of them to preselect while this option is active. */
+  highlightedProductId: string | null;
+  /** Exactly one option is selected — the one the paywall opens on. */
+  selected: boolean;
+}
+
 export interface ProductOverride {
   productKey: string;
   name?: string;
@@ -78,6 +108,7 @@ export interface ProductOverride {
 /** The ProductList props the resolver reads; the rest are presentation. */
 export interface ProductListOptions {
   filter?: ProductFilter;
+  periodFilter?: PeriodFilterOptions;
   sort?: "default" | "priceAscending" | "priceDescending";
   highlight?: string;
   highlightBadge?: string;
@@ -165,19 +196,33 @@ export function sortProducts(
 export function resolveProductList(
   labelled: ResolvedProduct[],
   options: ProductListOptions,
-): { products: ResolvedProduct[]; highlightedProductId: string | null } {
+): {
+  products: ResolvedProduct[];
+  highlightedProductId: string | null;
+  periodOptions: ProductPeriodOption[];
+} {
   const filtered = applyProductFilter(labelled, options.filter);
   const sorted = sortProducts(applyOverrides(filtered, options.overrides), options.sort);
-  const highlightedProductId = pickHighlighted(sorted, options.highlight);
+  const periodOptions = buildPeriodOptions(sorted, options.periodFilter, options.highlight);
+  const selectedPeriod = periodOptions.find((entry) => entry.selected);
+  const highlightedProductId = selectedPeriod
+    ? selectedPeriod.highlightedProductId
+    : pickHighlighted(sorted, options.highlight);
+  // Every period keeps its own highlight, so the badge follows the switcher
+  // rather than sitting on a card the user has to switch away to see.
+  const badged = new Set(
+    (periodOptions.length
+      ? periodOptions.map((entry) => entry.highlightedProductId)
+      : [highlightedProductId]
+    ).filter((id): id is string => Boolean(id)),
+  );
   const badgeText = options.highlightBadge?.trim();
   const products = badgeText
     ? sorted.map((product) =>
-        product.id === highlightedProductId && !product.badge
-          ? { ...product, badge: badgeText }
-          : product,
+        badged.has(product.id) && !product.badge ? { ...product, badge: badgeText } : product,
       )
     : sorted;
-  return { products, highlightedProductId };
+  return { products, highlightedProductId, periodOptions };
 }
 
 export function applyProductFilter<T extends CatalogProduct>(
@@ -192,6 +237,62 @@ export function applyProductFilter<T extends CatalogProduct>(
     }
     return true;
   });
+}
+
+export const PERIOD_LABELS: Record<string, string> = {
+  month: "Monthly",
+  quarter: "Quarterly",
+  year: "Yearly",
+  one_time: "One-time",
+};
+
+/**
+ * Build the period switcher a list shows above its cards.
+ *
+ * The options are the intervals the plans actually use, so a paywall does not
+ * offer a "Yearly" tab that turns out to be empty — an author who names
+ * intervals explicitly is still narrowed down to what exists. A switcher with
+ * one option is no switcher at all, so that collapses back to a plain list.
+ * Each option carries its own highlighted product: "most popular" among the
+ * monthly plans is not the same plan as among the yearly ones.
+ */
+export function buildPeriodOptions(
+  products: ResolvedProduct[],
+  filter: PeriodFilterOptions | undefined,
+  highlight: string | undefined,
+): ProductPeriodOption[] {
+  if (!filter) return [];
+  const wanted = filter.intervals?.length
+    ? BILLING_INTERVAL_OPTIONS.filter((interval) => filter.intervals!.includes(interval))
+    : BILLING_INTERVAL_OPTIONS;
+  const intervals = wanted.filter((interval) =>
+    products.some((product) => product.billingInterval === interval),
+  );
+  if (intervals.length < 2) return [];
+
+  const option = (key: string, label: string, matching: ResolvedProduct[]): ProductPeriodOption => ({
+    key,
+    label,
+    productIds: matching.map((product) => product.id),
+    highlightedProductId: pickHighlighted(matching, highlight),
+    selected: false,
+  });
+
+  const options = intervals.map((interval) =>
+    option(
+      interval,
+      PERIOD_LABELS[interval] ?? interval,
+      products.filter((product) => product.billingInterval === interval),
+    ),
+  );
+  if (filter.showAll) {
+    options.unshift(option("all", filter.allLabel?.trim() || "All", products));
+  }
+  const fallback = options[0].key;
+  const defaultKey = options.some((entry) => entry.key === filter.defaultInterval)
+    ? filter.defaultInterval
+    : fallback;
+  return options.map((entry) => ({ ...entry, selected: entry.key === defaultKey }));
 }
 
 export function pickHighlighted(

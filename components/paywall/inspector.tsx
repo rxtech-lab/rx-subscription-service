@@ -10,8 +10,11 @@ import {
   MATERIAL_PALETTE_OPTIONS,
   materialYouColors,
 } from "@/lib/paywall/material-you";
+import { nodeLabel } from "@/lib/paywall/operations";
 import {
+  BILLING_INTERVAL_OPTIONS,
   COLOR_TOKENS,
+  MAX_TABS,
   modifiersSchema,
   NODE_DESCRIPTIONS,
   nodeProps,
@@ -102,6 +105,9 @@ export function Inspector({
   const visibleKeys = imageSource
     ? keys.filter((key) => (key === "url" || key === "systemName" ? key === imageSource : true))
     : keys;
+  // A TabView's tab rows name the children they open, so the editor can say
+  // which page a title belongs to rather than making it a guessing game.
+  const childLabels = (node.children ?? []).map((child) => nodeLabel(child));
 
   return (
     <div className="space-y-6 p-4">
@@ -138,6 +144,7 @@ export function Inspector({
               required={required.has(key) || key === imageSource}
               value={node.props[key]}
               products={products}
+              childLabels={childLabels}
               materialYou={materialYou}
               onChange={(value, coalesce) =>
                 onChangeProps(node.id, { [key]: value }, coalesce ? `${node.id}:${key}` : undefined)
@@ -235,6 +242,7 @@ function PropField({
   required,
   value,
   products,
+  childLabels,
   materialYou,
   onChange,
   onBlur,
@@ -244,6 +252,7 @@ function PropField({
   required: boolean;
   value: unknown;
   products: CatalogProduct[];
+  childLabels: string[];
   materialYou: boolean;
   onChange: (value: unknown, coalesce?: boolean) => void;
   onBlur: () => void;
@@ -288,6 +297,34 @@ function PropField({
     return (
       <Field label={label} hint="Leave empty to show every active plan.">
         <FilterField value={value as Record<string, unknown> | undefined} onChange={onChange} onBlur={onBlur} />
+      </Field>
+    );
+  }
+
+  if (name === "periodFilter") {
+    return (
+      <Field
+        label="Period switcher"
+        hint="Let buyers switch the list between monthly, yearly, and one-time plans."
+      >
+        <PeriodFilterField
+          value={value as PeriodFilterValue | undefined}
+          onChange={onChange}
+          onBlur={onBlur}
+        />
+      </Field>
+    );
+  }
+
+  if (name === "tabs") {
+    return (
+      <Field label="Tabs" hint="One tab per child, in order. Adding or removing a node inside the TabView keeps these in step.">
+        <TabsField
+          value={Array.isArray(value) ? (value as TabRow[]) : []}
+          childLabels={childLabels}
+          onChange={onChange}
+          onBlur={onBlur}
+        />
       </Field>
     );
   }
@@ -601,6 +638,244 @@ function FilterField({
           </label>
         ))}
       </div>
+    </div>
+  );
+}
+
+interface PeriodFilterValue {
+  intervals?: string[];
+  defaultInterval?: string;
+  showAll?: boolean;
+  allLabel?: string;
+  style?: string;
+  alignment?: string;
+}
+
+/**
+ * The end-user period switcher on a ProductList.
+ *
+ * Distinct from `filter` above it: `filter` decides once, at export, which
+ * plans exist in the list at all; this one hands the choice to the buyer. The
+ * interval boxes are a narrowing, not a listing — leaving them all unchecked
+ * offers whichever periods the matching plans actually use, which is what an
+ * app wants as it adds and retires plans.
+ */
+function PeriodFilterField({
+  value,
+  onChange,
+  onBlur,
+}: {
+  value: PeriodFilterValue | undefined;
+  onChange: (value: unknown, coalesce?: boolean) => void;
+  onBlur: () => void;
+}) {
+  const enabled = Boolean(value);
+  const intervals = Array.isArray(value?.intervals) ? value.intervals : [];
+  const emit = (patch: Partial<PeriodFilterValue>, coalesce?: boolean) => {
+    const next: PeriodFilterValue = { ...value, ...patch };
+    const cleaned: PeriodFilterValue = {};
+    if (next.intervals?.length) cleaned.intervals = next.intervals;
+    if (next.defaultInterval) cleaned.defaultInterval = next.defaultInterval;
+    if (next.showAll) cleaned.showAll = true;
+    if (next.showAll && next.allLabel) cleaned.allLabel = next.allLabel;
+    if (next.style) cleaned.style = next.style;
+    if (next.alignment) cleaned.alignment = next.alignment;
+    onChange(cleaned, coalesce);
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+        <input
+          type="checkbox"
+          className="size-4 rounded border-slate-300 text-blue-600"
+          checked={enabled}
+          onChange={(event) => onChange(event.target.checked ? {} : undefined)}
+        />
+        Show a period switcher
+      </label>
+      {enabled ? (
+        <div className="space-y-2 rounded-lg border border-slate-200 p-2">
+          <p className="text-[11px] leading-4 text-slate-500">
+            Periods to offer — leave every box unchecked to offer the ones the plans use. A
+            period with no plans is dropped, and the switcher hides unless two remain.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {BILLING_INTERVAL_OPTIONS.map((interval) => (
+              <label key={interval} className="flex items-center gap-1.5 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  className="size-3.5 rounded border-slate-300"
+                  checked={intervals.includes(interval)}
+                  onChange={(event) =>
+                    emit({
+                      intervals: event.target.checked
+                        ? [...intervals, interval]
+                        : intervals.filter((entry) => entry !== interval),
+                    })
+                  }
+                />
+                {interval.replace("_", "-")}
+              </label>
+            ))}
+          </div>
+          <Select
+            aria-label="Period selected first"
+            className="h-9 text-xs"
+            value={value?.defaultInterval ?? ""}
+            onChange={(event) => emit({ defaultInterval: event.target.value || undefined })}
+          >
+            <option value="">Opens on the first period</option>
+            {BILLING_INTERVAL_OPTIONS.map((interval) => (
+              <option key={interval} value={interval}>
+                Opens on {interval.replace("_", "-")}
+              </option>
+            ))}
+          </Select>
+          <div className="grid grid-cols-2 gap-2">
+            <Select
+              aria-label="Switcher style"
+              className="h-9 text-xs"
+              value={value?.style ?? ""}
+              onChange={(event) => emit({ style: event.target.value || undefined })}
+            >
+              <option value="">Segmented</option>
+              <option value="segmented">Segmented</option>
+              <option value="chips">Chips</option>
+            </Select>
+            <Select
+              aria-label="Switcher alignment"
+              className="h-9 text-xs"
+              value={value?.alignment ?? ""}
+              onChange={(event) => emit({ alignment: event.target.value || undefined })}
+            >
+              <option value="">Default</option>
+              <option value="leading">Leading</option>
+              <option value="center">Center</option>
+              <option value="trailing">Trailing</option>
+            </Select>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              className="size-3.5 rounded border-slate-300"
+              checked={value?.showAll === true}
+              onChange={(event) => emit({ showAll: event.target.checked || undefined })}
+            />
+            Offer an option that shows every plan
+          </label>
+          {value?.showAll ? (
+            <Input
+              className="h-8 text-xs"
+              placeholder="Label for that option (defaults to All)"
+              value={value.allLabel ?? ""}
+              onChange={(event) => emit({ allLabel: event.target.value || undefined }, true)}
+              onBlur={onBlur}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface TabRow {
+  title?: string;
+  icon?: string;
+  badge?: string;
+}
+
+/**
+ * The titles of a TabView's tabs, paired with the child each one opens.
+ *
+ * Rows here only rename tabs — the pages themselves are added and removed in
+ * the layers panel, which keeps this list in step. When the two are out of
+ * step anyway (an agent edit, say) the mismatch is named rather than hidden,
+ * because an untitled page still shows up as "Tab 3" on the device.
+ */
+function TabsField({
+  value,
+  childLabels,
+  onChange,
+  onBlur,
+}: {
+  value: TabRow[];
+  childLabels: string[];
+  onChange: (value: unknown, coalesce?: boolean) => void;
+  onBlur: () => void;
+}) {
+  const emit = (rows: TabRow[], coalesce?: boolean) => {
+    const cleaned = rows.map((row) => {
+      const next: TabRow = { title: row.title ?? "" };
+      if (row.icon) next.icon = row.icon;
+      if (row.badge) next.badge = row.badge;
+      return next;
+    });
+    onChange(cleaned, coalesce);
+  };
+  const update = (index: number, patch: Partial<TabRow>, coalesce?: boolean) =>
+    emit(value.map((row, at) => (at === index ? { ...row, ...patch } : row)), coalesce);
+
+  const extraPages = childLabels.length - value.length;
+
+  return (
+    <div className="space-y-2">
+      {value.map((row, index) => (
+        <div key={index} className="space-y-2 rounded-lg border border-slate-200 p-2">
+          <div className="flex items-center gap-2">
+            <Input
+              aria-label={`Tab ${index + 1} title`}
+              className="h-8 flex-1 text-xs"
+              placeholder={`Tab ${index + 1}`}
+              value={row.title ?? ""}
+              onChange={(event) => update(index, { title: event.target.value }, true)}
+              onBlur={onBlur}
+            />
+            <Input
+              aria-label={`Tab ${index + 1} badge`}
+              className="h-8 w-20 text-xs"
+              placeholder="Badge"
+              value={row.badge ?? ""}
+              onChange={(event) => update(index, { badge: event.target.value || undefined }, true)}
+              onBlur={onBlur}
+            />
+            <button
+              type="button"
+              aria-label={`Remove tab ${index + 1}`}
+              disabled={value.length <= 1}
+              onClick={() => emit(value.filter((_, at) => at !== index))}
+              className="flex size-7 items-center justify-center rounded text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+          <SymbolCombobox
+            value={row.icon ?? ""}
+            onChange={(next) => update(index, { icon: (next as string) || undefined })}
+            onBlur={onBlur}
+          />
+          <p className="text-[11px] text-slate-400">
+            {childLabels[index] ? `Opens ${childLabels[index]}` : "No content yet — add a node inside this TabView."}
+          </p>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="h-8 text-xs"
+        disabled={value.length >= MAX_TABS}
+        onClick={() => emit([...value, { title: `Tab ${value.length + 1}` }])}
+      >
+        <Plus className="size-3.5" aria-hidden="true" />
+        Add tab
+      </Button>
+      {extraPages > 0 ? (
+        <p className="text-[11px] text-amber-600">
+          {extraPages === 1 ? "1 page has" : `${extraPages} pages have`} no tab above and show as
+          “Tab {value.length + 1}”. Add a tab to name {extraPages === 1 ? "it" : "them"}.
+        </p>
+      ) : null}
     </div>
   );
 }
