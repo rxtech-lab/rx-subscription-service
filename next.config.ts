@@ -15,8 +15,13 @@ const nextConfig: NextConfig = {
     // The symbol route requires one generated module per drawn symbol, by
     // absolute path off `sf-symbol-index.json`. Nothing imports them
     // statically, so tracing cannot infer them and every symbol would 404
-    // once deployed.
-    "/api/sf-symbols": ["./node_modules/@bradleyhodges/sfsymbols/dist/main/*.js"],
+    // once deployed. The package manifest has to ship too: the directory is
+    // located with `require.resolve`, which reads `main`/`exports` out of
+    // `package.json` and throws MODULE_NOT_FOUND without it.
+    "/api/sf-symbols": [
+      "./node_modules/@bradleyhodges/sfsymbols/package.json",
+      "./node_modules/@bradleyhodges/sfsymbols/dist/main/*.js",
+    ],
 
     "/**": [
       // The test harness is read from disk at run time and shipped into a
