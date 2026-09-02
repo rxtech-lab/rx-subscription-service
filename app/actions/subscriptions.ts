@@ -7,8 +7,10 @@ import { createPlanCheckout } from "@/lib/stripe/checkout";
 import { siteUrl } from "@/lib/stripe/client";
 import { requirePlan } from "@/lib/subscription/plans";
 import { ValidationError } from "@/lib/subscription/shared";
+import { deleteXcodeSubscription } from "@/lib/subscription/subscriptions";
 import { requireAppUser } from "@/lib/subscription/users";
 import {
+  revalidateApp,
   text,
   toActionState,
   withApplication,
@@ -52,4 +54,18 @@ export async function startTestSubscriptionAction(
   }
 
   redirect(checkoutUrl);
+}
+
+export async function deleteXcodeSubscriptionAction(
+  formData: FormData,
+): Promise<void> {
+  const applicationId = text(formData, "applicationId");
+  await withApplication(applicationId, async ({ actor }) => {
+    await deleteXcodeSubscription({
+      applicationId,
+      subscriptionId: text(formData, "subscriptionId"),
+      actor,
+    });
+  });
+  revalidateApp(applicationId, "subscriptions");
 }

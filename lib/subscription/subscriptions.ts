@@ -157,6 +157,7 @@ export async function listSubscriptions(
       // Carried so the console can tag test rows rather than hide them — an
       // admin watching a test checkout wants to see it land here.
       isTest: appUsers.isTest,
+      userEnvironment: appUsers.environment,
       userLabel: appUsers.displayName,
     })
     .from(subscriptions)
@@ -400,6 +401,64 @@ export async function cancelSubscription(input: {
     after: updated,
   });
   return updated;
+}
+
+/**
+ * Remove a development-only StoreKit subscription from the local entitlement
+ * mirror. Apple remains authoritative outside the Xcode data plane, so this is
+ * intentionally unavailable for sandbox and production subscriptions.
+ *
+ * Store transactions and granted balances stay intact as immutable purchase
+ * history. Submitting a current signed transaction again can recreate the
+ * subscription mirror.
+ */
+export async function deleteXcodeSubscription(input: {
+  applicationId: string;
+  subscriptionId: string;
+  actor: Actor;
+}) {
+  const [found] = await db
+    .select({
+      subscription: subscriptions,
+      userEnvironment: appUsers.environment,
+    })
+    .from(subscriptions)
+    .innerJoin(appUsers, eq(subscriptions.appUserId, appUsers.id))
+    .where(
+      and(
+        eq(subscriptions.id, input.subscriptionId),
+        eq(subscriptions.applicationId, input.applicationId),
+      ),
+    )
+    .limit(1);
+  if (!found) throw new NotFoundError("subscription", input.subscriptionId);
+  if (
+    found.subscription.billingProvider !== "apple_app_store" ||
+    found.userEnvironment !== "xcode"
+  ) {
+    throw new ValidationError(
+      "Only Xcode App Store subscriptions can be deleted here",
+    );
+  }
+
+  await db
+    .delete(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, found.subscription.id),
+        eq(subscriptions.applicationId, input.applicationId),
+      ),
+    );
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "subscription.delete_xcode",
+    entityType: "subscription",
+    entityId: found.subscription.id,
+    before: found.subscription,
+  });
+  return { id: found.subscription.id };
 }
 
 /** Plans that can be sold right now. */

@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { startTestSubscriptionAction } from "@/app/actions/subscriptions";
+import {
+  deleteXcodeSubscriptionAction,
+  startTestSubscriptionAction,
+} from "@/app/actions/subscriptions";
 import { cancelSubscriptionAction } from "@/app/actions/users";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
 import { ActionMenu } from "@/components/ui/action-menu";
@@ -235,7 +238,28 @@ export default async function SubscriptionsPage({
                     </span>
                   </Td>
                   <Td>
-                    {subscription.billingProvider === "apple_app_store" ? (
+                    {subscription.billingProvider === "apple_app_store" &&
+                    subscription.userEnvironment === "xcode" ? (
+                      <ActionMenu label={`Actions for ${subscription.planName}`}>
+                        <InlineActionButton
+                          action={deleteXcodeSubscriptionAction}
+                          label="Delete Xcode subscription"
+                          variant="menuDanger"
+                          confirmMessage="Delete this local Xcode subscription? Access from this subscription is removed, but its signed transaction and granted balances remain. Submitting the transaction again can recreate it."
+                        >
+                          <input
+                            type="hidden"
+                            name="applicationId"
+                            value={appId}
+                          />
+                          <input
+                            type="hidden"
+                            name="subscriptionId"
+                            value={subscription.id}
+                          />
+                        </InlineActionButton>
+                      </ActionMenu>
+                    ) : subscription.billingProvider === "apple_app_store" ? (
                       <span className="text-xs text-neutral-500">
                         Managed in the App Store
                       </span>
