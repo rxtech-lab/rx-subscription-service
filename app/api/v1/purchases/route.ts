@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { listPurchaseHistory } from "@/lib/subscription/purchases";
@@ -17,6 +18,7 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "purchases.read");
     const url = new URL(request.url);
     const parsed = querySchema.safeParse({
       rxlabUserId: url.searchParams.get("rxlabUserId") ?? undefined,

@@ -3,6 +3,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
 } from "@/lib/api/context";
 import { findSeriesUser, parseSeriesRange } from "@/lib/api/series-query";
 import { getConsumptionSeries } from "@/lib/subscription/consumption";
@@ -20,6 +21,7 @@ import { getBalanceUnitByKey } from "@/lib/subscription/units";
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "balances.consumption.read");
     const url = new URL(request.url);
     const { from, to, granularity } = parseSeriesRange(url);
 

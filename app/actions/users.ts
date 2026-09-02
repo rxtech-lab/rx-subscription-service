@@ -4,6 +4,7 @@ import {
   createApiKey,
   deleteApiKey,
   isApiEnvironment,
+  isApiKeyKind,
 } from "@/lib/api/keys";
 import { requireConsoleUser } from "@/lib/console/session";
 import {
@@ -152,11 +153,28 @@ export async function createApiKeyAction(
     if (!isApiEnvironment(environment)) {
       throw new ValidationError("Choose sandbox or production");
     }
+    const kind = text(formData, "kind") || "secret";
+    if (!isApiKeyKind(kind)) {
+      throw new ValidationError("Choose secret or publishable");
+    }
+    // One id per line or comma-separated, so pasting from the rxlab console
+    // works either way.
+    const allowedClientIds = text(formData, "allowedClientIds")
+      .split(/[\s,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (kind === "publishable" && allowedClientIds.length === 0) {
+      throw new ValidationError(
+        "A publishable key needs at least one OAuth client id — it only works with a signed-in user's token",
+      );
+    }
     const created = await withApplication(applicationId, ({ actor }) =>
       createApiKey({
         applicationId,
         name: text(formData, "name"),
         environment,
+        kind,
+        allowedClientIds: kind === "publishable" ? allowedClientIds : [],
         actor,
       }),
     );

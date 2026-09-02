@@ -10,6 +10,7 @@ import {
   ApiKeyForm,
   InlineActionButton,
 } from "@/components/forms/action-form";
+import { ApiKeyKindFields } from "@/components/forms/api-key-fields";
 import { SearchField } from "@/components/forms/search-field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
@@ -23,8 +24,11 @@ import {
   Td,
   Th,
 } from "@/components/ui/primitives";
-import { listApiKeys } from "@/lib/api/keys";
-import { requireApplicationAccess } from "@/lib/console/session";
+import { listApiKeys, parseAllowedClientIds } from "@/lib/api/keys";
+import {
+  getSelectableOAuthClients,
+  requireApplicationAccess,
+} from "@/lib/console/session";
 import {
   appleCredentialsConfigured,
   getAppleIntegration,
@@ -104,17 +108,21 @@ export default async function SettingsPage({
 
   const activeTab = settingsTab(tab);
   const query = first(q)?.trim() ?? "";
-  const [apiKeyData, testAutomation, appleIntegration, storeMappings] = await Promise.all([
-    activeTab === "api-keys"
-      ? listApiKeys(appId, {
-          page: Number(first(page)) || 1,
-          query,
-        })
-      : null,
-    activeTab === "automation" ? getTestAutomationSettings(appId) : null,
-    activeTab === "app-store" ? getAppleIntegration(appId) : null,
-    activeTab === "app-store" ? listStoreProductMappings(appId) : [],
-  ]);
+  const [apiKeyData, oauthClients, testAutomation, appleIntegration, storeMappings] =
+    await Promise.all([
+      activeTab === "api-keys"
+        ? listApiKeys(appId, {
+            page: Number(first(page)) || 1,
+            query,
+          })
+        : null,
+      // Already in this request's cache — `requireApplicationAccess` above read
+      // the same rxlab-auth client list — so this costs nothing extra.
+      activeTab === "api-keys" ? getSelectableOAuthClients() : [],
+      activeTab === "automation" ? getTestAutomationSettings(appId) : null,
+      activeTab === "app-store" ? getAppleIntegration(appId) : null,
+      activeTab === "app-store" ? listStoreProductMappings(appId) : [],
+    ]);
   const site = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
   const notificationUrl = site
     ? `${site}/api/apple/notifications/${appId}`
@@ -312,6 +320,7 @@ export default async function SettingsPage({
               <thead>
                 <tr>
                   <Th>Name</Th>
+                  <Th>Kind</Th>
                   <Th>Environment</Th>
                   <Th>Key</Th>
                   <Th>Last used</Th>
@@ -322,6 +331,25 @@ export default async function SettingsPage({
                 {apiKeyData.keys.map((key) => (
                   <tr key={key.id}>
                     <Td>{key.name}</Td>
+                    <Td>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold capitalize ${
+                          key.kind === "publishable"
+                            ? "bg-sky-50 text-sky-700 ring-1 ring-sky-200"
+                            : "bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"
+                        }`}
+                        title={
+                          key.kind === "publishable"
+                            ? `Embeddable in a client. Only works alongside a user token from: ${
+                                parseAllowedClientIds(key.allowedClientIds).join(", ") ||
+                                "no client — this key is unusable"
+                              }`
+                            : "Server-to-server. Full access; never ship it in a client."
+                        }
+                      >
+                        {key.kind}
+                      </span>
+                    </Td>
                     <Td>
                       <span
                         className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold capitalize ${
@@ -392,12 +420,13 @@ export default async function SettingsPage({
           <FormDialog
             triggerLabel="Create API key"
             title="Create an API key"
-            description="Choose the environment this key is allowed to access. This cannot be changed after creation."
+            description="Choose the kind and environment. Neither can be changed after creation."
             icon="key"
             size="sm"
           >
             <ApiKeyForm action={createApiKeyAction}>
               <input type="hidden" name="applicationId" value={appId} />
+              <ApiKeyKindFields clients={oauthClients} />
               <Field
                 label="Environment"
                 hint="Sandbox data is isolated and uses the Stripe sandbox account"
@@ -418,22 +447,35 @@ export default async function SettingsPage({
           <Card>
             <CardHeader
               title="Using the API"
-              description="Send the key as X-Api-Key. The key selects sandbox or production; users are addressed by their rxlab id."
+              description="Send the key as X-Api-Key. The key selects sandbox or production, and its kind decides what it may do."
             />
             <pre className="overflow-x-auto px-5 py-4 text-xs text-neutral-700">
-              {`# What is this user entitled to?
+              {`# --- Secret key, from your backend -----------------------------
+# It names the user it acts for, and reaches every endpoint.
+
+# What is this user entitled to?
 curl "$BASE/api/v1/entitlements?rxlabUserId=$USER" \\
-  -H "X-Api-Key: $KEY"
+  -H "X-Api-Key: $SECRET_KEY"
 
 # Meter one unit of usage
 curl -X POST "$BASE/api/v1/usage" \\
-  -H "X-Api-Key: $KEY" -H "Content-Type: application/json" \\
+  -H "X-Api-Key: $SECRET_KEY" -H "Content-Type: application/json" \\
   -d '{"rxlabUserId":"'$USER'","item":"api_calls","amount":1}'
 
-# Start a checkout
-curl -X POST "$BASE/api/v1/checkout" \\
-  -H "X-Api-Key: $KEY" -H "Content-Type: application/json" \\
-  -d '{"rxlabUserId":"'$USER'","kind":"plan","planId":"..."}'`}
+# --- Publishable key, from your app ----------------------------
+# It must carry the signed-in user's rxlab access token, and acts
+# only for that user — whatever rxlabUserId the request says.
+
+curl "$BASE/api/v1/entitlements" \\
+  -H "X-Api-Key: $PUBLISHABLE_KEY" \\
+  -H "Authorization: Bearer $USER_ACCESS_TOKEN"
+
+# Reads and purchases only. This one is refused:
+curl -X POST "$BASE/api/v1/balances" \\
+  -H "X-Api-Key: $PUBLISHABLE_KEY" \\
+  -H "Authorization: Bearer $USER_ACCESS_TOKEN" \\
+  -d '{"unit":"credits","amount":1000,"operation":"credit","idempotencyKey":"x"}'
+# => 403 insufficient_key_scope`}
             </pre>
           </Card>
         </>

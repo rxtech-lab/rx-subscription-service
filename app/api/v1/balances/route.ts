@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { getBalanceUnitByKey } from "@/lib/subscription/units";
@@ -13,6 +14,7 @@ import { apiBalanceKey } from "@/lib/api/idempotency";
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "balances.read");
     const url = new URL(request.url);
     const user = await resolveRequestUser(context, {
       rxlabUserId: url.searchParams.get("rxlabUserId") ?? undefined,
@@ -55,6 +57,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "balances.adjust");
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       throw new ApiError(

@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
 } from "@/lib/api/context";
 import { apiReservationKey } from "@/lib/api/idempotency";
 import { getBalanceReservationByIdempotencyKey } from "@/lib/subscription/balance-reservations";
@@ -16,6 +17,7 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "balances.reservations.read");
     const url = new URL(request.url);
     const parsed = querySchema.safeParse({
       idempotencyKey: url.searchParams.get("idempotencyKey") ?? undefined,

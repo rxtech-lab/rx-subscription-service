@@ -42,6 +42,13 @@ create production users and tokens. A signed environment mismatch is rejected.
 The E2E fake adapter accepts `e2e.` payloads only when `IS_E2E=true`; production
 always uses Apple's certificate-chain verification.
 
+Ship a **publishable** key in the app, not a secret one — see "Two kinds of
+key" in the README. All three `iap/apple/*` endpoints accept it, provided the
+request also carries the signed-in user's rxlab access token. In that mode
+`rxlabUserId` comes from the verified token, so the value in the body is only
+checked for agreement; a mismatch is a `403` rather than a silent redirect to
+somebody else's account.
+
 ## Refund review and recovery
 
 Apps must obtain explicit user consent before setting it through

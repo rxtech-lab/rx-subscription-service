@@ -6,6 +6,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
 } from "@/lib/api/context";
 import { findSeriesUser, parseSeriesRange } from "@/lib/api/series-query";
 import { getUsageSeries } from "@/lib/subscription/consumption";
@@ -21,6 +22,7 @@ import { getUsageSeries } from "@/lib/subscription/consumption";
 export async function GET(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "usage.statistics.read");
     const url = new URL(request.url);
     const { from, to, granularity } = parseSeriesRange(url);
 

@@ -32,10 +32,23 @@ export const applications = sqliteTable("applications", {
   syncedAt: integer("synced_at", { mode: "timestamp_ms" }),
 });
 
+export const API_KEY_KINDS = ["secret", "publishable"] as const;
+export type ApiKeyKind = (typeof API_KEY_KINDS)[number];
+
 /**
- * Server-to-server credentials issued to an application so its backend can call
- * the `/api/v1` entitlement and usage endpoints. Only the SHA-256 hash is
- * stored; `keyPrefix` exists so the console can show which key is which.
+ * Credentials issued to an application so it can call the `/api/v1`
+ * entitlement and usage endpoints. Only the SHA-256 hash is stored;
+ * `keyPrefix` exists so the console can show which key is which.
+ *
+ * Two kinds, with very different trust:
+ *
+ * - `secret` is server-to-server. It reaches every endpoint and names the user
+ *   it acts for, so it must never leave a backend.
+ * - `publishable` is meant to be embedded in a client binary. It is useless on
+ *   its own: every request must also carry the end user's rxlab access token,
+ *   and the user it acts for is taken from that verified token rather than
+ *   from the request. It reaches only the read and purchase endpoints, so a
+ *   leaked copy cannot move value or read a stranger's billing.
  */
 export const applicationApiKeys = sqliteTable(
   "application_api_keys",
@@ -52,6 +65,15 @@ export const applicationApiKeys = sqliteTable(
     environment: text("environment", { enum: API_ENVIRONMENTS })
       .notNull()
       .default("production"),
+    /** Existing credentials predate publishable keys and migrate to secret. */
+    kind: text("kind", { enum: API_KEY_KINDS }).notNull().default("secret"),
+    /**
+     * JSON array of rxlab-auth OAuth client ids whose access tokens this key
+     * accepts. Required for `publishable`, null for `secret`. Scoping this to
+     * the key rather than the application means one key per shipped binary, so
+     * revoking a leaked iOS credential leaves the web client alone.
+     */
+    allowedClientIds: text("allowed_client_ids"),
     keyPrefix: text("key_prefix").notNull(),
     hashedKey: text("hashed_key").notNull().unique(),
     lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),

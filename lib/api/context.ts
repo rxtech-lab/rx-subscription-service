@@ -6,43 +6,44 @@ import {
   appUsers,
   balanceReservations,
   type ApiEnvironment,
+  type ApiKeyKind,
   type Application,
 } from "@/lib/db/schema";
 import { ensureAppUser } from "@/lib/subscription/users";
+import { readRequestCredentials } from "./credentials";
+import { ApiError } from "./errors";
 import { resolveApiKey } from "./keys";
+import { assertKeyKindAllows } from "./scopes";
+import { requireUserTokenIssuer, verifyUserToken, type UserTokenPrincipal } from "./user-token";
 
 export interface ApiContext {
   application: Application;
   keyId: string;
   environment: ApiEnvironment;
+  kind: ApiKeyKind;
+  /**
+   * The verified end user, present only for publishable keys. Secret keys name
+   * their user per request instead, so this stays null for them.
+   */
+  user: UserTokenPrincipal | null;
 }
 
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly details?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+export { ApiError };
 
 /**
- * Authenticate a machine request. Accepts `X-Api-Key` or a bearer token; both
- * carry the same application-scoped key.
+ * Authenticate a request and establish who it acts for.
+ *
+ * A secret key authenticates on its own. A publishable key never does: it must
+ * arrive with the end user's rxlab access token, and the user it may touch is
+ * taken from that token rather than from anything the caller wrote.
  */
 export async function authenticateApiRequest(request: Request): Promise<ApiContext> {
-  const header =
-    request.headers.get("x-api-key") ??
-    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-    "";
-  if (!header) {
+  const { apiKey, userToken } = readRequestCredentials(request);
+  if (!apiKey) {
     throw new ApiError(401, "missing_api_key", "Provide an X-Api-Key header");
   }
 
-  const resolved = await resolveApiKey(header);
+  const resolved = await resolveApiKey(apiKey);
   if (!resolved) throw new ApiError(401, "invalid_api_key", "API key is invalid or revoked");
 
   const [application] = await db
@@ -57,29 +58,93 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     throw new ApiError(403, "application_disabled", "Application is disabled");
   }
 
+  let user: UserTokenPrincipal | null = null;
+  if (resolved.kind === "publishable") {
+    if (!userToken) {
+      throw new ApiError(
+        401,
+        "missing_user_token",
+        "A publishable key requires the end user's access token in the Authorization header",
+      );
+    }
+    // An empty allow-list would accept any rxlab user's token, so treat it as
+    // a broken key rather than an open one. `createApiKey` refuses to mint
+    // one; this catches rows edited by hand.
+    if (resolved.allowedClientIds.length === 0) {
+      throw new ApiError(
+        403,
+        "client_not_allowed",
+        "This publishable key has no allowed OAuth clients",
+      );
+    }
+    user = await verifyUserToken(userToken, {
+      issuer: requireUserTokenIssuer(),
+      allowedClientIds: resolved.allowedClientIds,
+    });
+  }
+
   return {
     application,
     keyId: resolved.keyId,
     environment: resolved.environment,
+    kind: resolved.kind,
+    user,
   };
 }
 
 /**
- * Resolve the target user of a request. Apps address users by their rxlab id
- * (the token `sub`); the local record is created on first reference so an app
- * never has to register users up front.
+ * Reject an operation the presented key may not perform.
+ *
+ * Every `/api/v1` route calls this with its own operation name. Names in
+ * `PUBLISHABLE_KEY_OPERATIONS` are reachable by both key kinds; anything else
+ * is secret-key-only by construction, so a new route is closed to clients
+ * until somebody deliberately adds it to that list.
+ */
+export function requireKeyScope(context: ApiContext, operation: string): void {
+  assertKeyKindAllows(context.kind, operation);
+}
+
+/**
+ * Resolve the target user of a request.
+ *
+ * Secret keys address users by their rxlab id (the token `sub`) and the local
+ * record is created on first reference, so a backend never has to register
+ * users up front. Publishable keys do not get that privilege: the user comes
+ * from the verified token, and a request naming somebody else is rejected
+ * rather than quietly redirected, so a misconfigured client fails loudly
+ * instead of silently reading the wrong account.
  */
 export async function resolveRequestUser(
   context: ApiContext,
   input: { rxlabUserId?: string; email?: string | null; displayName?: string | null },
 ) {
-  const rxlabUserId = input.rxlabUserId?.trim();
-  if (!rxlabUserId) {
+  const requested = input.rxlabUserId?.trim();
+
+  if (context.user) {
+    if (requested && requested !== context.user.subject) {
+      throw new ApiError(
+        403,
+        "user_mismatch",
+        "A publishable key can only act for the user its access token identifies",
+      );
+    }
+    return ensureAppUser({
+      applicationId: context.application.id,
+      rxlabUserId: context.user.subject,
+      // From the token, never the request: a client must not be able to
+      // rewrite the profile it is signed in as.
+      email: context.user.email,
+      displayName: context.user.displayName,
+      isTest: context.environment === "sandbox",
+    });
+  }
+
+  if (!requested) {
     throw new ApiError(400, "missing_user", "rxlabUserId is required");
   }
   return ensureAppUser({
     applicationId: context.application.id,
-    rxlabUserId,
+    rxlabUserId: requested,
     email: input.email ?? null,
     displayName: input.displayName ?? null,
     isTest: context.environment === "sandbox",

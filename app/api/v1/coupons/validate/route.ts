@@ -4,6 +4,7 @@ import {
   ApiError,
   authenticateApiRequest,
   noStore,
+  requireKeyScope,
   resolveRequestUser,
 } from "@/lib/api/context";
 import { describeCoupon } from "@/lib/subscription/coupon-rules";
@@ -40,6 +41,7 @@ const schema = z
 export async function POST(request: Request) {
   try {
     const context = await authenticateApiRequest(request);
+    requireKeyScope(context, "coupons.validate");
     const applicationId = context.application.id;
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
