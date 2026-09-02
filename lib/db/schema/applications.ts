@@ -7,8 +7,13 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { paywalls } from "./paywalls";
 
-export const API_ENVIRONMENTS = ["sandbox", "production"] as const;
+export const API_ENVIRONMENTS = ["xcode", "sandbox", "production"] as const;
 export type ApiEnvironment = (typeof API_ENVIRONMENTS)[number];
+
+/** Xcode and sandbox are test data planes; only production may reach live billing. */
+export function isTestApiEnvironment(environment: ApiEnvironment): boolean {
+  return environment !== "production";
+}
 
 /**
  * A subscription-enabled application. The primary key is the rxlab-auth OAuth

@@ -40,7 +40,7 @@ import {
 } from "@/lib/subscription/users";
 import { formatDate, formatMoney } from "@/lib/utils";
 
-type DataEnvironment = "production" | "sandbox";
+type DataEnvironment = "xcode" | "sandbox" | "production";
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -50,11 +50,12 @@ function requestedEnvironment(
   value: string | string[] | undefined,
   fallback: DataEnvironment,
 ): DataEnvironment {
-  return firstValue(value) === "sandbox"
-    ? "sandbox"
-    : firstValue(value) === "production"
-      ? "production"
-      : fallback;
+  const environment = firstValue(value);
+  return environment === "xcode" ||
+    environment === "sandbox" ||
+    environment === "production"
+    ? environment
+    : fallback;
 }
 
 function cursor(value: string | string[] | undefined) {
@@ -133,13 +134,21 @@ export default async function UserDetailPage({
     notFound();
   }
 
-  const fallbackEnvironment = routeUser.isTest ? "sandbox" : "production";
+  const fallbackEnvironment = routeUser.environment;
   const environment = requestedEnvironment(query.environment, fallbackEnvironment);
-  const [productionUser, sandboxUser] = await Promise.all([
-    getAppUserByRxlabId(appId, routeUser.rxlabUserId, { isTest: false }),
-    getAppUserByRxlabId(appId, routeUser.rxlabUserId, { isTest: true }),
+  const [xcodeUser, sandboxUser, productionUser] = await Promise.all([
+    getAppUserByRxlabId(appId, routeUser.rxlabUserId, { environment: "xcode" }),
+    getAppUserByRxlabId(appId, routeUser.rxlabUserId, { environment: "sandbox" }),
+    getAppUserByRxlabId(appId, routeUser.rxlabUserId, {
+      environment: "production",
+    }),
   ]);
-  const user = environment === "sandbox" ? sandboxUser : productionUser;
+  const user =
+    environment === "xcode"
+      ? xcodeUser
+      : environment === "sandbox"
+        ? sandboxUser
+        : productionUser;
   if (!user) notFound();
 
   const paymentAfter = cursor(query.paymentAfter);
@@ -148,7 +157,8 @@ export default async function UserDetailPage({
     query.paymentPage,
     Boolean(paymentAfter || paymentBefore),
   );
-  const stripeMode: StripeMode = environment === "sandbox" ? "sandbox" : "live";
+  const stripeMode: StripeMode = environment === "production" ? "live" : "sandbox";
+  const stripeEnvironment = stripeMode === "live" ? "production" : "sandbox";
   const statsTo = utcStatisticsDate(query.statsTo, new Date());
   const statsFrom = utcStatisticsDate(
     query.statsFrom,
@@ -171,7 +181,7 @@ export default async function UserDetailPage({
       to: statsTo,
       granularity: statsGranularity,
       groupBy: "description",
-      isTest: user.isTest,
+      environment,
     }),
     getUsageSeries({
       applicationId: appId,
@@ -180,7 +190,7 @@ export default async function UserDetailPage({
       to: statsTo,
       granularity: statsGranularity,
       groupBy: "item",
-      isTest: user.isTest,
+      environment,
     }),
   ])
     .then(([consumption, usageSeries]) => ({
@@ -240,7 +250,7 @@ export default async function UserDetailPage({
     (payment) => payment.status === "paid",
   );
   const fulfillmentMissing =
-    environment === "sandbox" &&
+    environment !== "production" &&
     hasPaidStripeInvoice &&
     subscriptions.length === 0 &&
     ledger.entries.length === 0;
@@ -305,6 +315,26 @@ export default async function UserDetailPage({
                   className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-300"
                 >
                   Sandbox
+                </span>
+              )}
+              {xcodeUser ? (
+                <Link
+                  href={userDetailHref(appId, userId, "xcode", statisticsParams)}
+                  aria-current={environment === "xcode" ? "page" : undefined}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                    environment === "xcode"
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  Xcode
+                </Link>
+              ) : (
+                <span
+                  aria-disabled="true"
+                  className="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-300"
+                >
+                  Xcode
                 </span>
               )}
             </div>
@@ -461,11 +491,11 @@ export default async function UserDetailPage({
       <Card>
         <CardHeader
           title="Stripe payments"
-          description={`Invoices from the Stripe ${environment} account, including renewals and one-time purchases.`}
+          description={`Invoices from the Stripe ${stripeEnvironment} account, including renewals and one-time purchases.`}
         />
         {!stripeConfigured(stripeMode) ? (
           <EmptyState
-            title={`${environment === "sandbox" ? "Sandbox" : "Production"} Stripe is not configured`}
+            title={`${stripeEnvironment === "sandbox" ? "Sandbox" : "Production"} Stripe is not configured`}
           />
         ) : paymentHistory.payments.length === 0 ? (
           <EmptyState title="No payments" />

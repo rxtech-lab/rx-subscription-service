@@ -110,7 +110,7 @@ export function isControlOp(value: string): value is ControlOp {
 /** Resolve an rxlab id to a user that is provably a test user, or fail. */
 async function resolveTestUser(applicationId: string, rxlabUserId: string) {
   const user = await getAppUserByRxlabId(applicationId, rxlabUserId, {
-    isTest: true,
+    environment: "sandbox",
   });
   if (!user) throw new NotFoundError("test user", rxlabUserId);
   return requireTestUser(applicationId, user.id);

@@ -163,7 +163,45 @@ describe("validatePaywallSpec", () => {
     });
   });
 
-  it("caps the number of product lists", () => {
+  it("accepts a TabView holding a page per tab", () => {
+    const result = validatePaywallSpec(
+      spec({
+        id: "root",
+        type: "VStack",
+        props: {},
+        children: [
+          {
+            id: "tabs",
+            type: "TabView",
+            props: {
+              tabs: [{ title: "Monthly" }, { title: "Yearly", badge: "-20%" }],
+              selectedIndex: 1,
+              style: "segmented",
+            },
+            children: [
+              { id: "monthly", type: "ProductList", props: { periodFilter: { showAll: true } } },
+              { id: "yearly", type: "ProductList", props: {} },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a TabView with no tabs", () => {
+    const result = validatePaywallSpec(
+      spec({
+        id: "root",
+        type: "VStack",
+        props: {},
+        children: [{ id: "tabs", type: "TabView", props: { tabs: [] }, children: [] }],
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, nodeId: "tabs" });
+  });
+
+  it("caps the number of product lists", () =>{
     const result = validatePaywallSpec(
       spec({
         id: "root",

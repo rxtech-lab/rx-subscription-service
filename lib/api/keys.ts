@@ -121,7 +121,7 @@ export async function createApiKey(input: {
 }) {
   if (!input.name.trim()) throw new ValidationError("name is required");
   if (!isApiEnvironment(input.environment)) {
-    throw new ValidationError("environment must be sandbox or production");
+    throw new ValidationError("environment must be xcode, sandbox, or production");
   }
   const kind = input.kind ?? "secret";
   if (!isApiKeyKind(kind)) {

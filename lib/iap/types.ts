@@ -23,7 +23,7 @@ export interface StoreProviderAdapter<TTransaction, TNotification> {
   readonly provider: StoreProvider;
   verifyTransaction(input: {
     applicationId: string;
-    environment: "sandbox" | "production";
+    environment: "xcode" | "sandbox" | "production";
     signedTransaction: string;
   }): Promise<TTransaction>;
   verifyNotification(input: {

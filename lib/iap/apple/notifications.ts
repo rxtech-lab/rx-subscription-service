@@ -105,6 +105,8 @@ async function sendConsumptionIfConsented(input: {
     .where(
       and(
         eq(storeTransactions.provider, "apple_app_store"),
+        eq(storeTransactions.applicationId, input.applicationId),
+        eq(storeTransactions.environment, input.environment),
         eq(storeTransactions.transactionId, input.transactionId),
       ),
     )

@@ -10,6 +10,7 @@ import {
   outline,
   pasteNode,
   PaywallEditError,
+  defaultNodeFor,
   removeNode,
   shiftNode,
   updateNodeProps,
@@ -161,5 +162,95 @@ describe("tree operations", () => {
       "2:Divider",
       "1:Spacer",
     ]);
+  });
+});
+
+function tabFixture(): PaywallSpec {
+  return {
+    version: 1,
+    theme: TEMPLATES.blank.build().theme,
+    root: {
+      id: "root",
+      type: "VStack",
+      props: {},
+      children: [
+        {
+          id: "tabs",
+          type: "TabView",
+          props: { tabs: [{ title: "Monthly" }, { title: "Yearly" }] },
+          children: [
+            { id: "page-1", type: "VStack", props: {}, children: [] },
+            { id: "page-2", type: "VStack", props: {}, children: [] },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+function titles(spec: PaywallSpec): string[] {
+  const tabs = findNode(spec, "tabs")!.props.tabs as { title: string }[];
+  return tabs.map((tab) => tab.title);
+}
+
+function pages(spec: PaywallSpec): string[] {
+  return (findNode(spec, "tabs")!.children ?? []).map((child) => child.id);
+}
+
+describe("TabView tabs follow their pages", () => {
+  it("titles a newly inserted page at the position it landed", () => {
+    const next = insertNode(tabFixture(), "tabs", 1, {
+      id: "page-mid",
+      type: "VStack",
+      props: {},
+      children: [],
+    });
+    expect(pages(next)).toEqual(["page-1", "page-mid", "page-2"]);
+    expect(titles(next)).toEqual(["Monthly", "Tab 3", "Yearly"]);
+  });
+
+  it("drops the title of a removed page, not the last one", () => {
+    const next = removeNode(tabFixture(), "page-1");
+    expect(pages(next)).toEqual(["page-2"]);
+    expect(titles(next)).toEqual(["Yearly"]);
+  });
+
+  it("carries a title along when its page is reordered", () => {
+    const next = moveNode(tabFixture(), "page-2", "tabs", 0);
+    expect(pages(next)).toEqual(["page-2", "page-1"]);
+    expect(titles(next)).toEqual(["Yearly", "Monthly"]);
+  });
+
+  it("copies the source title when a page is duplicated", () => {
+    const next = duplicateNode(tabFixture(), "page-1");
+    expect(titles(next)).toEqual(["Monthly", "Monthly", "Yearly"]);
+  });
+
+  it("leaves other containers' props alone", () => {
+    const spec = fixture();
+    const next = removeNode(spec, "b");
+    expect(findNode(next, "box")!.props).toEqual({});
+  });
+
+  it("refuses a sixth tab", () => {
+    let spec = tabFixture();
+    for (const id of ["p3", "p4", "p5"]) {
+      spec = insertNode(spec, "tabs", undefined, { id, type: "VStack", props: {}, children: [] });
+    }
+    expect(() =>
+      insertNode(spec, "tabs", undefined, { id: "p6", type: "VStack", props: {}, children: [] }),
+    ).toThrow(PaywallEditError);
+  });
+});
+
+describe("defaultNodeFor", () => {
+  it("starts a TabView with a named page per tab and unique ids", () => {
+    const node = defaultNodeFor("TabView", new Set(["root"]));
+    expect(node.children).toHaveLength(2);
+    expect((node.props.tabs as { title: string }[]).map((tab) => tab.title)).toEqual([
+      "Monthly",
+      "Yearly",
+    ]);
+    expect(collectIds(node).size).toBe(3);
   });
 });

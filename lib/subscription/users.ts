@@ -6,6 +6,7 @@ import {
   balances,
   balanceUnits,
   ledgerEntries,
+  type ApiEnvironment,
   type BalanceExpiryPolicy,
   type LedgerKind,
 } from "@/lib/db/schema";
@@ -40,7 +41,7 @@ export async function createAppUser(input: {
   }
   if (
     await getAppUserByRxlabId(input.applicationId, rxlabUserId, {
-      isTest: false,
+      environment: "production",
     })
   ) {
     throw new ValidationError("This RxLab user already belongs to the application");
@@ -56,6 +57,7 @@ export async function createAppUser(input: {
       email,
       displayName,
       level: 0,
+      environment: "production",
       createdAt: now,
       updatedAt: now,
     })
@@ -86,13 +88,13 @@ export async function ensureAppUser(input: {
   rxlabUserId: string;
   email?: string | null;
   displayName?: string | null;
-  isTest: boolean;
+  environment: ApiEnvironment;
 }) {
   const rxlabUserId = input.rxlabUserId.trim();
   if (!rxlabUserId) throw new ValidationError("rxlabUserId is required");
 
   const existing = await getAppUserByRxlabId(input.applicationId, rxlabUserId, {
-    isTest: input.isTest,
+    environment: input.environment,
   });
   if (existing) {
     // Keep contact details fresh, but never overwrite with nothing.
@@ -124,8 +126,12 @@ export async function ensureAppUser(input: {
       email: input.email ?? null,
       displayName: input.displayName ?? null,
       level: 0,
-      isTest: input.isTest,
-      testNote: input.isTest ? "Created by sandbox API" : null,
+      environment: input.environment,
+      isTest: input.environment !== "production",
+      testNote:
+        input.environment === "production"
+          ? null
+          : `Created by ${input.environment} API`,
       createdAt: now,
       updatedAt: now,
     })
@@ -138,7 +144,7 @@ export async function ensureAppUser(input: {
     (await requireAppUserByRxlabId(
       input.applicationId,
       rxlabUserId,
-      input.isTest,
+      input.environment,
     ))
   );
 }
@@ -146,7 +152,7 @@ export async function ensureAppUser(input: {
 export async function getAppUserByRxlabId(
   applicationId: string,
   rxlabUserId: string,
-  options: { isTest: boolean },
+  options: { environment: ApiEnvironment },
 ) {
   const [user] = await db
     .select()
@@ -155,7 +161,7 @@ export async function getAppUserByRxlabId(
       and(
         eq(appUsers.applicationId, applicationId),
         eq(appUsers.rxlabUserId, rxlabUserId),
-        eq(appUsers.isTest, options.isTest),
+        eq(appUsers.environment, options.environment),
       ),
     )
     .limit(1);
@@ -165,9 +171,11 @@ export async function getAppUserByRxlabId(
 async function requireAppUserByRxlabId(
   applicationId: string,
   rxlabUserId: string,
-  isTest: boolean,
+  environment: ApiEnvironment,
 ) {
-  const user = await getAppUserByRxlabId(applicationId, rxlabUserId, { isTest });
+  const user = await getAppUserByRxlabId(applicationId, rxlabUserId, {
+    environment,
+  });
   if (!user) throw new NotFoundError("app user", rxlabUserId);
   return user;
 }

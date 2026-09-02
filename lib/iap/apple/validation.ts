@@ -27,7 +27,11 @@ export function assertAppleEnvironment(
   expected: ApiEnvironment,
 ) {
   const expectedApple =
-    expected === "sandbox" ? Environment.SANDBOX : Environment.PRODUCTION;
+    expected === "xcode"
+      ? Environment.XCODE
+      : expected === "sandbox"
+        ? Environment.SANDBOX
+        : Environment.PRODUCTION;
   if (actual !== expectedApple) {
     throw new AppleValidationError(
       `App Store environment mismatch: expected ${expectedApple}`,

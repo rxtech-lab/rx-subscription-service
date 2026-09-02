@@ -13,6 +13,7 @@ import {
   E2E_SECRET,
   E2E_SECOND_PLAN_ID,
   E2E_UNIT_ID,
+  E2E_XCODE_API_KEY,
 } from "./fixtures";
 
 const PRODUCT_ID = "com.rxlab.e2e.points100";
@@ -25,6 +26,7 @@ function signed(value: unknown) {
 test.describe.serial("Apple StoreKit fulfillment", () => {
   let admin: APIRequestContext;
   let api: APIRequestContext;
+  let xcodeApi: APIRequestContext;
   let topupId: string;
   let accountToken: string;
   let purchasePayload: Record<string, unknown>;
@@ -41,10 +43,17 @@ test.describe.serial("Apple StoreKit fulfillment", () => {
         "X-E2E-Secret": E2E_SECRET,
       },
     });
+    xcodeApi = await createRequest.newContext({
+      baseURL: E2E_BASE_URL,
+      extraHTTPHeaders: {
+        "X-Api-Key": E2E_XCODE_API_KEY,
+        "X-E2E-Secret": E2E_SECRET,
+      },
+    });
   });
 
   test.afterAll(async () => {
-    await Promise.all([admin.dispose(), api.dispose()]);
+    await Promise.all([admin.dispose(), api.dispose(), xcodeApi.dispose()]);
   });
 
   test("configures a consumable and returns a stable sandbox account token", async () => {
@@ -93,6 +102,55 @@ test.describe.serial("Apple StoreKit fulfillment", () => {
       data: { rxlabUserId: USER_ID, consented: false },
     });
     await expect(withdrawn.json()).resolves.toMatchObject({ consented: false });
+  });
+
+  test("fulfills an Xcode StoreKit transaction in the isolated Xcode environment", async () => {
+    const tokenResponse = await xcodeApi.post("/api/v1/iap/apple/account-token", {
+      data: { rxlabUserId: USER_ID },
+    });
+    expect(tokenResponse.ok()).toBe(true);
+    const tokenBody = (await tokenResponse.json()) as {
+      appAccountToken: string;
+      environment: string;
+    };
+    expect(tokenBody.environment).toBe("xcode");
+
+    const transaction = signed({
+      transactionId: "apple-e2e-xcode-transaction-1",
+      originalTransactionId: "apple-e2e-xcode-transaction-1",
+      bundleId: "com.rxlab.e2e",
+      productId: PRODUCT_ID,
+      purchaseDate: Date.now(),
+      originalPurchaseDate: Date.now(),
+      quantity: 1,
+      type: "Consumable",
+      appAccountToken: tokenBody.appAccountToken,
+      signedDate: Date.now(),
+      environment: "Xcode",
+      currency: "USD",
+      price: 1290,
+    });
+    const fulfilled = await xcodeApi.post("/api/v1/iap/apple/transactions", {
+      data: { rxlabUserId: USER_ID, signedTransaction: transaction },
+    });
+    expect(fulfilled.ok()).toBe(true);
+    await expect(fulfilled.json()).resolves.toMatchObject({
+      processed: "new",
+      transaction: { environment: "xcode", quantity: 1 },
+      purchase: { billingProvider: "apple_app_store", unitsGranted: 100 },
+    });
+
+    const [xcodeEntitlements, sandboxEntitlements] = await Promise.all([
+      xcodeApi.get("/api/v1/entitlements", { params: { rxlabUserId: USER_ID } }),
+      api.get("/api/v1/entitlements", { params: { rxlabUserId: USER_ID } }),
+    ]);
+    const xcodeBody = await xcodeEntitlements.json();
+    const sandboxBody = await sandboxEntitlements.json();
+    expect(xcodeBody.user.id).not.toBe(sandboxBody.user.id);
+    expect(xcodeBody.balances).toEqual([
+      expect.objectContaining({ unit: "points", amount: 100 }),
+    ]);
+    expect(sandboxBody.balances).toEqual([]);
   });
 
   test("publishes StoreKit purchase options and fulfills quantity once", async () => {

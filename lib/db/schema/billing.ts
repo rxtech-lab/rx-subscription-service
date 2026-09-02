@@ -86,6 +86,7 @@ export const subscriptions = sqliteTable(
     index("subscriptions_plan_idx").on(table.planId),
     uniqueIndex("subscriptions_provider_id_idx").on(
       table.billingProvider,
+      table.appUserId,
       table.providerSubscriptionId,
     ),
   ],
@@ -145,6 +146,7 @@ export const purchases = sqliteTable(
     index("purchases_app_created_idx").on(table.applicationId, table.createdAt),
     uniqueIndex("purchases_provider_transaction_idx").on(
       table.billingProvider,
+      table.appUserId,
       table.providerTransactionId,
     ),
     check("purchases_quantity_positive", sql`${table.quantity} >= 1`),

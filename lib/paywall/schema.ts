@@ -106,6 +106,9 @@ export type TextStyle = (typeof TEXT_STYLES)[number];
 
 export const BILLING_INTERVAL_OPTIONS = ["month", "quarter", "year", "one_time"] as const;
 
+/** Tabs a TabView may hold; a mobile tab bar stops reading past this. */
+export const MAX_TABS = 5;
+
 const zAlignment9 = z.enum([
   "topLeading",
   "top",
@@ -153,6 +156,45 @@ export const nodeProps = {
     .object({
       axis: z.enum(["vertical", "horizontal"]).optional(),
       showsIndicators: z.boolean().optional(),
+    })
+    .strict(),
+  TabView: z
+    .object({
+      tabs: z
+        .array(
+          z
+            .object({
+              title: z.string().max(40),
+              icon: z
+                .string()
+                .max(80)
+                .optional()
+                .describe("An SF Symbol name shown before the title, e.g. calendar."),
+              badge: z
+                .string()
+                .max(20)
+                .optional()
+                .describe("A small label on the tab itself, e.g. -20%."),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_TABS)
+        .describe("One entry per child, in order: the first tab shows the first child."),
+      selectedIndex: z
+        .number()
+        .int()
+        .min(0)
+        .max(MAX_TABS - 1)
+        .optional()
+        .describe("The tab open when the paywall appears. Defaults to the first."),
+      style: z
+        .enum(["segmented", "underline", "pill"])
+        .optional()
+        .describe("How the tab bar is drawn. Defaults to segmented."),
+      tint: colorSchema.optional().describe("The selected tab's color. Defaults to primary."),
+      barBackground: colorSchema.optional().describe("Behind the tab bar. Defaults to a muted fill."),
+      spacing: z.number().min(0).optional().describe("Points between the tab bar and its content."),
     })
     .strict(),
 
@@ -215,6 +257,29 @@ export const nodeProps = {
         })
         .strict()
         .optional(),
+      periodFilter: z
+        .object({
+          intervals: z
+            .array(z.enum(BILLING_INTERVAL_OPTIONS))
+            .max(BILLING_INTERVAL_OPTIONS.length)
+            .optional()
+            .describe(
+              "Which periods to offer. Omit to offer every period the matching plans actually use.",
+            ),
+          defaultInterval: z
+            .enum(BILLING_INTERVAL_OPTIONS)
+            .optional()
+            .describe("The period selected first. Defaults to the first option."),
+          showAll: z.boolean().optional().describe("Offer an All option that clears the filter."),
+          allLabel: z.string().max(24).optional().describe("Label of the All option. Defaults to All."),
+          style: z.enum(["segmented", "chips"]).optional(),
+          alignment: z.enum(["leading", "center", "trailing"]).optional(),
+        })
+        .strict()
+        .optional()
+        .describe(
+          "A period switcher above the list, so one list can offer monthly and yearly plans. Options with no plans are dropped, and the switcher is hidden unless at least two remain.",
+        ),
       sort: z
         .enum(["default", "priceAscending", "priceDescending"])
         .optional()
@@ -281,6 +346,7 @@ export const LAYOUT_TYPES = [
   "Grid",
   "List",
   "ScrollView",
+  "TabView",
 ] as const satisfies readonly NodeType[];
 
 export const NODE_GROUPS: { label: string; types: NodeType[] }[] = [
@@ -542,6 +608,8 @@ export const NODE_DESCRIPTIONS: Record<NodeType, string> = {
   Grid: "A fixed-column grid, for feature tiles or a plan comparison.",
   List: "A vertical list with optional separators between rows.",
   ScrollView: "Scrollable container. Usually the root, holding one VStack.",
+  TabView:
+    "A tab bar over swappable pages — one child per tab, so monthly and yearly plans can each get their own content.",
   Text: "A run of text in one SwiftUI text style.",
   Image: "A remote image by url, or a system icon by symbol name.",
   Button: "A tappable control that runs one action.",

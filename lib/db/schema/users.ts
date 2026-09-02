@@ -7,12 +7,16 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import { applications } from "./applications";
+import {
+  API_ENVIRONMENTS,
+  applications,
+  type ApiEnvironment,
+} from "./applications";
 import { balanceUnits } from "./units";
 
 /**
  * A user *within* an application environment. The same rxlab identity
- * (`rxlabUserId`, the token `sub`) gets independent production and sandbox
+ * (`rxlabUserId`, the token `sub`) gets independent production, sandbox, and Xcode
  * rows — and therefore independent balances, level, usage, and purchases.
  */
 export const appUsers = sqliteTable(
@@ -23,6 +27,10 @@ export const appUsers = sqliteTable(
       .notNull()
       .references(() => applications.id, { onDelete: "cascade" }),
     rxlabUserId: text("rxlab_user_id").notNull(),
+    environment: text("environment", { enum: API_ENVIRONMENTS })
+      .$type<ApiEnvironment>()
+      .notNull()
+      .default("production"),
     email: text("email"),
     displayName: text("display_name"),
     /** Application-defined tier. Meaning is owned by the app, not by us. */
@@ -53,10 +61,14 @@ export const appUsers = sqliteTable(
     uniqueIndex("app_users_app_rxlab_env_idx").on(
       table.applicationId,
       table.rxlabUserId,
-      table.isTest,
+      table.environment,
     ),
     index("app_users_rxlab_idx").on(table.rxlabUserId),
     index("app_users_app_test_idx").on(table.applicationId, table.isTest),
+    index("app_users_app_environment_idx").on(
+      table.applicationId,
+      table.environment,
+    ),
   ],
 );
 

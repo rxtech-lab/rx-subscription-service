@@ -135,7 +135,7 @@ export async function resolveRequestUser(
       // rewrite the profile it is signed in as.
       email: context.user.email,
       displayName: context.user.displayName,
-      isTest: context.environment === "sandbox",
+      environment: context.environment,
     });
   }
 
@@ -147,7 +147,7 @@ export async function resolveRequestUser(
     rxlabUserId: requested,
     email: input.email ?? null,
     displayName: input.displayName ?? null,
-    isTest: context.environment === "sandbox",
+    environment: context.environment,
   });
 }
 
@@ -168,7 +168,7 @@ export async function requireApiReservation(
       and(
         eq(balanceReservations.id, reservationId),
         eq(balanceReservations.applicationId, context.application.id),
-        eq(appUsers.isTest, context.environment === "sandbox"),
+        eq(appUsers.environment, context.environment),
       ),
     )
     .limit(1);

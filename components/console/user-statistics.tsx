@@ -11,6 +11,7 @@ import type {
   ConsumptionSeries,
   UsageSeries,
 } from "@/lib/subscription/consumption";
+import type { ApiEnvironment } from "@/lib/db/schema";
 import {
   GRANULARITIES,
   type Granularity,
@@ -25,7 +26,7 @@ export function UserStatistics({
   usage,
   error,
 }: {
-  environment: "production" | "sandbox";
+  environment: ApiEnvironment;
   from: Date;
   to: Date;
   granularity: Granularity;

@@ -12,6 +12,7 @@ import {
   E2E_SECRET,
   E2E_UNIT_ID,
   E2E_USAGE_ITEM_ID,
+  E2E_XCODE_API_KEY,
 } from "./fixtures";
 
 const headers = (apiKey: string) => ({
@@ -19,28 +20,39 @@ const headers = (apiKey: string) => ({
   "X-Api-Key": apiKey,
 });
 
-test("sandbox and production keys isolate the same external user", async ({
+test("Xcode, sandbox, and production keys isolate the same external user", async ({
   request,
 }) => {
   const rxlabUserId = `environment-${crypto.randomUUID()}`;
 
-  const [productionResponse, sandboxResponse] = await Promise.all([
+  const [xcodeResponse, sandboxResponse, productionResponse] = await Promise.all([
     request.get(`${E2E_BASE_URL}/api/v1/entitlements`, {
-      headers: headers(E2E_API_KEY),
+      headers: headers(E2E_XCODE_API_KEY),
       params: { rxlabUserId },
     }),
     request.get(`${E2E_BASE_URL}/api/v1/entitlements`, {
       headers: headers(E2E_SANDBOX_API_KEY),
       params: { rxlabUserId },
     }),
+    request.get(`${E2E_BASE_URL}/api/v1/entitlements`, {
+      headers: headers(E2E_API_KEY),
+      params: { rxlabUserId },
+    }),
   ]);
+  expect(xcodeResponse.ok()).toBe(true);
   expect(productionResponse.ok()).toBe(true);
   expect(sandboxResponse.ok()).toBe(true);
 
-  const production = await productionResponse.json();
-  const sandbox = await sandboxResponse.json();
+  const [xcode, sandbox, production] = await Promise.all([
+    xcodeResponse.json(),
+    sandboxResponse.json(),
+    productionResponse.json(),
+  ]);
+  expect(xcode.user.rxlabUserId).toBe(rxlabUserId);
   expect(production.user.rxlabUserId).toBe(rxlabUserId);
   expect(sandbox.user.rxlabUserId).toBe(rxlabUserId);
+  expect(xcode.user.id).not.toBe(sandbox.user.id);
+  expect(xcode.user.id).not.toBe(production.user.id);
   expect(production.user.id).not.toBe(sandbox.user.id);
 
   const idempotencyKey = `same-operation-${crypto.randomUUID()}`;
@@ -52,21 +64,31 @@ test("sandbox and production keys isolate the same external user", async ({
     description: "Environment isolation check",
     idempotencyKey,
   };
-  const [productionCredit, sandboxCredit] = await Promise.all([
+  const [xcodeCredit, sandboxCredit, productionCredit] = await Promise.all([
     request.post(`${E2E_BASE_URL}/api/v1/balances`, {
-      headers: headers(E2E_API_KEY),
+      headers: headers(E2E_XCODE_API_KEY),
       data: mutation,
     }),
     request.post(`${E2E_BASE_URL}/api/v1/balances`, {
       headers: headers(E2E_SANDBOX_API_KEY),
       data: mutation,
     }),
+    request.post(`${E2E_BASE_URL}/api/v1/balances`, {
+      headers: headers(E2E_API_KEY),
+      data: mutation,
+    }),
   ]);
+  expect(xcodeCredit.ok()).toBe(true);
   expect(productionCredit.ok()).toBe(true);
   expect(sandboxCredit.ok()).toBe(true);
-  expect((await productionCredit.json()).entryId).not.toBe(
-    (await sandboxCredit.json()).entryId,
-  );
+  const [xcodeEntry, sandboxEntry, productionEntry] = await Promise.all([
+    xcodeCredit.json(),
+    sandboxCredit.json(),
+    productionCredit.json(),
+  ]);
+  expect(xcodeEntry.entryId).not.toBe(sandboxEntry.entryId);
+  expect(xcodeEntry.entryId).not.toBe(productionEntry.entryId);
+  expect(productionEntry.entryId).not.toBe(sandboxEntry.entryId);
 });
 
 test("the dashboard switches an external user between production and sandbox data", async ({

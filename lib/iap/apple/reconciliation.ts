@@ -94,7 +94,7 @@ async function reconcileActiveSubscriptions(
         eq(subscriptions.applicationId, integration.applicationId),
         eq(subscriptions.billingProvider, "apple_app_store"),
         inArray(subscriptions.status, ["trialing", "active", "past_due"]),
-        eq(appUsers.isTest, environment === "sandbox"),
+        eq(appUsers.environment, environment),
       ),
     );
   const client = appleApiClient(integration, environment);

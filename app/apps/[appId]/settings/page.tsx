@@ -353,9 +353,11 @@ export default async function SettingsPage({
                     <Td>
                       <span
                         className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold capitalize ${
-                          key.environment === "sandbox"
-                            ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
-                            : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                          key.environment === "xcode"
+                            ? "bg-violet-50 text-violet-700 ring-1 ring-violet-200"
+                            : key.environment === "sandbox"
+                              ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                              : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
                         }`}
                       >
                         {key.environment}
@@ -429,9 +431,10 @@ export default async function SettingsPage({
               <ApiKeyKindFields clients={oauthClients} />
               <Field
                 label="Environment"
-                hint="Sandbox data is isolated and uses the Stripe sandbox account"
+                hint="Xcode is the default for local StoreKit testing; Xcode and sandbox data are isolated and both use Stripe test mode"
               >
-                <Select name="environment" defaultValue="sandbox" required>
+                <Select name="environment" defaultValue="xcode" required>
+                  <option value="xcode">Xcode</option>
                   <option value="sandbox">Sandbox</option>
                   <option value="production">Production</option>
                 </Select>
@@ -447,7 +450,7 @@ export default async function SettingsPage({
           <Card>
             <CardHeader
               title="Using the API"
-              description="Send the key as X-Api-Key. The key selects sandbox or production, and its kind decides what it may do."
+              description="Send the key as X-Api-Key. The key selects Xcode, sandbox, or production, and its kind decides what it may do."
             />
             <pre className="overflow-x-auto px-5 py-4 text-xs text-neutral-700">
               {`# --- Secret key, from your backend -----------------------------

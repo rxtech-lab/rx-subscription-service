@@ -69,10 +69,19 @@ the same `rxlabUserId` to `POST /api/v1/iap/apple/transactions`. Call
 `Transaction.finish()` only after that request succeeds. Restoration enumerates
 current StoreKit entitlements and submits each JWS through the same endpoint.
 
-Sandbox API keys create separate test users and account tokens. Production keys
-create production users and tokens. A signed environment mismatch is rejected.
-The E2E fake adapter accepts `e2e.` payloads only when `IS_E2E=true`; production
-always uses Apple's certificate-chain verification.
+Xcode, sandbox, and production API keys create separate users and account
+tokens. Xcode is the default selection when a key is created in the console. A
+signed environment mismatch is rejected. Xcode transactions are fulfilled from
+the submitted JWS without an App Store Server API lookup because their
+transaction IDs exist only in the local StoreKit test session. The app must
+forward renewal, expiration, and restore transactions because Xcode sends no
+server notifications. The E2E fake adapter accepts `e2e.` payloads only when
+`IS_E2E=true`; sandbox and production always use Apple's certificate-chain
+verification.
+
+Apple's server library validates the shape, bundle, and environment of Xcode
+payloads but deliberately skips cryptographic verification. Xcode data is
+therefore development-only and must never be used as production value.
 
 Ship a **publishable** key in the app, not a secret one — see "Two kinds of
 key" in the README. All three `iap/apple/*` endpoints accept it, provided the

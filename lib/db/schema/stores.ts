@@ -183,10 +183,12 @@ export const storeTransactions = sqliteTable(
   (table) => [
     uniqueIndex("store_transactions_provider_transaction_idx").on(
       table.provider,
+      table.appUserId,
       table.transactionId,
     ),
     index("store_transactions_original_idx").on(
       table.provider,
+      table.appUserId,
       table.originalTransactionId,
     ),
     index("store_transactions_user_idx").on(table.appUserId, table.purchaseAt),
