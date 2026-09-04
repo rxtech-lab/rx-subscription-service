@@ -43,6 +43,7 @@ export async function createPlanAction(
         priceAmountCents: moneyToCents(formData, "price"),
         currency: text(formData, "currency") || "usd",
         trialDays: integer(formData, "trialDays", 0),
+        autoSubscribe: checkbox(formData, "autoSubscribe"),
         actor,
       });
     });
@@ -69,6 +70,7 @@ export async function updatePlanAction(
         priceAmountCents: moneyToCents(formData, "price"),
         currency: text(formData, "currency") || undefined,
         trialDays: integer(formData, "trialDays", 0),
+        autoSubscribe: checkbox(formData, "autoSubscribe"),
         actor,
       });
     });

@@ -21,6 +21,7 @@ import {
   usageLimitForSubscriptionStatus,
 } from "./entitlement-rules";
 import { getRolePermissions, listRoles } from "./roles";
+import { syncInternalDefaultSubscriptions } from "./subscriptions";
 
 const ACTIVE_STATUSES = ["trialing", "active", "past_due"] as const;
 
@@ -110,6 +111,7 @@ export async function resolveEntitlements(input: {
   applicationId: string;
   appUserId: string;
 }): Promise<ResolvedEntitlements> {
+  await syncInternalDefaultSubscriptions(input);
   const [subscriptionRows, oneTimePurchaseRows] = await Promise.all([
     db
       .select({

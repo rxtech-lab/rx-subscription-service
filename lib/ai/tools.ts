@@ -425,14 +425,14 @@ export function buildTools(applicationId: string, actor: Actor) {
   const writeTools = {
     createPlan: tool({
       description:
-        "Create a plan. planGroup defaults to default; users can hold only one plan per group. Use billingInterval one_time for non-recurring purchases. Creating the plan does not grant a role; add a role entitlement separately when the plan represents an access tier.",
+        "Create a plan. planGroup defaults to default; users can hold only one plan per group. A free recurring plan with no trial may set autoSubscribe so users without a plan in that group receive it automatically. Use billingInterval one_time for non-recurring purchases. Creating the plan does not grant a role; add a role entitlement separately when the plan represents an access tier.",
       inputSchema: writeToolSchemas.createPlan,
       needsApproval: true,
       execute: runWrite("createPlan"),
     }),
     updatePlan: tool({
       description:
-        "Update a plan's name, description, group, price, or trial length.",
+        "Update a plan's name, description, group, price, trial length, or automatic-subscription setting.",
       inputSchema: writeToolSchemas.updatePlan,
       needsApproval: true,
       execute: runWrite("updatePlan"),
@@ -632,6 +632,7 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- Permission keys are bare, like `read:a`. The `:all` or `:id1,id2` suffix is a per-role scope, not part of the key.",
     "- A quarterly plan is billingInterval `quarter`, not three months.",
     "- Every plan belongs to a `planGroup`, defaulting to `default`. A user can hold only one plan in a group, but may hold plans from different groups. Use distinct groups for plans that can be combined.",
+    "- `autoSubscribe` is only for a free recurring plan with no trial. At most one plan per group may enable it; users without a plan in that group are enrolled internally without Stripe or an app store.",
     "- Usage items reset by policy: `never`, `rolling_window` (from first use), `calendar_period` (snapped to clock boundaries), or `billing_period` (follows the subscription).",
     "- Before creating a topup, decide from the user's request who may buy it. Do not invent a restriction when the topup is meant for everyone or the user did not specify one.",
     "- Set `createTopup.eligibility` to `standalone` when anyone may buy it, `plan` when one specific subscribed plan is required, or `role` for an access tier shared by plans. The create tool persists that link atomically with the topup.",

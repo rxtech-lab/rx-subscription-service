@@ -5,12 +5,19 @@ export const E2E_SECRET = "rx-subscription-playwright-only";
 export const E2E_SANDBOX_WEBHOOK_SECRET = "whsec_playwright_sandbox";
 export const E2E_API_KEY =
   "rxs_e2e000000000000000000000000000000000000000000000000000000000000";
+export const E2E_DEFAULT_PLAN_API_KEY =
+  "rxs_default000000000000000000000000000000000000000000000000000000000";
 export const E2E_SANDBOX_API_KEY =
   "rxs_sandbox_e2e000000000000000000000000000000000000000000000000000000000000";
 export const E2E_XCODE_API_KEY =
   "rxs_xcode_e2e000000000000000000000000000000000000000000000000000000000000";
 
 export const E2E_APPLICATION_ID = "e2e-app";
+export const E2E_DEFAULT_PLAN_APPLICATION_ID = "e2e-default-plan-app";
+export const E2E_DEFAULT_PLAN_ID = "e2e-free-default-plan";
+export const E2E_DEFAULT_PLAN_PAID_ID = "e2e-free-default-paid-plan";
+export const E2E_DEFAULT_PLAN_UNIT_ID = "e2e-free-default-points";
+export const E2E_DEFAULT_PLAN_USAGE_ID = "e2e-free-default-usage";
 export const E2E_UNIT_ID = "e2e-points";
 export const E2E_PLAN_ID = "e2e-pro-plan";
 export const E2E_SECOND_PLAN_ID = "e2e-plus-plan";

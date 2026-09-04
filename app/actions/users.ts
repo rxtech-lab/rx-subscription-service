@@ -18,7 +18,10 @@ import {
   createAppUser,
   setUserLevel,
 } from "@/lib/subscription/users";
-import { cancelSubscription } from "@/lib/subscription/subscriptions";
+import {
+  cancelSubscription,
+  syncInternalDefaultSubscriptions,
+} from "@/lib/subscription/subscriptions";
 import { resetUsageCounter } from "@/lib/subscription/usage";
 import {
   checkbox,
@@ -45,12 +48,16 @@ export async function createAppUserAction(
       );
       if (!rxlabUser) throw new ValidationError("RxLab user not found");
 
-      await createAppUser({
+      const user = await createAppUser({
         applicationId,
         rxlabUserId: rxlabUser.sub,
         email: rxlabUser.email,
         displayName: rxlabUser.name,
         actor,
+      });
+      await syncInternalDefaultSubscriptions({
+        applicationId,
+        appUserId: user.id,
       });
     });
   } catch (error) {

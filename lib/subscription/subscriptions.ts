@@ -19,9 +19,11 @@ import {
   type Actor,
 } from "./shared";
 import { creditBalance } from "./users";
-import { resolveExpiresAt } from "./balance-expiry-rules";
+import { addMonthsUtc, resolveExpiresAt } from "./balance-expiry-rules";
 import { balanceAmountForSubscriptionStatus } from "./entitlement-rules";
 import { stampLotsForPlanEnd } from "./balance-lots";
+import { requirePlan } from "./plans";
+import { simulatedNow } from "./test-clock";
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due"] as const;
 
@@ -29,6 +31,8 @@ export interface OwnedPlan {
   planId: string;
   planName: string;
   planGroup: string;
+  billingProvider: string;
+  autoSubscribe: boolean;
 }
 
 /** Active recurring and paid/in-progress one-time plans owned by one user. */
@@ -52,6 +56,8 @@ export async function listOwnedPlans(input: {
         planId: plans.id,
         planName: plans.name,
         planGroup: plans.planGroup,
+        billingProvider: subscriptions.billingProvider,
+        autoSubscribe: plans.autoSubscribe,
       })
       .from(subscriptions)
       .innerJoin(plans, eq(subscriptions.planId, plans.id))
@@ -61,6 +67,8 @@ export async function listOwnedPlans(input: {
         planId: plans.id,
         planName: plans.name,
         planGroup: plans.planGroup,
+        billingProvider: purchases.billingProvider,
+        autoSubscribe: plans.autoSubscribe,
       })
       .from(purchases)
       .innerJoin(plans, eq(purchases.planId, plans.id))
@@ -89,7 +97,9 @@ export async function assertPlanGroupAvailable(input: {
     excludeSubscriptionId: input.excludeSubscriptionId,
   });
   const conflict = ownedPlans.find(
-    (ownedPlan) => ownedPlan.planGroup === input.plan.planGroup,
+    (ownedPlan) =>
+      ownedPlan.planGroup === input.plan.planGroup &&
+      !(ownedPlan.billingProvider === "internal" && ownedPlan.autoSubscribe),
   );
   if (!conflict) return;
   if (conflict.planId === input.plan.id) {
@@ -98,6 +108,274 @@ export async function assertPlanGroupAvailable(input: {
   throw new ValidationError(
     `User already has "${conflict.planName}" in plan group "${conflict.planGroup}". A user can only have one plan in each group.`,
   );
+}
+
+function internalPeriodEnd(plan: Plan, start: Date): Date {
+  const months =
+    plan.billingInterval === "year"
+      ? 12 * plan.intervalCount
+      : plan.billingInterval === "quarter"
+        ? 3 * plan.intervalCount
+        : plan.intervalCount;
+  return addMonthsUtc(start, months);
+}
+
+function snapshottedBalanceGrants(
+  snapshot: Record<string, unknown> | null,
+): BalanceGrantEntitlement[] | undefined {
+  const entitlements = snapshot?.entitlements;
+  return Array.isArray(entitlements)
+    ? (entitlements as BalanceGrantEntitlement[])
+    : undefined;
+}
+
+async function endInternalSubscriptions(ids: string[], endedAt: Date) {
+  if (ids.length === 0) return;
+  const ended = await db
+    .update(subscriptions)
+    .set({
+      status: "canceled",
+      cancelAtPeriodEnd: false,
+      endedAt,
+      updatedAt: new Date(),
+    })
+    .where(inArray(subscriptions.id, ids))
+    .returning({ id: subscriptions.id });
+  await Promise.all(
+    ended.map((row) =>
+      stampLotsForPlanEnd({ subscriptionId: row.id, endedAt }),
+    ),
+  );
+}
+
+/**
+ * Replace an automatic free tier once a paid provider confirms another plan in
+ * the same group. Checkout may be abandoned, so this runs at fulfillment, not
+ * when the user merely opens the payment page.
+ */
+export async function replaceInternalDefaultForPlan(input: {
+  applicationId: string;
+  appUserId: string;
+  planId: string;
+}) {
+  const target = await requirePlan(input.applicationId, input.planId);
+  const rows = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .innerJoin(plans, eq(subscriptions.planId, plans.id))
+    .where(
+      and(
+        eq(subscriptions.applicationId, input.applicationId),
+        eq(subscriptions.appUserId, input.appUserId),
+        eq(subscriptions.billingProvider, "internal"),
+        inArray(subscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+        eq(plans.planGroup, target.planGroup),
+        eq(plans.autoSubscribe, true),
+      ),
+    );
+  await endInternalSubscriptions(
+    rows.map((row) => row.id),
+    new Date(),
+  );
+}
+
+/**
+ * Keep provider-free subscriptions current and enroll the user into every
+ * active automatic plan whose group is otherwise empty.
+ */
+export async function syncInternalDefaultSubscriptions(input: {
+  applicationId: string;
+  appUserId: string;
+  now?: Date;
+}) {
+  const [user] = await db
+    .select({ testClockOffsetMs: appUsers.testClockOffsetMs })
+    .from(appUsers)
+    .where(
+      and(
+        eq(appUsers.id, input.appUserId),
+        eq(appUsers.applicationId, input.applicationId),
+      ),
+    )
+    .limit(1);
+  if (!user) throw new NotFoundError("app user", input.appUserId);
+  const now = input.now ?? simulatedNow(user.testClockOffsetMs);
+  const internal = await db
+    .select({ subscription: subscriptions, plan: plans })
+    .from(subscriptions)
+    .innerJoin(plans, eq(subscriptions.planId, plans.id))
+    .where(
+      and(
+        eq(subscriptions.applicationId, input.applicationId),
+        eq(subscriptions.appUserId, input.appUserId),
+        eq(subscriptions.billingProvider, "internal"),
+        inArray(subscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+      ),
+    );
+
+  for (const row of internal) {
+    if (row.plan.billingInterval === "one_time") continue;
+    let periodStart = row.subscription.currentPeriodStart ?? row.subscription.startedAt;
+    let periodEnd =
+      row.subscription.currentPeriodEnd ?? internalPeriodEnd(row.plan, periodStart);
+
+    if (row.subscription.cancelAtPeriodEnd && now >= periodEnd) {
+      await endInternalSubscriptions([row.subscription.id], periodEnd);
+      continue;
+    }
+    if (row.subscription.cancelAtPeriodEnd) continue;
+
+    const elapsedPeriods: { start: Date; end: Date }[] = [];
+    while (now >= periodEnd) {
+      periodStart = periodEnd;
+      periodEnd = internalPeriodEnd(row.plan, periodStart);
+      elapsedPeriods.push({ start: periodStart, end: periodEnd });
+    }
+    if (elapsedPeriods.length === 0) continue;
+
+    const [advanced] = await db
+      .update(subscriptions)
+      .set({ currentPeriodStart: periodStart, currentPeriodEnd: periodEnd, updatedAt: now })
+      .where(
+        and(
+          eq(subscriptions.id, row.subscription.id),
+          eq(subscriptions.updatedAt, row.subscription.updatedAt),
+        ),
+      )
+      .returning({ id: subscriptions.id });
+    if (!advanced) continue;
+
+    for (const period of elapsedPeriods) {
+      await grantPeriodBalances({
+        applicationId: input.applicationId,
+        appUserId: input.appUserId,
+        planId: row.plan.id,
+        periodKey: String(period.start.getTime()),
+        periodEnd: period.end,
+        subscriptionId: row.subscription.id,
+        entitlements: snapshottedBalanceGrants(
+          row.subscription.entitlementSnapshot,
+        ),
+        status: "active",
+        idempotencyPrefix: "internal_plan_grant",
+      });
+    }
+  }
+
+  const defaultPlans = await db
+    .select()
+    .from(plans)
+    .where(
+      and(
+        eq(plans.applicationId, input.applicationId),
+        eq(plans.autoSubscribe, true),
+        eq(plans.status, "active"),
+        eq(plans.priceAmountCents, 0),
+        ne(plans.billingInterval, "one_time"),
+      ),
+    );
+  const owned = await listOwnedPlans(input);
+  const enrolled = [];
+
+  for (const plan of defaultPlans) {
+    if (owned.some((item) => item.planGroup === plan.planGroup)) continue;
+
+    const [previous] = await db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.applicationId, input.applicationId),
+          eq(subscriptions.appUserId, input.appUserId),
+          eq(subscriptions.planId, plan.id),
+          eq(subscriptions.billingProvider, "internal"),
+        ),
+      )
+      .limit(1);
+    const snapshot = await buildEntitlementSnapshot(plan.id);
+    const periodStart = now;
+    const periodEnd = internalPeriodEnd(plan, periodStart);
+    const providerSubscriptionId = `default:${plan.id}`;
+    const [subscription] = previous
+      ? await db
+          .update(subscriptions)
+          .set({
+            status: "active",
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            cancelAtPeriodEnd: false,
+            billingProvider: "internal",
+            providerSubscriptionId,
+            providerProductId: null,
+            stripeSubscriptionId: null,
+            stripeCustomerId: null,
+            entitlementSnapshot: snapshot,
+            startedAt: now,
+            endedAt: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(subscriptions.id, previous.id),
+              eq(subscriptions.status, previous.status),
+              eq(subscriptions.updatedAt, previous.updatedAt),
+            ),
+          )
+          .returning()
+      : await db
+          .insert(subscriptions)
+          .values({
+            id: newId(),
+            applicationId: input.applicationId,
+            appUserId: input.appUserId,
+            planId: plan.id,
+            status: "active",
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            cancelAtPeriodEnd: false,
+            billingProvider: "internal",
+            providerSubscriptionId,
+            entitlementSnapshot: snapshot,
+            startedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing()
+          .returning();
+    if (!subscription) continue;
+
+    await grantPeriodBalances({
+      applicationId: input.applicationId,
+      appUserId: input.appUserId,
+      planId: plan.id,
+      periodKey: String(periodStart.getTime()),
+      periodEnd,
+      subscriptionId: subscription.id,
+      entitlements: snapshot.entitlements as BalanceGrantEntitlement[],
+      status: "active",
+      idempotencyPrefix: "internal_plan_grant",
+    });
+    await recordAudit({
+      applicationId: input.applicationId,
+      actor: { type: "system", id: null },
+      action: previous
+        ? "subscription.auto_reactivate"
+        : "subscription.auto_create",
+      entityType: "subscription",
+      entityId: subscription.id,
+      before: previous ?? null,
+      after: subscription,
+    });
+    owned.push({
+      planId: plan.id,
+      planName: plan.name,
+      planGroup: plan.planGroup,
+      billingProvider: "internal",
+      autoSubscribe: true,
+    });
+    enrolled.push(subscription);
+  }
+  return enrolled;
 }
 
 /**
@@ -145,6 +423,7 @@ export async function listSubscriptions(
       planName: plans.name,
       planKey: plans.key,
       planGroup: plans.planGroup,
+      planAutoSubscribe: plans.autoSubscribe,
       status: subscriptions.status,
       currentPeriodStart: subscriptions.currentPeriodStart,
       currentPeriodEnd: subscriptions.currentPeriodEnd,
@@ -159,6 +438,8 @@ export async function listSubscriptions(
       isTest: appUsers.isTest,
       userEnvironment: appUsers.environment,
       userLabel: appUsers.displayName,
+      userEmail: appUsers.email,
+      rxlabUserId: appUsers.rxlabUserId,
     })
     .from(subscriptions)
     .innerJoin(plans, eq(subscriptions.planId, plans.id))
@@ -245,6 +526,13 @@ export async function upsertSubscriptionFromStripe(input: {
         endedAt: updated.endedAt,
       });
     }
+    if ((ACTIVE_SUBSCRIPTION_STATUSES as readonly string[]).includes(input.status)) {
+      await replaceInternalDefaultForPlan({
+        applicationId: input.applicationId,
+        appUserId: input.appUserId,
+        planId: input.planId,
+      });
+    }
     return { subscription: updated, created: false as const };
   }
 
@@ -270,6 +558,14 @@ export async function upsertSubscriptionFromStripe(input: {
       updatedAt: now,
     })
     .returning();
+
+  if ((ACTIVE_SUBSCRIPTION_STATUSES as readonly string[]).includes(input.status)) {
+    await replaceInternalDefaultForPlan({
+      applicationId: input.applicationId,
+      appUserId: input.appUserId,
+      planId: input.planId,
+    });
+  }
 
   return { subscription: created, created: true as const };
 }
@@ -369,6 +665,14 @@ export async function cancelSubscription(input: {
     )
     .limit(1);
   if (!before) throw new NotFoundError("subscription", input.subscriptionId);
+  if (before.billingProvider === "internal") {
+    const plan = await requirePlan(input.applicationId, before.planId);
+    if (plan.autoSubscribe) {
+      throw new ValidationError(
+        "Disable automatic subscription on the plan before canceling it",
+      );
+    }
+  }
 
   const now = new Date();
   const [updated] = await db
@@ -466,7 +770,13 @@ export async function listPurchasablePlans(applicationId: string): Promise<Plan[
   return db
     .select()
     .from(plans)
-    .where(and(eq(plans.applicationId, applicationId), eq(plans.status, "active")));
+    .where(
+      and(
+        eq(plans.applicationId, applicationId),
+        eq(plans.status, "active"),
+        eq(plans.autoSubscribe, false),
+      ),
+    );
 }
 
 export async function getActiveSubscriptionForPlan(input: {

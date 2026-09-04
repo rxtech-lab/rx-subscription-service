@@ -30,6 +30,7 @@ import {
   assertPlanGroupAvailable,
   buildEntitlementSnapshot,
   grantPeriodBalances,
+  replaceInternalDefaultForPlan,
 } from "@/lib/subscription/subscriptions";
 import {
   checkTopupEligibility,
@@ -289,6 +290,14 @@ async function fulfillSubscription(input: {
         })
         .returning();
 
+  if (["trialing", "active", "past_due"].includes(status)) {
+    await replaceInternalDefaultForPlan({
+      applicationId: input.integration.applicationId,
+      appUserId: input.user.id,
+      planId: plan.id,
+    });
+  }
+
   if (status === "active" || status === "trialing") {
     await grantPeriodBalances({
       applicationId: input.integration.applicationId,
@@ -427,6 +436,11 @@ async function fulfillOneTime(input: {
         referenceId: input.storeTransactionId,
       });
     } else if (input.mapping.planId) {
+      await replaceInternalDefaultForPlan({
+        applicationId: input.integration.applicationId,
+        appUserId: input.user.id,
+        planId: input.mapping.planId,
+      });
       await grantPeriodBalances({
         applicationId: input.integration.applicationId,
         appUserId: input.user.id,

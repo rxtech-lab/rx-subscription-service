@@ -19,7 +19,15 @@ import {
   statusTone,
 } from "@/components/ui/primitives";
 import { TestBadge } from "@/components/ui/test-badge";
-import { requireApplicationAccess } from "@/lib/console/session";
+import {
+  requireApplicationAccess,
+  requireConsoleUser,
+} from "@/lib/console/session";
+import {
+  indexRxLabUsers,
+  listAllRxLabUsersForDisplay,
+  resolveUserDisplayIdentity,
+} from "@/lib/rxlab/users";
 import { stripeConfigured, type StripeMode } from "@/lib/stripe/client";
 import { listPaymentHistory } from "@/lib/stripe/invoices";
 import {
@@ -28,7 +36,10 @@ import {
 } from "@/lib/subscription/consumption";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
 import { listPurchaseHistory } from "@/lib/subscription/purchases";
-import { listSubscriptions } from "@/lib/subscription/subscriptions";
+import {
+  listSubscriptions,
+  syncInternalDefaultSubscriptions,
+} from "@/lib/subscription/subscriptions";
 import { isGranularity, type Granularity } from "@/lib/subscription/series";
 import { listBalanceUnits } from "@/lib/subscription/units";
 import { getUsageStatus } from "@/lib/subscription/usage";
@@ -126,6 +137,7 @@ export default async function UserDetailPage({
   const { appId, userId } = await params;
   const query = await searchParams;
   await requireApplicationAccess(appId);
+  const consoleUser = await requireConsoleUser();
 
   let routeUser;
   try {
@@ -136,12 +148,13 @@ export default async function UserDetailPage({
 
   const fallbackEnvironment = routeUser.environment;
   const environment = requestedEnvironment(query.environment, fallbackEnvironment);
-  const [xcodeUser, sandboxUser, productionUser] = await Promise.all([
+  const [xcodeUser, sandboxUser, productionUser, rxLabUsers] = await Promise.all([
     getAppUserByRxlabId(appId, routeUser.rxlabUserId, { environment: "xcode" }),
     getAppUserByRxlabId(appId, routeUser.rxlabUserId, { environment: "sandbox" }),
     getAppUserByRxlabId(appId, routeUser.rxlabUserId, {
       environment: "production",
     }),
+    listAllRxLabUsersForDisplay(consoleUser.accessToken),
   ]);
   const user =
     environment === "xcode"
@@ -150,6 +163,14 @@ export default async function UserDetailPage({
         ? sandboxUser
         : productionUser;
   if (!user) notFound();
+  const displayIdentity = resolveUserDisplayIdentity(
+    user,
+    indexRxLabUsers(rxLabUsers),
+  );
+  await syncInternalDefaultSubscriptions({
+    applicationId: appId,
+    appUserId: user.id,
+  });
 
   const paymentAfter = cursor(query.paymentAfter);
   const paymentBefore = paymentAfter ? undefined : cursor(query.paymentBefore);
@@ -261,7 +282,7 @@ export default async function UserDetailPage({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="flex items-center gap-2 text-sm font-semibold text-neutral-900">
-              {user.displayName || user.email || "Unnamed user"}
+              {displayIdentity.name || displayIdentity.email || user.rxlabUserId}
               {user.isTest ? <TestBadge /> : null}
             </h1>
             <p className="mt-1 font-mono text-xs text-neutral-500">
@@ -473,7 +494,9 @@ export default async function UserDetailPage({
                     <span className="text-xs text-neutral-500">
                       {subscription.billingProvider === "apple_app_store"
                         ? "App Store"
-                        : "Stripe"}
+                        : subscription.billingProvider === "internal"
+                          ? "Automatic"
+                          : "Stripe"}
                     </span>
                   </Td>
                   <Td>

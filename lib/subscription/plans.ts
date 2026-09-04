@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   balanceUnits,
@@ -70,6 +70,51 @@ export function stripeRecurring(
   }
 }
 
+function validateAutoSubscribePlan(input: {
+  autoSubscribe: boolean;
+  billingInterval: BillingInterval;
+  priceAmountCents: number;
+  trialDays: number;
+}) {
+  if (!input.autoSubscribe) return;
+  if (input.priceAmountCents !== 0) {
+    throw new ValidationError("an automatically subscribed plan must be free");
+  }
+  if (input.billingInterval === "one_time") {
+    throw new ValidationError(
+      "an automatically subscribed plan must use a recurring billing interval",
+    );
+  }
+  if (input.trialDays !== 0) {
+    throw new ValidationError(
+      "an automatically subscribed free plan cannot have a trial",
+    );
+  }
+}
+
+async function assertAutoSubscribeGroupAvailable(
+  applicationId: string,
+  planGroup: string,
+  excludePlanId?: string,
+) {
+  const conditions = [
+    eq(plans.applicationId, applicationId),
+    eq(plans.planGroup, planGroup),
+    eq(plans.autoSubscribe, true),
+  ];
+  if (excludePlanId) conditions.push(ne(plans.id, excludePlanId));
+  const [existing] = await db
+    .select({ name: plans.name })
+    .from(plans)
+    .where(and(...conditions))
+    .limit(1);
+  if (existing) {
+    throw new ValidationError(
+      `"${existing.name}" already subscribes users automatically in plan group "${planGroup}"`,
+    );
+  }
+}
+
 export async function createPlan(input: {
   applicationId: string;
   key: string;
@@ -81,6 +126,7 @@ export async function createPlan(input: {
   priceAmountCents: number;
   currency?: string;
   trialDays?: number;
+  autoSubscribe?: boolean;
   sortOrder?: number;
   actor: Actor;
 }) {
@@ -97,6 +143,16 @@ export async function createPlan(input: {
   const trialDays = assertNonNegativeInteger(input.trialDays ?? 0, "trialDays");
   const currency = assertCurrency(input.currency ?? "usd");
   const planGroup = assertKey(input.planGroup ?? DEFAULT_PLAN_GROUP, "planGroup");
+
+  validateAutoSubscribePlan({
+    autoSubscribe: input.autoSubscribe ?? false,
+    billingInterval: input.billingInterval,
+    priceAmountCents,
+    trialDays,
+  });
+  if (input.autoSubscribe) {
+    await assertAutoSubscribeGroupAvailable(input.applicationId, planGroup);
+  }
 
   if (input.billingInterval === "one_time" && trialDays > 0) {
     throw new ValidationError("a one-time plan cannot have a trial");
@@ -124,6 +180,7 @@ export async function createPlan(input: {
       priceAmountCents,
       currency,
       trialDays,
+      autoSubscribe: input.autoSubscribe ?? false,
       status: "draft",
       sortOrder: input.sortOrder ?? 0,
       createdAt: now,
@@ -151,10 +208,41 @@ export async function updatePlan(input: {
   priceAmountCents?: number;
   currency?: string;
   trialDays?: number;
+  autoSubscribe?: boolean;
   sortOrder?: number;
   actor: Actor;
 }) {
   const before = await requirePlan(input.applicationId, input.planId);
+  const nextPlanGroup =
+    input.planGroup === undefined
+      ? before.planGroup
+      : assertKey(input.planGroup, "planGroup");
+  const nextPriceAmountCents =
+    input.priceAmountCents === undefined
+      ? before.priceAmountCents
+      : assertNonNegativeInteger(input.priceAmountCents, "priceAmountCents");
+  const nextTrialDays =
+    input.trialDays === undefined
+      ? before.trialDays
+      : assertNonNegativeInteger(input.trialDays, "trialDays");
+  const nextAutoSubscribe = input.autoSubscribe ?? before.autoSubscribe;
+
+  validateAutoSubscribePlan({
+    autoSubscribe: nextAutoSubscribe,
+    billingInterval: before.billingInterval,
+    priceAmountCents: nextPriceAmountCents,
+    trialDays: nextTrialDays,
+  });
+  if (
+    nextAutoSubscribe &&
+    (!before.autoSubscribe || nextPlanGroup !== before.planGroup)
+  ) {
+    await assertAutoSubscribeGroupAvailable(
+      input.applicationId,
+      nextPlanGroup,
+      before.id,
+    );
+  }
 
   // A price change means a new Stripe Price; clear the stale pointer so the next
   // sync mints one. Existing subscriptions keep the Price they were created with.
@@ -174,19 +262,12 @@ export async function updatePlan(input: {
           ? before.description
           : input.description?.trim() || null,
       planGroup:
-        input.planGroup === undefined
-          ? before.planGroup
-          : assertKey(input.planGroup, "planGroup"),
-      priceAmountCents:
-        input.priceAmountCents === undefined
-          ? before.priceAmountCents
-          : assertNonNegativeInteger(input.priceAmountCents, "priceAmountCents"),
+        nextPlanGroup,
+      priceAmountCents: nextPriceAmountCents,
       currency:
         input.currency === undefined ? before.currency : assertCurrency(input.currency),
-      trialDays:
-        input.trialDays === undefined
-          ? before.trialDays
-          : assertNonNegativeInteger(input.trialDays, "trialDays"),
+      trialDays: nextTrialDays,
+      autoSubscribe: nextAutoSubscribe,
       sortOrder: input.sortOrder ?? before.sortOrder,
       // Both accounts' Prices are stale once the amount or currency moves.
       stripePriceId: priceChanged || currencyChanged ? null : before.stripePriceId,
@@ -216,6 +297,9 @@ export async function setPlanStatus(input: {
   actor: Actor;
 }) {
   const before = await requirePlan(input.applicationId, input.planId);
+  if (input.status === "active") {
+    validateAutoSubscribePlan(before);
+  }
   const [plan] = await db
     .update(plans)
     .set({ status: input.status, updatedAt: new Date() })

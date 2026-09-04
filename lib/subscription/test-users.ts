@@ -28,6 +28,7 @@ import { clampClockOffset } from "./test-clock";
 import {
   grantPeriodBalances,
   getSubscriptionByStripeId,
+  syncInternalDefaultSubscriptions,
   upsertSubscriptionFromStripe,
 } from "./subscriptions";
 import { requireUsageItem } from "./usage-items";
@@ -98,6 +99,10 @@ export async function createTestUser(input: {
     entityType: "app_user",
     entityId: created.id,
     after: created,
+  });
+  await syncInternalDefaultSubscriptions({
+    applicationId: input.applicationId,
+    appUserId: created.id,
   });
   return created;
 }

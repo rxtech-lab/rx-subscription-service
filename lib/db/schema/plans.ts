@@ -33,6 +33,10 @@ export const plans = sqliteTable(
     priceAmountCents: integer("price_amount_cents").notNull(),
     currency: text("currency").notNull().default("usd"),
     trialDays: integer("trial_days").notNull().default(0),
+    /** Enroll users into this free recurring plan when they have no plan in its group. */
+    autoSubscribe: integer("auto_subscribe", { mode: "boolean" })
+      .notNull()
+      .default(false),
     status: text("status", { enum: ["draft", "active", "archived"] })
       .notNull()
       .default("draft"),
@@ -50,6 +54,9 @@ export const plans = sqliteTable(
     uniqueIndex("plans_app_key_idx").on(table.applicationId, table.key),
     index("plans_app_status_idx").on(table.applicationId, table.status),
     index("plans_app_group_idx").on(table.applicationId, table.planGroup),
+    uniqueIndex("plans_app_group_auto_subscribe_idx")
+      .on(table.applicationId, table.planGroup)
+      .where(sql`${table.autoSubscribe} = 1`),
     check("plans_price_nonnegative", sql`${table.priceAmountCents} >= 0`),
     check("plans_interval_count_positive", sql`${table.intervalCount} >= 1`),
     check("plans_trial_nonnegative", sql`${table.trialDays} >= 0`),

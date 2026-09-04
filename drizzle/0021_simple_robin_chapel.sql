@@ -1,0 +1,2 @@
+ALTER TABLE `plans` ADD `auto_subscribe` integer DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX `plans_app_group_auto_subscribe_idx` ON `plans` (`application_id`,`plan_group`) WHERE "plans"."auto_subscribe" = 1;
