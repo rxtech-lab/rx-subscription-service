@@ -8,6 +8,12 @@ import {
   E2E_APPLICATION_ID,
   E2E_DAILY_ITEM_ID,
   E2E_DAILY_ITEM_NAME,
+  E2E_DEFAULT_PLAN_API_KEY,
+  E2E_DEFAULT_PLAN_APPLICATION_ID,
+  E2E_DEFAULT_PLAN_ID,
+  E2E_DEFAULT_PLAN_PAID_ID,
+  E2E_DEFAULT_PLAN_UNIT_ID,
+  E2E_DEFAULT_PLAN_USAGE_ID,
   E2E_DATABASE_URL,
   E2E_PERMISSION_ID,
   E2E_PERMISSION_KEY,
@@ -66,14 +72,24 @@ async function sha256(value: string) {
     .join("");
 }
 
-await db.insert(schema.applications).values({
-  id: E2E_APPLICATION_ID,
-  name: "Playwright App",
-  status: "active",
-  defaultCurrency: "usd",
-  createdAt: now,
-  updatedAt: now,
-});
+await db.insert(schema.applications).values([
+  {
+    id: E2E_APPLICATION_ID,
+    name: "Playwright App",
+    status: "active",
+    defaultCurrency: "usd",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: E2E_DEFAULT_PLAN_APPLICATION_ID,
+    name: "Default Plan App",
+    status: "active",
+    defaultCurrency: "usd",
+    createdAt: now,
+    updatedAt: now,
+  },
+]);
 
 await db.insert(schema.applicationApiKeys).values([
   {
@@ -102,6 +118,111 @@ await db.insert(schema.applicationApiKeys).values([
     keyPrefix: E2E_SANDBOX_API_KEY.slice(0, 21),
     hashedKey: await sha256(E2E_SANDBOX_API_KEY),
     createdAt: now,
+  },
+  {
+    id: "e2e-default-plan-api-key",
+    applicationId: E2E_DEFAULT_PLAN_APPLICATION_ID,
+    name: "Default plan production",
+    environment: "production",
+    keyPrefix: E2E_DEFAULT_PLAN_API_KEY.slice(0, 12),
+    hashedKey: await sha256(E2E_DEFAULT_PLAN_API_KEY),
+    createdAt: now,
+  },
+]);
+
+await db.insert(schema.balanceUnits).values({
+  id: E2E_DEFAULT_PLAN_UNIT_ID,
+  applicationId: E2E_DEFAULT_PLAN_APPLICATION_ID,
+  key: "free_points",
+  name: "Free points",
+  symbol: "pts",
+  precision: 0,
+  kind: "points",
+  createdAt: now,
+  updatedAt: now,
+});
+
+await db.insert(schema.usageItems).values({
+  id: E2E_DEFAULT_PLAN_USAGE_ID,
+  applicationId: E2E_DEFAULT_PLAN_APPLICATION_ID,
+  key: "free_actions",
+  name: "Free actions",
+  valueType: "counter",
+  resetPolicy: "billing_period",
+  defaultLimit: 0,
+  overagePolicy: "block",
+  sortOrder: 0,
+  createdAt: now,
+  updatedAt: now,
+});
+
+await db.insert(schema.plans).values([
+  {
+    id: E2E_DEFAULT_PLAN_ID,
+    applicationId: E2E_DEFAULT_PLAN_APPLICATION_ID,
+    key: "free",
+    name: "Free",
+    planGroup: "primary",
+    billingInterval: "month",
+    intervalCount: 1,
+    priceAmountCents: 0,
+    currency: "usd",
+    trialDays: 0,
+    autoSubscribe: true,
+    status: "active",
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: E2E_DEFAULT_PLAN_PAID_ID,
+    applicationId: E2E_DEFAULT_PLAN_APPLICATION_ID,
+    key: "pro",
+    name: "Pro",
+    planGroup: "primary",
+    billingInterval: "month",
+    intervalCount: 1,
+    priceAmountCents: 1_900,
+    currency: "usd",
+    trialDays: 0,
+    autoSubscribe: false,
+    status: "active",
+    sortOrder: 1,
+    createdAt: now,
+    updatedAt: now,
+  },
+]);
+
+await db.insert(schema.planEntitlements).values([
+  {
+    id: "e2e-free-default-usage-grant",
+    planId: E2E_DEFAULT_PLAN_ID,
+    kind: "usage_limit",
+    usageItemId: E2E_DEFAULT_PLAN_USAGE_ID,
+    limitValue: 5,
+    trialLimitValue: 5,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "e2e-free-default-balance-grant",
+    planId: E2E_DEFAULT_PLAN_ID,
+    kind: "balance_grant",
+    unitId: E2E_DEFAULT_PLAN_UNIT_ID,
+    amount: 100,
+    trialAmount: 100,
+    balanceExpiryPolicy: "period_end",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "e2e-free-default-feature-grant",
+    planId: E2E_DEFAULT_PLAN_ID,
+    kind: "feature",
+    featureKey: "free_access",
+    featureValue: "enabled",
+    createdAt: now,
+    updatedAt: now,
   },
 ]);
 

@@ -25,8 +25,16 @@ import {
   Th,
   statusTone,
 } from "@/components/ui/primitives";
-import { requireApplicationAccess } from "@/lib/console/session";
+import {
+  requireApplicationAccess,
+  requireConsoleUser,
+} from "@/lib/console/session";
 import type { Coupon } from "@/lib/db/schema";
+import {
+  indexRxLabUsers,
+  listAllRxLabUsersForDisplay,
+  resolveUserDisplayIdentity,
+} from "@/lib/rxlab/users";
 import { describeCoupon } from "@/lib/subscription/coupon-rules";
 import {
   couponTerms,
@@ -80,13 +88,16 @@ function toDefaults(
 export default async function CouponsPage({ params }: PageProps<"/apps/[appId]">) {
   const { appId } = await params;
   await requireApplicationAccess(appId);
+  const consoleUser = await requireConsoleUser();
 
-  const [coupons, plans, topups, users] = await Promise.all([
+  const [coupons, plans, topups, users, rxLabUsers] = await Promise.all([
     listCoupons(appId, { includeArchived: true }),
     listPlans(appId, { includeArchived: true }),
     listTopupProducts(appId, { includeArchived: true }),
     listAppUserOptions(appId, { includeTest: true }),
+    listAllRxLabUsersForDisplay(consoleUser.accessToken),
   ]);
+  const rxLabUsersById = indexRxLabUsers(rxLabUsers);
 
   const detail = new Map(
     await Promise.all(
@@ -121,10 +132,13 @@ export default async function CouponsPage({ params }: PageProps<"/apps/[appId]">
     id: topup.id,
     label: topup.name,
   }));
-  const userOptions: CouponFieldOption[] = users.map((user) => ({
-    id: user.id,
-    label: user.displayName ?? user.email ?? user.rxlabUserId,
-  }));
+  const userOptions: CouponFieldOption[] = users.map((user) => {
+    const identity = resolveUserDisplayIdentity(user, rxLabUsersById);
+    return {
+      id: user.id,
+      label: identity.name ?? identity.email ?? user.rxlabUserId,
+    };
+  });
 
   return (
     <div className="space-y-6">

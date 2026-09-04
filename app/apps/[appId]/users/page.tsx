@@ -17,7 +17,11 @@ import {
   requireConsoleUser,
 } from "@/lib/console/session";
 import { isPermissionError } from "@/lib/rxlab/oauth-clients";
-import { listAllRxLabUsers } from "@/lib/rxlab/users";
+import {
+  indexRxLabUsers,
+  listAllRxLabUsers,
+  resolveUserDisplayIdentity,
+} from "@/lib/rxlab/users";
 import {
   listAppUserOptions,
   listAppUsers,
@@ -66,6 +70,7 @@ export default async function UsersPage({
   const availableUsers = directory.users.filter(
     (user) => !existingRxLabUserIds.has(user.sub),
   );
+  const rxLabUsersById = indexRxLabUsers(directory.users);
   const addUserUnavailableReason =
     directory.error ??
     (availableUsers.length === 0
@@ -138,39 +143,45 @@ export default async function UsersPage({
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <Td>
-                    <p className="font-medium text-neutral-900">
-                      {user.displayName || user.email || "Unnamed"}
-                    </p>
-                    <p className="font-mono text-xs text-neutral-500">
-                      {user.rxlabUserId}
-                    </p>
-                  </Td>
-                  <Td>
-                    {user.level}
-                    {user.levelKey ? (
-                      <span className="ml-1 text-xs text-neutral-500">
-                        ({user.levelKey})
+              {users.map((user) => {
+                const identity = resolveUserDisplayIdentity(
+                  user,
+                  rxLabUsersById,
+                );
+                return (
+                  <tr key={user.id}>
+                    <Td>
+                      <p className="font-medium text-neutral-900">
+                        {identity.name || identity.email || user.rxlabUserId}
+                      </p>
+                      <p className="font-mono text-xs text-neutral-500">
+                        {user.rxlabUserId}
+                      </p>
+                    </Td>
+                    <Td>
+                      {user.level}
+                      {user.levelKey ? (
+                        <span className="ml-1 text-xs text-neutral-500">
+                          ({user.levelKey})
+                        </span>
+                      ) : null}
+                    </Td>
+                    <Td>
+                      <span className="text-xs text-neutral-500">
+                        {formatDate(user.createdAt)}
                       </span>
-                    ) : null}
-                  </Td>
-                  <Td>
-                    <span className="text-xs text-neutral-500">
-                      {formatDate(user.createdAt)}
-                    </span>
-                  </Td>
-                  <Td>
-                    <Link
-                      href={`/apps/${appId}/users/${user.id}`}
-                      className="text-xs text-neutral-600 underline hover:text-neutral-900"
-                    >
-                      Manage
-                    </Link>
-                  </Td>
-                </tr>
-              ))}
+                    </Td>
+                    <Td>
+                      <Link
+                        href={`/apps/${appId}/users/${user.id}`}
+                        className="text-xs text-neutral-600 underline hover:text-neutral-900"
+                      >
+                        Manage
+                      </Link>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </Table>
 

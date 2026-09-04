@@ -23,6 +23,7 @@ import {
   statusTone,
 } from "@/components/ui/primitives";
 import { resolveEntitlements } from "@/lib/subscription/entitlements";
+import { syncInternalDefaultSubscriptions } from "@/lib/subscription/subscriptions";
 import {
   DAY_MS,
   HOUR_MS,
@@ -138,6 +139,11 @@ export default async function TestOverviewPage({
   if (!session) notFound();
 
   const now = simulatedNow(session.user.testClockOffsetMs);
+  await syncInternalDefaultSubscriptions({
+    applicationId: appId,
+    appUserId: session.user.id,
+    now,
+  });
   const [entitlements, balances, usage] = await Promise.all([
     resolveEntitlements({ applicationId: appId, appUserId: session.user.id }),
     getBalances(session.user.id),

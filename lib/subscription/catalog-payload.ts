@@ -167,6 +167,9 @@ export function planPayload(
     intervalCount: plan.intervalCount,
     ...platformPrice({ local, platform, appleIntegration, apple }),
     trialDays: plan.trialDays,
-    purchaseOptions: purchaseOptions({ local, appleIntegration, apple }),
+    autoSubscribe: plan.autoSubscribe,
+    purchaseOptions: plan.autoSubscribe
+      ? []
+      : purchaseOptions({ local, appleIntegration, apple }),
   };
 }

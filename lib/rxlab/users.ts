@@ -23,6 +23,62 @@ export interface RxLabUserListResult {
   };
 }
 
+export interface LocalUserIdentity {
+  rxlabUserId: string;
+  displayName: string | null;
+  email: string | null;
+}
+
+export interface UserDisplayIdentity {
+  name: string | null;
+  email: string | null;
+  image: string | null;
+}
+
+/** Index one directory response once, then reuse it for every row on a page. */
+export function indexRxLabUsers(users: RxLabUserSummary[]) {
+  return new Map(users.map((user) => [user.sub, user]));
+}
+
+/**
+ * Resolve display data from RxLab Auth, which owns real-user identity fields.
+ * Synthetic test users deliberately have no RxLab Auth record, so their local
+ * editable profile remains the source of truth.
+ */
+export function resolveUserDisplayIdentity(
+  user: LocalUserIdentity,
+  directory: ReadonlyMap<string, RxLabUserSummary>,
+): UserDisplayIdentity {
+  const rxLabUser = directory.get(user.rxlabUserId);
+  if (rxLabUser) {
+    return {
+      name: rxLabUser.name,
+      email: rxLabUser.email,
+      image: rxLabUser.image,
+    };
+  }
+  if (user.rxlabUserId.startsWith("test:")) {
+    return {
+      name: user.displayName,
+      email: user.email,
+      image: null,
+    };
+  }
+  return { name: null, email: null, image: null };
+}
+
+/** Load the directory for display without making the whole console unavailable. */
+export async function listAllRxLabUsersForDisplay(
+  accessToken: string,
+): Promise<RxLabUserSummary[]> {
+  try {
+    return await listAllRxLabUsers(accessToken);
+  } catch (error) {
+    console.error("Failed to load RxLab user display identities", error);
+    return [];
+  }
+}
+
 export async function listRxLabUsers(
   accessToken: string,
   options: { page?: number; pageSize?: number; keyword?: string } = {},

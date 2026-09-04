@@ -338,6 +338,8 @@ declare global {
     currency: string;
     /** Free days before the first charge. 0 for no trial. */
     trialDays: number;
+    /** True when the server grants this free plan without checkout. */
+    autoSubscribe: boolean;
   }
 
   /** A plan as 'rx.catalog()' returns it: priced for a platform, with its offers. */

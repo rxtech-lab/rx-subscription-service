@@ -77,6 +77,12 @@ A subscription stores a snapshot of what its plan granted at purchase, so editin
 a live plan never retroactively changes what someone already paid for. Price
 changes mint a new Stripe Price; existing subscriptions keep billing on theirs.
 
+A free recurring plan with no trial can enable **Subscribe users automatically**.
+When a user has no plan in that group, the service creates an internal subscription
+without Stripe or an app store, applies the plan's entitlement snapshot, and renews
+its period grants idempotently. A confirmed paid plan in the same group replaces the
+automatic free subscription; merely opening Checkout does not remove free access.
+
 ## Machine API
 
 Your applications talk to `/api/v1` with an environment-scoped application API

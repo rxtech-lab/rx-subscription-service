@@ -32,6 +32,8 @@ export interface ResolvedProduct {
   priceAmountCents: number;
   currency: string;
   trialDays: number;
+  /** The server grants this free tier without opening a payment flow. */
+  autoSubscribe: boolean;
   purchaseOptions: PurchaseOption[];
   /** "$19.00" */
   priceLabel: string;
@@ -359,6 +361,7 @@ export const SAMPLE_PRODUCTS: CatalogProduct[] = [
     priceAmountCents: 999,
     currency: "usd",
     trialDays: 7,
+    autoSubscribe: false,
     purchaseOptions: [
       { provider: "stripe", flow: "checkout", priceAmountCents: 999, currency: "usd" },
     ],
@@ -374,6 +377,7 @@ export const SAMPLE_PRODUCTS: CatalogProduct[] = [
     priceAmountCents: 7999,
     currency: "usd",
     trialDays: 7,
+    autoSubscribe: false,
     purchaseOptions: [
       { provider: "stripe", flow: "checkout", priceAmountCents: 7999, currency: "usd" },
     ],
@@ -389,6 +393,7 @@ export const SAMPLE_PRODUCTS: CatalogProduct[] = [
     priceAmountCents: 19_900,
     currency: "usd",
     trialDays: 0,
+    autoSubscribe: false,
     purchaseOptions: [
       {
         provider: "stripe",

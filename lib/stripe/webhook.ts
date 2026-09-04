@@ -20,6 +20,7 @@ import { checkTopupEligibility } from "@/lib/subscription/topups";
 import {
   buildEntitlementSnapshot,
   grantPeriodBalances,
+  replaceInternalDefaultForPlan,
   upsertSubscriptionFromStripe,
 } from "@/lib/subscription/subscriptions";
 import {
@@ -359,6 +360,11 @@ export async function fulfillPaidPurchase(input: {
     .where(eq(purchases.id, purchase.id));
 
   if (purchase.planId) {
+    await replaceInternalDefaultForPlan({
+      applicationId: purchase.applicationId,
+      appUserId: purchase.appUserId,
+      planId: purchase.planId,
+    });
     await grantPeriodBalances({
       applicationId: purchase.applicationId,
       appUserId: purchase.appUserId,

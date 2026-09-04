@@ -22,7 +22,15 @@ import {
   Th,
   statusTone,
 } from "@/components/ui/primitives";
-import { requireApplicationAccess } from "@/lib/console/session";
+import {
+  requireApplicationAccess,
+  requireConsoleUser,
+} from "@/lib/console/session";
+import {
+  indexRxLabUsers,
+  listAllRxLabUsersForDisplay,
+  resolveUserDisplayIdentity,
+} from "@/lib/rxlab/users";
 import { stripeConfigured, stripeMode } from "@/lib/stripe/client";
 import {
   listPurchasablePlans,
@@ -55,12 +63,16 @@ function checkoutNotice(value: string | string[] | undefined) {
   return null;
 }
 
-function userLabel(user: {
-  displayName: string | null;
-  email: string | null;
-  rxlabUserId: string;
-}) {
-  return user.displayName || user.email || user.rxlabUserId;
+function userLabel(
+  user: {
+    displayName: string | null;
+    email: string | null;
+    rxlabUserId: string;
+  },
+  directory: ReturnType<typeof indexRxLabUsers>,
+) {
+  const identity = resolveUserDisplayIdentity(user, directory);
+  return identity.name || identity.email || user.rxlabUserId;
 }
 
 export default async function SubscriptionsPage({
@@ -70,12 +82,15 @@ export default async function SubscriptionsPage({
   const { appId } = await params;
   const { checkout } = await searchParams;
   await requireApplicationAccess(appId);
+  const consoleUser = await requireConsoleUser();
 
-  const [subscriptions, users, purchasablePlans] = await Promise.all([
+  const [subscriptions, users, purchasablePlans, rxLabUsers] = await Promise.all([
     listSubscriptions(appId),
     listAppUserOptions(appId),
     listPurchasablePlans(appId),
+    listAllRxLabUsersForDisplay(consoleUser.accessToken),
   ]);
+  const rxLabUsersById = indexRxLabUsers(rxLabUsers);
   const plans = purchasablePlans.filter(
     (plan) => plan.billingInterval !== "one_time",
   );
@@ -103,7 +118,7 @@ export default async function SubscriptionsPage({
       <Card>
         <CardHeader
           title="Subscriptions"
-          description="Stripe and the App Store remain authoritative for billing status and period boundaries."
+          description="Paid subscriptions follow Stripe or the App Store. Automatic free plans are managed internally."
           action={
             canTest ? (
               <FormDialog
@@ -127,7 +142,7 @@ export default async function SubscriptionsPage({
                       <Select name="appUserId" required>
                         {users.map((user) => (
                           <option key={user.id} value={user.id}>
-                            {userLabel(user)} · {user.rxlabUserId}
+                            {userLabel(user, rxLabUsersById)} · {user.rxlabUserId}
                           </option>
                         ))}
                       </Select>
@@ -212,7 +227,14 @@ export default async function SubscriptionsPage({
                       href={`/apps/${appId}/users/${subscription.appUserId}`}
                       className="text-xs text-neutral-600 underline hover:text-neutral-900"
                     >
-                      {subscription.userLabel || "View user"}
+                      {userLabel(
+                        {
+                          displayName: subscription.userLabel,
+                          email: subscription.userEmail,
+                          rxlabUserId: subscription.rxlabUserId,
+                        },
+                        rxLabUsersById,
+                      )}
                     </Link>
                     {subscription.isTest ? <TestBadge className="ml-2" /> : null}
                   </Td>
@@ -228,7 +250,9 @@ export default async function SubscriptionsPage({
                     <span className="text-xs font-medium text-neutral-600">
                       {subscription.billingProvider === "apple_app_store"
                         ? "App Store"
-                        : "Stripe"}
+                        : subscription.billingProvider === "internal"
+                          ? "Automatic"
+                          : "Stripe"}
                     </span>
                   </Td>
                   <Td>
@@ -238,7 +262,12 @@ export default async function SubscriptionsPage({
                     </span>
                   </Td>
                   <Td>
-                    {subscription.billingProvider === "apple_app_store" &&
+                    {subscription.billingProvider === "internal" &&
+                    subscription.planAutoSubscribe ? (
+                      <span className="text-xs text-neutral-500">
+                        Managed by plan setting
+                      </span>
+                    ) : subscription.billingProvider === "apple_app_store" &&
                     subscription.userEnvironment === "xcode" ? (
                       <ActionMenu label={`Actions for ${subscription.planName}`}>
                         <InlineActionButton

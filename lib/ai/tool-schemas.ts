@@ -104,6 +104,12 @@ export const writeToolSchemas = {
     priceAmountCents: z.number().int().nonnegative().describe("Price in cents"),
     currency: z.string().length(3).default("usd"),
     trialDays: z.number().int().nonnegative().default(0),
+    autoSubscribe: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Automatically enroll users who have no plan in this group; only valid for a free recurring plan without a trial",
+      ),
   }),
 
   updatePlan: z.object({
@@ -113,6 +119,7 @@ export const writeToolSchemas = {
     planGroup: z.string().optional(),
     priceAmountCents: z.number().int().nonnegative().optional(),
     trialDays: z.number().int().nonnegative().optional(),
+    autoSubscribe: z.boolean().optional(),
   }),
 
   setPlanStatus: z.object({ planId: z.string(), status: statusSchema }),

@@ -204,6 +204,11 @@ export async function createPlanCheckout(input: {
   if (plan.status !== "active") {
     throw new ValidationError("plan is not available for purchase");
   }
+  if (plan.autoSubscribe) {
+    throw new ValidationError(
+      "plan is assigned automatically and does not require checkout",
+    );
+  }
 
   await assertPlanGroupAvailable({
     applicationId: input.applicationId,

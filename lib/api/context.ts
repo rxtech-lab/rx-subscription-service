@@ -10,6 +10,7 @@ import {
   type Application,
 } from "@/lib/db/schema";
 import { ensureAppUser } from "@/lib/subscription/users";
+import { syncInternalDefaultSubscriptions } from "@/lib/subscription/subscriptions";
 import { readRequestCredentials } from "./credentials";
 import { ApiError } from "./errors";
 import { resolveApiKey } from "./keys";
@@ -120,6 +121,14 @@ export async function resolveRequestUser(
 ) {
   const requested = input.rxlabUserId?.trim();
 
+  const syncDefaults = async (user: Awaited<ReturnType<typeof ensureAppUser>>) => {
+    await syncInternalDefaultSubscriptions({
+      applicationId: context.application.id,
+      appUserId: user.id,
+    });
+    return user;
+  };
+
   if (context.user) {
     if (requested && requested !== context.user.subject) {
       throw new ApiError(
@@ -128,7 +137,7 @@ export async function resolveRequestUser(
         "A publishable key can only act for the user its access token identifies",
       );
     }
-    return ensureAppUser({
+    return syncDefaults(await ensureAppUser({
       applicationId: context.application.id,
       rxlabUserId: context.user.subject,
       // From the token, never the request: a client must not be able to
@@ -136,19 +145,19 @@ export async function resolveRequestUser(
       email: context.user.email,
       displayName: context.user.displayName,
       environment: context.environment,
-    });
+    }));
   }
 
   if (!requested) {
     throw new ApiError(400, "missing_user", "rxlabUserId is required");
   }
-  return ensureAppUser({
+  return syncDefaults(await ensureAppUser({
     applicationId: context.application.id,
     rxlabUserId: requested,
     email: input.email ?? null,
     displayName: input.displayName ?? null,
     environment: context.environment,
-  });
+  }));
 }
 
 /**

@@ -30,6 +30,14 @@ export const BILLING_PROVIDERS = [
 ] as const;
 export type BillingProvider = (typeof BILLING_PROVIDERS)[number];
 
+/** Free default subscriptions are owned locally and never mirrored to a store. */
+export const SUBSCRIPTION_BILLING_PROVIDERS = [
+  ...BILLING_PROVIDERS,
+  "internal",
+] as const;
+export type SubscriptionBillingProvider =
+  (typeof SUBSCRIPTION_BILLING_PROVIDERS)[number];
+
 /**
  * `entitlementSnapshot` freezes what the plan granted at purchase time, so
  * editing a plan never silently changes what existing subscribers already paid
@@ -54,7 +62,9 @@ export const subscriptions = sqliteTable(
     cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" })
       .notNull()
       .default(false),
-    billingProvider: text("billing_provider", { enum: BILLING_PROVIDERS })
+    billingProvider: text("billing_provider", {
+      enum: SUBSCRIPTION_BILLING_PROVIDERS,
+    })
       .notNull()
       .default("stripe"),
     /** Provider-stable subscription identity; Apple's originalTransactionId. */

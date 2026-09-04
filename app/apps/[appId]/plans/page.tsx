@@ -184,7 +184,12 @@ export default async function PlansPage({
                   <tr key={plan.id}>
                     <Td>
                       <p className="font-medium text-neutral-900">{plan.name}</p>
-                      <p className="font-mono text-xs text-neutral-500">{plan.key}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-xs text-neutral-500">{plan.key}</p>
+                        {plan.autoSubscribe ? (
+                          <Badge tone="blue">auto-enroll</Badge>
+                        ) : null}
+                      </div>
                     </Td>
                     <Td>
                       <span className="font-mono text-xs text-neutral-600">
@@ -320,6 +325,24 @@ export default async function PlansPage({
                                   defaultValue={plan.trialDays}
                                 />
                               </Field>
+                              <label className="flex items-start gap-2 text-xs text-neutral-700">
+                                <input
+                                  type="checkbox"
+                                  name="autoSubscribe"
+                                  defaultChecked={plan.autoSubscribe}
+                                  className="mt-0.5"
+                                />
+                                <span>
+                                  <span className="block font-medium text-neutral-900">
+                                    Subscribe users automatically
+                                  </span>
+                                  <span className="block text-neutral-500">
+                                    For a free recurring plan with no trial. Users
+                                    without a plan in this group are enrolled without
+                                    checkout.
+                                  </span>
+                                </span>
+                              </label>
                             </div>
                           </ActionForm>
                         </FormDialog>
@@ -495,6 +518,18 @@ export default async function PlansPage({
                   <Input name="price" type="number" step="0.01" min="0" required />
                 </Field>
               </div>
+              <label className="flex items-start gap-2 text-xs text-neutral-700">
+                <input type="checkbox" name="autoSubscribe" className="mt-0.5" />
+                <span>
+                  <span className="block font-medium text-neutral-900">
+                    Subscribe users automatically
+                  </span>
+                  <span className="block text-neutral-500">
+                    Available for a free recurring plan with no trial. Users without
+                    a plan in this group are enrolled without checkout.
+                  </span>
+                </span>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Currency">
                   <Input name="currency" defaultValue="usd" maxLength={3} />
