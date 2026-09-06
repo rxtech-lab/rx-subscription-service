@@ -361,6 +361,22 @@ export async function saveAppleProductMapping(input: {
     }
   }
 
+  // One App Store product id can back only one local item. Catch this here
+  // rather than letting the unique index fail the request with a raw
+  // database error.
+  const takenBy = await getStoreProductMapping({
+    applicationId: input.applicationId,
+    provider: "apple_app_store",
+    productId,
+  });
+  if (takenBy && takenBy.id !== before?.id) {
+    throw new ValidationError(
+      `App Store product "${productId}" is already mapped to another ${
+        takenBy.planId ? "plan" : "top-up"
+      }. Remove that mapping first.`,
+    );
+  }
+
   const beforePrice = before ? await storeProductPrice(before.id) : null;
   const now = new Date();
   const [saved] = before
