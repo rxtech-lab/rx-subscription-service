@@ -1,6 +1,6 @@
-import { readdir, rm, readFile } from "node:fs/promises";
-import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
+import postgres from "postgres";
+import { spawnSync } from "node:child_process";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "../lib/db/schema";
 import {
   E2E_API_KEY,
@@ -32,31 +32,21 @@ import {
   E2E_XCODE_API_KEY,
 } from "./fixtures";
 
-const databaseUrl = process.env.TURSO_DATABASE_URL ?? E2E_DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL ?? E2E_DATABASE_URL;
 if (databaseUrl !== E2E_DATABASE_URL) {
-  throw new Error("Playwright may only reset its dedicated /tmp database");
+  throw new Error("Playwright may only reset its dedicated local PostgreSQL database");
 }
-
-const databasePath = databaseUrl.slice("file:".length);
-await Promise.all(
-  [databasePath, `${databasePath}-shm`, `${databasePath}-wal`].map((path) =>
-    rm(path, { force: true }),
-  ),
-);
-
-const client = createClient({ url: databaseUrl });
-
-// Every migration, in order — the schema the app runs against is the sum of
-// them, so pinning this to the first one leaves the suite testing a database
-// that no environment actually has.
-const migrationsDir = new URL("../drizzle/", import.meta.url);
-const migrations = (await readdir(migrationsDir))
-  .filter((file) => file.endsWith(".sql"))
-  .sort();
-for (const file of migrations) {
-  await client.executeMultiple(
-    await readFile(new URL(file, migrationsDir), "utf8"),
-  );
+const client = postgres(databaseUrl, { prepare: false });
+await client.unsafe('DROP SCHEMA IF EXISTS public CASCADE');
+await client.unsafe('DROP SCHEMA IF EXISTS drizzle CASCADE');
+await client.unsafe('CREATE SCHEMA public');
+const migration = spawnSync("bun", ["run", "db:migrate"], {
+  env: { ...process.env, DATABASE_URL: databaseUrl },
+  stdio: "inherit",
+});
+if (migration.status !== 0) {
+  await client.end();
+  throw new Error("Playwright database migration failed");
 }
 
 const db = drizzle(client, { schema });
@@ -458,4 +448,4 @@ await db.insert(schema.stripeCustomers).values([
   },
 ]);
 
-client.close();
+await client.end();

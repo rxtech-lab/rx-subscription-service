@@ -49,3 +49,7 @@ local.db-*
 local.db÷
 .playwright-mcp
 /.swc
+
+# Private database transfer snapshots
+.neon-transfer/
+!.env.example

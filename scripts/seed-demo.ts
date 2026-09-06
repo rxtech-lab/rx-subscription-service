@@ -2,18 +2,16 @@
  * Seed a demo application with a full configuration, and print an API key.
  *
  * Useful for exercising the `/api/v1` surface without going through the console.
- * Talks to libSQL directly rather than through `lib/db`, which is server-only.
+ * Talks to PostgreSQL directly rather than through `lib/db`, which is server-only.
  *
  *   bun run scripts/seed-demo.ts
  */
-import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "../lib/db/schema";
 
-const client = createClient({
-  url: process.env.TURSO_DATABASE_URL || "file:local.db",
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required.");
+const client = postgres(process.env.DATABASE_URL, { prepare: false });
 const db = drizzle(client, { schema });
 
 const id = () => crypto.randomUUID();
@@ -270,4 +268,8 @@ async function main() {
   );
 }
 
-await main();
+try {
+  await main();
+} finally {
+  await client.end();
+}

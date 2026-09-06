@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, uniqueIndex, timestamp, boolean, jsonb, bigint } from "drizzle-orm/pg-core";
 import {
   API_ENVIRONMENTS,
   applications,
@@ -19,7 +12,7 @@ import { balanceUnits } from "./units";
  * (`rxlabUserId`, the token `sub`) gets independent production, sandbox, and Xcode
  * rows — and therefore independent balances, level, usage, and purchases.
  */
-export const appUsers = sqliteTable(
+export const appUsers = pgTable(
   "app_users",
   {
     id: text("id").primaryKey(),
@@ -34,7 +27,7 @@ export const appUsers = sqliteTable(
     email: text("email"),
     displayName: text("display_name"),
     /** Application-defined tier. Meaning is owned by the app, not by us. */
-    level: integer("level").notNull().default(0),
+    level: bigint("level", { mode: "number" }).notNull().default(0),
     levelKey: text("level_key"),
     externalRef: text("external_ref"),
     /**
@@ -42,7 +35,7 @@ export const appUsers = sqliteTable(
      * rxlab identity behind them, are hidden from the real user list, and bill
      * against the Stripe sandbox account instead of the live one.
      */
-    isTest: integer("is_test", { mode: "boolean" }).notNull().default(false),
+    isTest: boolean("is_test").notNull().default(false),
     /** Free-text label for what this test user is set up to exercise. */
     testNote: text("test_note"),
     /**
@@ -53,9 +46,9 @@ export const appUsers = sqliteTable(
      * monthly allowance roll over without waiting for it. Zero — every real
      * user — is ordinary wall-clock time.
      */
-    testClockOffsetMs: integer("test_clock_offset_ms").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    testClockOffsetMs: bigint("test_clock_offset_ms", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("app_users_app_rxlab_env_idx").on(
@@ -72,7 +65,7 @@ export const appUsers = sqliteTable(
   ],
 );
 
-export const balances = sqliteTable(
+export const balances = pgTable(
   "balances",
   {
     id: text("id").primaryKey(),
@@ -82,10 +75,10 @@ export const balances = sqliteTable(
     unitId: text("unit_id")
       .notNull()
       .references(() => balanceUnits.id, { onDelete: "cascade" }),
-    amount: integer("amount").notNull().default(0),
-    reserved: integer("reserved").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull().default(0),
+    reserved: bigint("reserved", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("balances_user_unit_idx").on(table.appUserId, table.unitId),
@@ -110,7 +103,7 @@ export type LedgerKind = (typeof LEDGER_KINDS)[number];
  * Append-only history of every balance movement. `idempotencyKey` is unique, so
  * a retried webhook or API call can never double-credit.
  */
-export const ledgerEntries = sqliteTable(
+export const ledgerEntries = pgTable(
   "ledger_entries",
   {
     id: text("id").primaryKey(),
@@ -121,14 +114,14 @@ export const ledgerEntries = sqliteTable(
       .notNull()
       .references(() => balanceUnits.id, { onDelete: "cascade" }),
     kind: text("kind", { enum: LEDGER_KINDS }).notNull(),
-    delta: integer("delta").notNull(),
-    balanceAfter: integer("balance_after").notNull(),
+    delta: bigint("delta", { mode: "number" }).notNull(),
+    balanceAfter: bigint("balance_after", { mode: "number" }).notNull(),
     description: text("description").notNull(),
     referenceType: text("reference_type"),
     referenceId: text("reference_id"),
     idempotencyKey: text("idempotency_key").notNull().unique(),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("ledger_entries_user_created_idx").on(table.appUserId, table.createdAt),
@@ -150,7 +143,7 @@ export type BalanceReservationStatus =
  * path used by debit guards; these rows are the source of truth for releasing,
  * settling, expiry, and recovery after an application restart.
  */
-export const balanceReservations = sqliteTable(
+export const balanceReservations = pgTable(
   "balance_reservations",
   {
     id: text("id").primaryKey(),
@@ -163,31 +156,31 @@ export const balanceReservations = sqliteTable(
     unitId: text("unit_id")
       .notNull()
       .references(() => balanceUnits.id, { onDelete: "cascade" }),
-    initialAmount: integer("initial_amount").notNull(),
+    initialAmount: bigint("initial_amount", { mode: "number" }).notNull(),
     /** Remaining hold size after increases and incremental settlements. */
-    amount: integer("amount").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
     status: text("status", { enum: BALANCE_RESERVATION_STATUSES })
       .notNull()
       .default("open"),
     description: text("description").notNull(),
     idempotencyKey: text("idempotency_key").notNull().unique(),
     requestFingerprint: text("request_fingerprint").notNull(),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     /** The value returned by the original idempotent reserve operation. */
-    availableAfterReserve: integer("available_after_reserve").notNull(),
+    availableAfterReserve: bigint("available_after_reserve", { mode: "number" }).notNull(),
     /** Renewed after each incremental settle and successful increase. */
-    ttlSeconds: integer("ttl_seconds").notNull(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    requestedAmount: integer("requested_amount").notNull().default(0),
-    settledAmount: integer("settled_amount").notNull().default(0),
-    releasedAmount: integer("released_amount").notNull().default(0),
-    shortfallAmount: integer("shortfall_amount").notNull().default(0),
+    ttlSeconds: bigint("ttl_seconds", { mode: "number" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    requestedAmount: bigint("requested_amount", { mode: "number" }).notNull().default(0),
+    settledAmount: bigint("settled_amount", { mode: "number" }).notNull().default(0),
+    releasedAmount: bigint("released_amount", { mode: "number" }).notNull().default(0),
+    shortfallAmount: bigint("shortfall_amount", { mode: "number" }).notNull().default(0),
     releaseReason: text("release_reason"),
     entryId: text("entry_id"),
-    balanceAfter: integer("balance_after"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-    closedAt: integer("closed_at", { mode: "timestamp_ms" }),
+    balanceAfter: bigint("balance_after", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "date", precision: 3 }),
   },
   (table) => [
     index("balance_reservations_app_user_status_idx").on(
@@ -230,7 +223,7 @@ export type BalanceReservationOperationKind =
   (typeof BALANCE_RESERVATION_OPERATION_KINDS)[number];
 
 /** Stores the exact result of each reservation mutation for safe API retries. */
-export const balanceReservationOperations = sqliteTable(
+export const balanceReservationOperations = pgTable(
   "balance_reservation_operations",
   {
     id: text("id").primaryKey(),
@@ -243,10 +236,10 @@ export const balanceReservationOperations = sqliteTable(
     kind: text("kind", { enum: BALANCE_RESERVATION_OPERATION_KINDS }).notNull(),
     idempotencyKey: text("idempotency_key").notNull().unique(),
     requestFingerprint: text("request_fingerprint").notNull(),
-    response: text("response", { mode: "json" })
+    response: jsonb("response")
       .$type<Record<string, unknown>>()
       .notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("balance_reservation_operations_reservation_idx").on(

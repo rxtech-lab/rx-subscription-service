@@ -1,19 +1,12 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, uniqueIndex, timestamp, jsonb, bigint } from "drizzle-orm/pg-core";
 import { applications } from "./applications";
 import { balanceUnits } from "./units";
 import { plans } from "./plans";
 import { subscriptionRoles } from "./roles";
 
 /** A purchasable bundle of balance units. */
-export const topupProducts = sqliteTable(
+export const topupProducts = pgTable(
   "topup_products",
   {
     id: text("id").primaryKey(),
@@ -26,22 +19,22 @@ export const topupProducts = sqliteTable(
     unitId: text("unit_id")
       .notNull()
       .references(() => balanceUnits.id, { onDelete: "restrict" }),
-    amount: integer("amount").notNull(),
-    priceAmountCents: integer("price_amount_cents").notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    priceAmountCents: bigint("price_amount_cents", { mode: "number" }).notNull(),
     currency: text("currency").notNull().default("usd"),
     status: text("status", { enum: ["draft", "active", "archived"] })
       .notNull()
       .default("draft"),
-    maxPurchasesPerUser: integer("max_purchases_per_user"),
-    sortOrder: integer("sort_order").notNull().default(0),
+    maxPurchasesPerUser: bigint("max_purchases_per_user", { mode: "number" }),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     stripeProductId: text("stripe_product_id"),
     stripePriceId: text("stripe_price_id"),
     /** Stripe ids are per-account, so the sandbox account needs its own pair. */
     stripeSandboxProductId: text("stripe_sandbox_product_id"),
     stripeSandboxPriceId: text("stripe_sandbox_price_id"),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("topup_products_app_key_idx").on(table.applicationId, table.key),
@@ -63,7 +56,7 @@ export type TopupRuleType = (typeof TOPUP_RULE_TYPES)[number];
  * pack". Rules are ANDed. Evaluated when checkout is created *and* again at
  * fulfillment, so a plan cancelled mid-checkout cannot slip through.
  */
-export const topupEligibilityRules = sqliteTable(
+export const topupEligibilityRules = pgTable(
   "topup_eligibility_rules",
   {
     id: text("id").primaryKey(),
@@ -75,7 +68,7 @@ export const topupEligibilityRules = sqliteTable(
     roleId: text("role_id").references(() => subscriptionRoles.id, {
       onDelete: "cascade",
     }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("topup_eligibility_rules_product_idx").on(table.topupProductId),

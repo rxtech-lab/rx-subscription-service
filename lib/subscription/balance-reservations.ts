@@ -296,7 +296,8 @@ export async function reserveBalance(input: {
               eq(balances.unitId, input.unitId),
             ),
           )
-          .limit(1);
+          .limit(1)
+          .for("update");
         throw new InsufficientBalanceError(
           current ? current.amount - current.reserved : 0,
           amount,
@@ -415,7 +416,8 @@ export async function increaseBalanceReservation(input: {
               eq(balances.unitId, reservation.unitId),
             ),
           )
-          .limit(1);
+          .limit(1)
+          .for("update");
         throw new InsufficientBalanceError(
           current ? current.amount - current.reserved : 0,
           amount,
@@ -520,7 +522,8 @@ export async function settleBalanceReservation(input: {
             eq(balanceReservations.applicationId, input.applicationId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!reservation) throw new ReservationNotFoundError(input.reservationId);
       if (reservation.status === "closed" || reservation.status === "released") {
         throw new ReservationStateError(reservation.status);
@@ -535,7 +538,8 @@ export async function settleBalanceReservation(input: {
             eq(balances.unitId, reservation.unitId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!currentBalance) throw new Error("Reservation balance is missing");
 
       const hold = reservation.status === "open" ? reservation.amount : 0;
@@ -717,7 +721,8 @@ export async function releaseBalanceReservation(input: {
             eq(balanceReservations.applicationId, input.applicationId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!reservation) throw new ReservationNotFoundError(input.reservationId);
       if (reservation.status === "closed" || reservation.status === "released") {
         throw new ReservationStateError(reservation.status);
@@ -732,7 +737,8 @@ export async function releaseBalanceReservation(input: {
             eq(balances.unitId, reservation.unitId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!currentBalance) throw new Error("Reservation balance is missing");
 
       let balanceAfter = currentBalance.amount;

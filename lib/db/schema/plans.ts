@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, uniqueIndex, timestamp, boolean, jsonb, bigint } from "drizzle-orm/pg-core";
 import { applications } from "./applications";
 import { balanceUnits } from "./units";
 import { subscriptionRoles } from "./roles";
@@ -16,7 +9,7 @@ export const BILLING_INTERVALS = ["month", "quarter", "year", "one_time"] as con
 export type BillingInterval = (typeof BILLING_INTERVALS)[number];
 export const DEFAULT_PLAN_GROUP = "default";
 
-export const plans = sqliteTable(
+export const plans = pgTable(
   "plans",
   {
     id: text("id").primaryKey(),
@@ -29,26 +22,26 @@ export const plans = sqliteTable(
     /** A user may own at most one active or one-time plan in each group. */
     planGroup: text("plan_group").notNull().default(DEFAULT_PLAN_GROUP),
     billingInterval: text("billing_interval", { enum: BILLING_INTERVALS }).notNull(),
-    intervalCount: integer("interval_count").notNull().default(1),
-    priceAmountCents: integer("price_amount_cents").notNull(),
+    intervalCount: bigint("interval_count", { mode: "number" }).notNull().default(1),
+    priceAmountCents: bigint("price_amount_cents", { mode: "number" }).notNull(),
     currency: text("currency").notNull().default("usd"),
-    trialDays: integer("trial_days").notNull().default(0),
+    trialDays: bigint("trial_days", { mode: "number" }).notNull().default(0),
     /** Enroll users into this free recurring plan when they have no plan in its group. */
-    autoSubscribe: integer("auto_subscribe", { mode: "boolean" })
+    autoSubscribe: boolean("auto_subscribe")
       .notNull()
       .default(false),
     status: text("status", { enum: ["draft", "active", "archived"] })
       .notNull()
       .default("draft"),
-    sortOrder: integer("sort_order").notNull().default(0),
+    sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     stripeProductId: text("stripe_product_id"),
     stripePriceId: text("stripe_price_id"),
     /** Stripe ids are per-account, so the sandbox account needs its own pair. */
     stripeSandboxProductId: text("stripe_sandbox_product_id"),
     stripeSandboxPriceId: text("stripe_sandbox_price_id"),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("plans_app_key_idx").on(table.applicationId, table.key),
@@ -56,7 +49,7 @@ export const plans = sqliteTable(
     index("plans_app_group_idx").on(table.applicationId, table.planGroup),
     uniqueIndex("plans_app_group_auto_subscribe_idx")
       .on(table.applicationId, table.planGroup)
-      .where(sql`${table.autoSubscribe} = 1`),
+      .where(sql`${table.autoSubscribe} = true`),
     check("plans_price_nonnegative", sql`${table.priceAmountCents} >= 0`),
     check("plans_interval_count_positive", sql`${table.intervalCount} >= 1`),
     check("plans_trial_nonnegative", sql`${table.trialDays} >= 0`),
@@ -104,7 +97,7 @@ export type BalanceExpiryPolicy = (typeof BALANCE_EXPIRY_POLICIES)[number];
  * optionally `trialAmount` during a trial; `usage_limit` sets the per-period
  * allowance for a usage item.
  */
-export const planEntitlements = sqliteTable(
+export const planEntitlements = pgTable(
   "plan_entitlements",
   {
     id: text("id").primaryKey(),
@@ -117,23 +110,23 @@ export const planEntitlements = sqliteTable(
     }),
     permissionKey: text("permission_key"),
     permissionScope: text("permission_scope", { enum: ["all", "selected"] }),
-    permissionTargetIds: text("permission_target_ids", { mode: "json" }).$type<
+    permissionTargetIds: jsonb("permission_target_ids").$type<
       string[]
     >(),
     usageItemId: text("usage_item_id").references(() => usageItems.id, {
       onDelete: "cascade",
     }),
     /** Allowance after the trial ends (and for plans without a trial). */
-    limitValue: integer("limit_value"),
+    limitValue: bigint("limit_value", { mode: "number" }),
     /** Allowance while Stripe reports the subscription as trialing. */
-    trialLimitValue: integer("trial_limit_value"),
+    trialLimitValue: bigint("trial_limit_value", { mode: "number" }),
     unitId: text("unit_id").references(() => balanceUnits.id, {
       onDelete: "cascade",
     }),
     /** Units granted after the trial ends (and for plans without a trial). */
-    amount: integer("amount"),
+    amount: bigint("amount", { mode: "number" }),
     /** Units granted while the subscription is trialing. Null inherits `amount`. */
-    trialAmount: integer("trial_amount"),
+    trialAmount: bigint("trial_amount", { mode: "number" }),
     /** `balance_grant` only. See `BALANCE_EXPIRY_POLICIES`. */
     balanceExpiryPolicy: text("balance_expiry_policy", {
       enum: BALANCE_EXPIRY_POLICIES,
@@ -141,11 +134,11 @@ export const planEntitlements = sqliteTable(
       .notNull()
       .default("never"),
     /** Months, required by the `duration` and `after_plan_end` policies. */
-    balanceExpiryMonths: integer("balance_expiry_months"),
+    balanceExpiryMonths: bigint("balance_expiry_months", { mode: "number" }),
     featureKey: text("feature_key"),
     featureValue: text("feature_value"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("plan_entitlements_plan_idx").on(table.planId),

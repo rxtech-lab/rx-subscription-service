@@ -449,8 +449,7 @@ export async function removeStoreProductMapping(input: {
       "This store product has verified purchases and cannot be removed",
     );
   }
-  // libsql does not enforce foreign keys by default, so the price row would
-  // otherwise outlive the mapping it belongs to.
+  // Remove the associated price before deleting the mapping.
   await db
     .delete(storeProductPrices)
     .where(eq(storeProductPrices.storeProductMappingId, input.mappingId));

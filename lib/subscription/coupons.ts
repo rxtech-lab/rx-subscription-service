@@ -913,9 +913,8 @@ export class CouponNotApplicableError extends Error {
  *
  * Previewing a coupon and reserving it are deliberately separate operations,
  * but the limit check and reservation cannot be: otherwise two concurrent
- * checkouts can both observe the last available use. SQLite serializes the
- * write transaction, so the second checkout either sees the first reservation
- * or retries after the writer releases the lock; it never overspends the code.
+ * checkouts can both observe the last available use. Lock the coupon row so
+ * concurrent reservations observe the preceding committed reservation.
  */
 export async function reserveRedemption(input: {
   applicationId: string;
@@ -945,7 +944,8 @@ export async function reserveRedemption(input: {
           eq(coupons.code, code),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!coupon) {
       throw new CouponNotApplicableError([], "That code is not valid for this app.");
     }

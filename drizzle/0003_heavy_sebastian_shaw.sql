@@ -1,1 +1,0 @@
-ALTER TABLE `app_users` ADD `test_clock_offset_ms` integer DEFAULT 0 NOT NULL;

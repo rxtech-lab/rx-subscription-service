@@ -229,7 +229,7 @@ export async function listAppUsers(
   const safePage = Math.max(1, page);
   const where = usersScope(applicationId, options.includeTest ?? false);
   const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(appUsers)
     .where(where);
 
@@ -371,7 +371,8 @@ export async function creditBalance(input: BalanceMutation & CreditExpiry) {
           eq(balances.unitId, input.unitId),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
     const debt = before && before.amount < 0 ? -before.amount : 0;
 
     const [updated] = await tx
@@ -474,7 +475,8 @@ export async function debitBalance(input: BalanceMutation) {
             eq(balances.unitId, input.unitId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       throw new InsufficientBalanceError(
         current ? current.amount - current.reserved : 0,
         amount,
@@ -558,7 +560,7 @@ export const LEDGER_PAGE_SIZE = 25;
 export async function getLedger(appUserId: string, page = 1) {
   const safePage = Math.max(1, page);
   const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(ledgerEntries)
     .where(eq(ledgerEntries.appUserId, appUserId));
 
@@ -606,7 +608,7 @@ export async function getLedgerHistory(input: {
     input.unitId ? eq(ledgerEntries.unitId, input.unitId) : undefined,
   );
   const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(ledgerEntries)
     .where(where);
   const entries = await db

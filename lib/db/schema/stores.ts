@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, uniqueIndex, timestamp, boolean, bigint } from "drizzle-orm/pg-core";
 import { API_ENVIRONMENTS, applications } from "./applications";
 import { BILLING_PROVIDERS, purchases, subscriptions } from "./billing";
 import { plans } from "./plans";
@@ -24,7 +17,7 @@ export const STORE_PRODUCT_TYPES = [
 export type StoreProductType = (typeof STORE_PRODUCT_TYPES)[number];
 
 /** Non-secret App Store metadata for one RxArgo application. */
-export const appleStoreIntegrations = sqliteTable(
+export const appleStoreIntegrations = pgTable(
   "apple_store_integrations",
   {
     id: text("id").primaryKey(),
@@ -33,10 +26,10 @@ export const appleStoreIntegrations = sqliteTable(
       .references(() => applications.id, { onDelete: "cascade" })
       .unique(),
     bundleId: text("bundle_id").notNull().unique(),
-    appAppleId: integer("app_apple_id").notNull().unique(),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    appAppleId: bigint("app_apple_id", { mode: "number" }).notNull().unique(),
+    enabled: boolean("enabled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     check("apple_store_app_id_positive", sql`${table.appAppleId} > 0`),
@@ -44,7 +37,7 @@ export const appleStoreIntegrations = sqliteTable(
 );
 
 /** Maps a provider product id to exactly one local plan or top-up. */
-export const storeProductMappings = sqliteTable(
+export const storeProductMappings = pgTable(
   "store_product_mappings",
   {
     id: text("id").primaryKey(),
@@ -58,8 +51,8 @@ export const storeProductMappings = sqliteTable(
     topupProductId: text("topup_product_id").references(() => topupProducts.id, {
       onDelete: "cascade",
     }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("store_products_app_provider_product_idx").on(
@@ -94,7 +87,7 @@ export const storeProductMappings = sqliteTable(
  * the new columns before they exist — so a column added there fails the deploy
  * that introduces it.
  */
-export const storeProductPrices = sqliteTable(
+export const storeProductPrices = pgTable(
   "store_product_prices",
   {
     id: text("id").primaryKey(),
@@ -102,16 +95,16 @@ export const storeProductPrices = sqliteTable(
       .notNull()
       .references(() => storeProductMappings.id, { onDelete: "cascade" })
       .unique(),
-    priceAmountCents: integer("price_amount_cents").notNull(),
+    priceAmountCents: bigint("price_amount_cents", { mode: "number" }).notNull(),
     /** Lowercase ISO 4217, e.g. "usd". */
     currency: text("currency").notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
 );
 
 /** Stable provider-owned account token for one environment-specific app user. */
-export const storeAccountLinks = sqliteTable(
+export const storeAccountLinks = pgTable(
   "store_account_links",
   {
     id: text("id").primaryKey(),
@@ -123,14 +116,12 @@ export const storeAccountLinks = sqliteTable(
       .references(() => appUsers.id, { onDelete: "cascade" }),
     provider: text("provider", { enum: STORE_PROVIDERS }).notNull(),
     providerAccountToken: text("provider_account_token").notNull(),
-    consumptionDataConsent: integer("consumption_data_consent", {
-      mode: "boolean",
-    })
+    consumptionDataConsent: boolean("consumption_data_consent")
       .notNull()
       .default(false),
-    consentUpdatedAt: integer("consent_updated_at", { mode: "timestamp_ms" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    consentUpdatedAt: timestamp("consent_updated_at", { withTimezone: true, mode: "date", precision: 3 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("store_accounts_user_provider_idx").on(
@@ -146,7 +137,7 @@ export const storeAccountLinks = sqliteTable(
 );
 
 /** Normalized, verified store transaction used for replay and refund accounting. */
-export const storeTransactions = sqliteTable(
+export const storeTransactions = pgTable(
   "store_transactions",
   {
     id: text("id").primaryKey(),
@@ -162,14 +153,14 @@ export const storeTransactions = sqliteTable(
     originalTransactionId: text("original_transaction_id").notNull(),
     productId: text("product_id").notNull(),
     productType: text("product_type", { enum: STORE_PRODUCT_TYPES }).notNull(),
-    quantity: integer("quantity").notNull().default(1),
-    priceMilliunits: integer("price_milliunits"),
+    quantity: bigint("quantity", { mode: "number" }).notNull().default(1),
+    priceMilliunits: bigint("price_milliunits", { mode: "number" }),
     currency: text("currency"),
-    purchaseAt: integer("purchase_at", { mode: "timestamp_ms" }).notNull(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
-    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
-    revocationPercentage: integer("revocation_percentage").notNull().default(0),
-    signedAt: integer("signed_at", { mode: "timestamp_ms" }).notNull(),
+    purchaseAt: timestamp("purchase_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date", precision: 3 }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date", precision: 3 }),
+    revocationPercentage: bigint("revocation_percentage", { mode: "number" }).notNull().default(0),
+    signedAt: timestamp("signed_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
     signedTransaction: text("signed_transaction").notNull(),
     subscriptionId: text("subscription_id").references(() => subscriptions.id, {
       onDelete: "set null",
@@ -177,8 +168,8 @@ export const storeTransactions = sqliteTable(
     purchaseId: text("purchase_id").references(() => purchases.id, {
       onDelete: "set null",
     }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("store_transactions_provider_transaction_idx").on(
@@ -201,7 +192,7 @@ export const storeTransactions = sqliteTable(
 );
 
 /** Signed provider event inbox. A failed row is safe to reclaim and retry. */
-export const storeProviderEvents = sqliteTable(
+export const storeProviderEvents = pgTable(
   "store_provider_events",
   {
     id: text("id").primaryKey(),
@@ -216,11 +207,11 @@ export const storeProviderEvents = sqliteTable(
     status: text("status", {
       enum: ["processing", "processed", "ignored", "failed"],
     }).notNull(),
-    signedAt: integer("signed_at", { mode: "timestamp_ms" }),
+    signedAt: timestamp("signed_at", { withTimezone: true, mode: "date", precision: 3 }),
     signedPayload: text("signed_payload").notNull(),
     failureCode: text("failure_code"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    processedAt: integer("processed_at", { mode: "timestamp_ms" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true, mode: "date", precision: 3 }),
   },
   (table) => [
     uniqueIndex("store_events_provider_event_idx").on(
@@ -232,7 +223,7 @@ export const storeProviderEvents = sqliteTable(
 );
 
 /** Last successfully scanned notification-history boundary per app/environment. */
-export const storeReconciliationCursors = sqliteTable(
+export const storeReconciliationCursors = pgTable(
   "store_reconciliation_cursors",
   {
     id: text("id").primaryKey(),
@@ -241,8 +232,8 @@ export const storeReconciliationCursors = sqliteTable(
       .references(() => applications.id, { onDelete: "cascade" }),
     provider: text("provider", { enum: BILLING_PROVIDERS }).notNull(),
     environment: text("environment", { enum: API_ENVIRONMENTS }).notNull(),
-    lastSyncedAt: integer("last_synced_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("store_reconciliation_app_provider_env_idx").on(

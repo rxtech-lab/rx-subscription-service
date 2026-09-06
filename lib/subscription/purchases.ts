@@ -14,7 +14,7 @@ export async function listPurchaseHistory(input: {
     eq(purchases.appUserId, input.appUserId),
   );
   const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(purchases)
     .where(where);
   const rows = await db

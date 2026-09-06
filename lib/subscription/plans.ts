@@ -375,7 +375,7 @@ export async function addPlanEntitlement(
   return entitlement;
 }
 
-/** An empty string is not a missing id: it would be sent to SQLite as a real
+/** An empty string is not a missing id: it would be sent to PostgreSQL as a real
  * foreign key and fail the constraint. Callers that fill in every field — an AI
  * tool call, a single form with inputs for every kind — hit that easily. */
 const blankToNull = (value?: string | null) => value?.trim() || null;
