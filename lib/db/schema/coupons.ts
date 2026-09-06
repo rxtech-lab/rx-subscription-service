@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, uniqueIndex, timestamp, boolean, jsonb, bigint } from "drizzle-orm/pg-core";
 import { applications } from "./applications";
 import { appUsers } from "./users";
 import { plans } from "./plans";
@@ -33,7 +26,7 @@ export type CouponDiscountType = (typeof COUPON_DISCOUNT_TYPES)[number];
  * `percentBasisPoints` keeps the house rule that money and rates are integers:
  * 2550 is 25.5%, which is exactly what Stripe's float `percent_off` wants.
  */
-export const coupons = sqliteTable(
+export const coupons = pgTable(
   "coupons",
   {
     id: text("id").primaryKey(),
@@ -46,39 +39,39 @@ export const coupons = sqliteTable(
     description: text("description"),
     discountType: text("discount_type", { enum: COUPON_DISCOUNT_TYPES }).notNull(),
     /** Hundredths of a percent, so 25.5% is 2550. Null for amount coupons. */
-    percentBasisPoints: integer("percent_basis_points"),
+    percentBasisPoints: bigint("percent_basis_points", { mode: "number" }),
     /** Flat discount in minor units. Null for percentage coupons. */
-    amountOffCents: integer("amount_off_cents"),
+    amountOffCents: bigint("amount_off_cents", { mode: "number" }),
     currency: text("currency").notNull().default("usd"),
     /**
      * Ceiling on what one charge may be discounted by. Stripe has no such field,
      * so a percentage that would exceed it is converted to an equivalent
      * `amount_off` coupon at checkout.
      */
-    maxDiscountCents: integer("max_discount_cents"),
+    maxDiscountCents: bigint("max_discount_cents", { mode: "number" }),
     duration: text("duration", { enum: COUPON_DURATIONS }).notNull().default("once"),
     /** Required when duration is `repeating` — "20% off for 3 months". */
-    durationInMonths: integer("duration_in_months"),
+    durationInMonths: bigint("duration_in_months", { mode: "number" }),
     /** `all` covers every active plan and topup; `selected` uses coupon_targets. */
     appliesTo: text("applies_to", { enum: ["all", "selected"] })
       .notNull()
       .default("all"),
     /** When true, an empty coupon_users set means nobody, never everybody. */
-    restrictToUsers: integer("restrict_to_users", { mode: "boolean" })
+    restrictToUsers: boolean("restrict_to_users")
       .notNull()
       .default(false),
     /** Total redemptions allowed across every user. Null is unlimited. */
-    maxRedemptions: integer("max_redemptions"),
+    maxRedemptions: bigint("max_redemptions", { mode: "number" }),
     /** Redemptions allowed per user. Null is unlimited. */
-    maxRedemptionsPerUser: integer("max_redemptions_per_user"),
+    maxRedemptionsPerUser: bigint("max_redemptions_per_user", { mode: "number" }),
     /** Order subtotal the code needs to apply at all. */
-    minimumAmountCents: integer("minimum_amount_cents"),
+    minimumAmountCents: bigint("minimum_amount_cents", { mode: "number" }),
     /** Only redeemable by a user who has never paid for anything here. */
-    firstTimeOnly: integer("first_time_only", { mode: "boolean" })
+    firstTimeOnly: boolean("first_time_only")
       .notNull()
       .default(false),
-    startsAt: integer("starts_at", { mode: "timestamp_ms" }),
-    redeemBy: integer("redeem_by", { mode: "timestamp_ms" }),
+    startsAt: timestamp("starts_at", { withTimezone: true, mode: "date", precision: 3 }),
+    redeemBy: timestamp("redeem_by", { withTimezone: true, mode: "date", precision: 3 }),
     status: text("status", { enum: ["draft", "active", "archived"] })
       .notNull()
       .default("draft"),
@@ -90,9 +83,9 @@ export const coupons = sqliteTable(
      */
     stripeCouponId: text("stripe_coupon_id"),
     stripeSandboxCouponId: text("stripe_sandbox_coupon_id"),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("coupons_app_code_idx").on(table.applicationId, table.code),
@@ -129,7 +122,7 @@ export const coupons = sqliteTable(
 );
 
 /** What a `selected` coupon may be spent on. Exactly one column is set. */
-export const couponTargets = sqliteTable(
+export const couponTargets = pgTable(
   "coupon_targets",
   {
     id: text("id").primaryKey(),
@@ -140,7 +133,7 @@ export const couponTargets = sqliteTable(
     topupProductId: text("topup_product_id").references(() => topupProducts.id, {
       onDelete: "cascade",
     }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("coupon_targets_coupon_idx").on(table.couponId),
@@ -154,7 +147,7 @@ export const couponTargets = sqliteTable(
 );
 
 /** An allow-list, enabled explicitly by coupons.restrictToUsers. */
-export const couponUsers = sqliteTable(
+export const couponUsers = pgTable(
   "coupon_users",
   {
     id: text("id").primaryKey(),
@@ -164,7 +157,7 @@ export const couponUsers = sqliteTable(
     appUserId: text("app_user_id")
       .notNull()
       .references(() => appUsers.id, { onDelete: "cascade" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("coupon_users_coupon_user_idx").on(table.couponId, table.appUserId),
@@ -189,7 +182,7 @@ export type CouponRedemptionStatus = (typeof COUPON_REDEMPTION_STATUSES)[number]
  * are read from here rather than from Stripe's `times_redeemed`, which resets
  * whenever the terms change and a new Stripe Coupon is minted.
  */
-export const couponRedemptions = sqliteTable(
+export const couponRedemptions = pgTable(
   "coupon_redemptions",
   {
     id: text("id").primaryKey(),
@@ -211,12 +204,12 @@ export const couponRedemptions = sqliteTable(
     }),
     purchaseId: text("purchase_id"),
     /** What the first charge was discounted by, after any cap. */
-    discountCents: integer("discount_cents").notNull().default(0),
+    discountCents: bigint("discount_cents", { mode: "number" }).notNull().default(0),
     currency: text("currency").notNull().default("usd"),
     stripeCouponId: text("stripe_coupon_id"),
     stripeCheckoutSessionId: text("stripe_checkout_session_id"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    redeemedAt: integer("redeemed_at", { mode: "timestamp_ms" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    redeemedAt: timestamp("redeemed_at", { withTimezone: true, mode: "date", precision: 3 }),
   },
   (table) => [
     index("coupon_redemptions_coupon_status_idx").on(table.couponId, table.status),

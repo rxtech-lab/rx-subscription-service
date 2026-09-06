@@ -9,7 +9,7 @@ prices, currency, taxes, and refunds; local prices remain catalog metadata.
 Create one In-App Purchase key for the RxLab issuer in App Store Connect. Store
 the issuer ID and key ID as `APPLE_IAP_ISSUER_ID` and `APPLE_IAP_KEY_ID`. Base64
 encode the complete downloaded `.p8` file as `APPLE_IAP_PRIVATE_KEY_BASE64`.
-Never put the private key in Turso, client code, or a public environment
+Never put the private key in the database, client code, or a public environment
 variable.
 
 Download Apple's current root certificates, convert them to DER if needed, and

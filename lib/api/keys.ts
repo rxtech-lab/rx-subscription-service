@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   applicationApiKeys,
@@ -52,20 +52,20 @@ export async function listApiKeys(
     isNull(applicationApiKeys.revokedAt),
   ];
   if (needle) {
-    // SQLite's LIKE is case-insensitive for ASCII, and `_`/`%` in a search box
+    // Keep searches case-insensitive, and `_`/`%` in a search box
     // are meant literally rather than as wildcards.
     const pattern = `%${needle.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
     const matches = or(
-      like(applicationApiKeys.name, sql`${pattern} ESCAPE '\\'`),
-      like(applicationApiKeys.keyPrefix, sql`${pattern} ESCAPE '\\'`),
-      like(applicationApiKeys.environment, sql`${pattern} ESCAPE '\\'`),
+      ilike(applicationApiKeys.name, sql`${pattern} ESCAPE '\\'`),
+      ilike(applicationApiKeys.keyPrefix, sql`${pattern} ESCAPE '\\'`),
+      ilike(applicationApiKeys.environment, sql`${pattern} ESCAPE '\\'`),
     );
     if (matches) filters.push(matches);
   }
   const where = and(...filters);
 
   const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
+    .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(applicationApiKeys)
     .where(where);
 

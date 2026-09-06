@@ -18,7 +18,7 @@ export async function getTestAutomationSettings(applicationId: string) {
       .where(eq(applications.id, applicationId))
       .limit(1),
     db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: sql<number>`count(*)`.mapWith(Number) })
       .from(testSuites)
       .where(eq(testSuites.applicationId, applicationId)),
   ]);

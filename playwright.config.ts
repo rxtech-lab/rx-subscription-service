@@ -25,8 +25,7 @@ export default defineConfig({
       url: `${E2E_BASE_URL}/login`,
       reuseExistingServer: false,
       env: {
-        TURSO_DATABASE_URL: E2E_DATABASE_URL,
-        TURSO_AUTH_TOKEN: "",
+        DATABASE_URL: E2E_DATABASE_URL,
         IS_E2E: "true",
         E2E_SECRET,
         // Pinned so a spec can mint the storefront session cookie itself.

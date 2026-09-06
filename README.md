@@ -5,7 +5,7 @@ deployment serves every app: each has its own plans, topups, roles, permissions,
 balance units, and usage items, and each user gets independent balances per app.
 
 - **Next.js 16** App Router, server actions for the console
-- **Turso / libSQL + Drizzle** for storage
+- **Neon PostgreSQL + Drizzle** for storage
 - **Stripe and Apple StoreKit 2** for payments
 - **@rxtech-lab/authjs-rxlab** for admin sign-in; applications come from
   rxlab-auth's admin OAuth-client API
@@ -18,6 +18,23 @@ bun install
 cp .env.example .env.local     # fill in the values
 bun run db:migrate             # apply migrations
 bun dev
+```
+
+Set `DATABASE_URL` to the Neon PostgreSQL connection URL in both local and
+hosting environments. There is no local-file fallback. Builds do not modify the
+database; run `bun run db:migrate` before deploying application changes.
+For schema changes, run `bun run db:generate`, review and commit the generated
+SQL and snapshots, then apply them with `bun run db:migrate` (Drizzle Kit).
+The PostgreSQL baseline replaces the old SQLite migration history.
+
+Browser tests reset only their dedicated local PostgreSQL database. Start it with:
+
+```bash
+docker run --rm -d --name rx-subscription-e2e \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=rx_subscription_e2e \
+  -p 127.0.0.1:5433:5432 postgres:17
+bun run test:e2e
+docker stop rx-subscription-e2e
 ```
 
 Without `AUTH_*` set the app boots and explains what is missing rather than

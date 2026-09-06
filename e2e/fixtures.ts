@@ -1,6 +1,6 @@
 export const E2E_BASE_URL = "http://127.0.0.1:3100";
 export const E2E_STRIPE_URL = "http://127.0.0.1:3101";
-export const E2E_DATABASE_URL = "file:/tmp/rx-subscription-playwright.db";
+export const E2E_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5433/rx_subscription_e2e";
 export const E2E_SECRET = "rx-subscription-playwright-only";
 export const E2E_SANDBOX_WEBHOOK_SECRET = "whsec_playwright_sandbox";
 export const E2E_API_KEY =

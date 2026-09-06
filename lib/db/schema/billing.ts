@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, uniqueIndex, timestamp, boolean, jsonb, bigint } from "drizzle-orm/pg-core";
 import { applications } from "./applications";
 import { appUsers } from "./users";
 import { balanceUnits } from "./units";
@@ -43,7 +36,7 @@ export type SubscriptionBillingProvider =
  * editing a plan never silently changes what existing subscribers already paid
  * for. Live plan edits only affect new subscriptions and renewals.
  */
-export const subscriptions = sqliteTable(
+export const subscriptions = pgTable(
   "subscriptions",
   {
     id: text("id").primaryKey(),
@@ -57,9 +50,9 @@ export const subscriptions = sqliteTable(
       .notNull()
       .references(() => plans.id, { onDelete: "restrict" }),
     status: text("status", { enum: SUBSCRIPTION_STATUSES }).notNull(),
-    currentPeriodStart: integer("current_period_start", { mode: "timestamp_ms" }),
-    currentPeriodEnd: integer("current_period_end", { mode: "timestamp_ms" }),
-    cancelAtPeriodEnd: integer("cancel_at_period_end", { mode: "boolean" })
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true, mode: "date", precision: 3 }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "date", precision: 3 }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end")
       .notNull()
       .default(false),
     billingProvider: text("billing_provider", {
@@ -71,10 +64,10 @@ export const subscriptions = sqliteTable(
     providerSubscriptionId: text("provider_subscription_id"),
     providerProductId: text("provider_product_id"),
     /** Reject provider state older than the latest signed snapshot we applied. */
-    providerSignedAt: integer("provider_signed_at", { mode: "timestamp_ms" }),
+    providerSignedAt: timestamp("provider_signed_at", { withTimezone: true, mode: "date", precision: 3 }),
     stripeSubscriptionId: text("stripe_subscription_id").unique(),
     stripeCustomerId: text("stripe_customer_id"),
-    entitlementSnapshot: text("entitlement_snapshot", { mode: "json" }).$type<
+    entitlementSnapshot: jsonb("entitlement_snapshot").$type<
       Record<string, unknown>
     >(),
     /**
@@ -84,11 +77,11 @@ export const subscriptions = sqliteTable(
      * without these a fresh durable timer would be enqueued per webhook.
      */
     trialWatchRunId: text("trial_watch_run_id"),
-    trialWatchEndsAt: integer("trial_watch_ends_at", { mode: "timestamp_ms" }),
-    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
-    endedAt: integer("ended_at", { mode: "timestamp_ms" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    trialWatchEndsAt: timestamp("trial_watch_ends_at", { withTimezone: true, mode: "date", precision: 3 }),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true, mode: "date", precision: 3 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("subscriptions_user_status_idx").on(table.appUserId, table.status),
@@ -103,7 +96,7 @@ export const subscriptions = sqliteTable(
 );
 
 /** One-time plan purchases and topups. Recurring charges live on `subscriptions`. */
-export const purchases = sqliteTable(
+export const purchases = pgTable(
   "purchases",
   {
     id: text("id").primaryKey(),
@@ -121,8 +114,8 @@ export const purchases = sqliteTable(
     unitId: text("unit_id").references(() => balanceUnits.id, {
       onDelete: "set null",
     }),
-    unitsGranted: integer("units_granted").notNull().default(0),
-    amountCents: integer("amount_cents").notNull(),
+    unitsGranted: bigint("units_granted", { mode: "number" }).notNull().default(0),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     currency: text("currency").notNull().default("usd"),
     status: text("status", {
       enum: ["pending", "paid", "failed", "refunded", "disputed"],
@@ -133,10 +126,10 @@ export const purchases = sqliteTable(
     providerTransactionId: text("provider_transaction_id"),
     providerOriginalTransactionId: text("provider_original_transaction_id"),
     providerProductId: text("provider_product_id"),
-    quantity: integer("quantity").notNull().default(1),
+    quantity: bigint("quantity", { mode: "number" }).notNull().default(1),
     /** Apple records prices in 1/1000 currency units; cents remain for reports. */
-    priceMilliunits: integer("price_milliunits"),
-    entitlementSnapshot: text("entitlement_snapshot", { mode: "json" }).$type<
+    priceMilliunits: bigint("price_milliunits", { mode: "number" }),
+    entitlementSnapshot: jsonb("entitlement_snapshot").$type<
       Record<string, unknown>
     >(),
     fulfillmentFailureCode: text("fulfillment_failure_code"),
@@ -145,11 +138,11 @@ export const purchases = sqliteTable(
     stripeInvoiceId: text("stripe_invoice_id"),
     hostedInvoiceUrl: text("hosted_invoice_url"),
     invoicePdfUrl: text("invoice_pdf_url"),
-    refundedAmountCents: integer("refunded_amount_cents").notNull().default(0),
-    reversedUnits: integer("reversed_units").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-    paidAt: integer("paid_at", { mode: "timestamp_ms" }),
+    refundedAmountCents: bigint("refunded_amount_cents", { mode: "number" }).notNull().default(0),
+    reversedUnits: bigint("reversed_units", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true, mode: "date", precision: 3 }),
   },
   (table) => [
     index("purchases_user_created_idx").on(table.appUserId, table.createdAt),
@@ -165,7 +158,7 @@ export const purchases = sqliteTable(
 );
 
 /** One Stripe Customer per (application, user) so balances never cross apps. */
-export const stripeCustomers = sqliteTable(
+export const stripeCustomers = pgTable(
   "stripe_customers",
   {
     id: text("id").primaryKey(),
@@ -174,7 +167,7 @@ export const stripeCustomers = sqliteTable(
       .references(() => appUsers.id, { onDelete: "cascade" })
       .unique(),
     stripeCustomerId: text("stripe_customer_id").notNull().unique(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     uniqueIndex("stripe_customers_customer_idx").on(table.stripeCustomerId),
@@ -182,7 +175,7 @@ export const stripeCustomers = sqliteTable(
 );
 
 /** Webhook dedupe. A claimed row means "someone is already handling this event". */
-export const stripeWebhookEvents = sqliteTable("stripe_webhook_events", {
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
   id: text("id").primaryKey(),
   type: text("type").notNull(),
   status: text("status", {
@@ -190,8 +183,8 @@ export const stripeWebhookEvents = sqliteTable("stripe_webhook_events", {
   }).notNull(),
   objectId: text("object_id"),
   failureCode: text("failure_code"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  processedAt: integer("processed_at", { mode: "timestamp_ms" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true, mode: "date", precision: 3 }),
 });
 
 export type Subscription = typeof subscriptions.$inferSelect;

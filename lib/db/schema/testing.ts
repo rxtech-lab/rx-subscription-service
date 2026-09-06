@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, pgTable, text, uniqueIndex, timestamp, jsonb, bigint } from "drizzle-orm/pg-core";
 import { applications } from "./applications";
 
 /**
@@ -11,7 +11,7 @@ import { applications } from "./applications";
  * evaluated.
  */
 
-export const testSuites = sqliteTable(
+export const testSuites = pgTable(
   "test_suites",
   {
     id: text("id").primaryKey(),
@@ -23,8 +23,8 @@ export const testSuites = sqliteTable(
     code: text("code").notNull(),
     /** Who last wrote the file — a console admin or the assistant. */
     updatedBy: text("updated_by", { enum: ["user", "ai"] }).notNull().default("user"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("test_suites_app_idx").on(table.applicationId, table.updatedAt),
@@ -32,7 +32,7 @@ export const testSuites = sqliteTable(
   ],
 );
 
-export const testRuns = sqliteTable(
+export const testRuns = pgTable(
   "test_runs",
   {
     id: text("id").primaryKey(),
@@ -58,15 +58,15 @@ export const testRuns = sqliteTable(
     conversationId: text("conversation_id"),
     /** Which execution backend served the run: `sandbox` or `local`. */
     driver: text("driver").notNull().default("sandbox"),
-    total: integer("total").notNull().default(0),
-    passed: integer("passed").notNull().default(0),
-    failed: integer("failed").notNull().default(0),
-    skipped: integer("skipped").notNull().default(0),
-    durationMs: integer("duration_ms"),
+    total: bigint("total", { mode: "number" }).notNull().default(0),
+    passed: bigint("passed", { mode: "number" }).notNull().default(0),
+    failed: bigint("failed", { mode: "number" }).notNull().default(0),
+    skipped: bigint("skipped", { mode: "number" }).notNull().default(0),
+    durationMs: bigint("duration_ms", { mode: "number" }),
     /** Set when the harness itself could not run — a compile error, a timeout. */
     error: text("error"),
-    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
-    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date", precision: 3 }),
   },
   (table) => [
     index("test_runs_suite_started_idx").on(table.suiteId, table.startedAt),
@@ -74,7 +74,7 @@ export const testRuns = sqliteTable(
   ],
 );
 
-export const testRunCases = sqliteTable(
+export const testRunCases = pgTable(
   "test_run_cases",
   {
     id: text("id").primaryKey(),
@@ -87,15 +87,15 @@ export const testRunCases = sqliteTable(
     status: text("status", {
       enum: ["running", "passed", "failed", "skipped"],
     }).notNull(),
-    position: integer("position").notNull(),
-    durationMs: integer("duration_ms"),
+    position: bigint("position", { mode: "number" }).notNull(),
+    durationMs: bigint("duration_ms", { mode: "number" }),
     error: text("error"),
     /** Named `step()` calls, in order, each with its own outcome. */
-    steps: text("steps", { mode: "json" })
+    steps: jsonb("steps")
       .$type<{ name: string; status: string; durationMs: number | null }[]>()
       .notNull()
       .default([]),
-    startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [index("test_run_cases_run_idx").on(table.runId, table.position)],
 );
@@ -107,19 +107,19 @@ export const testRunCases = sqliteTable(
  * after a sequence number, so a viewer that connects late — or reloads — replays
  * the whole run rather than joining a live stream it cannot rewind.
  */
-export const testRunEvents = sqliteTable(
+export const testRunEvents = pgTable(
   "test_run_events",
   {
     id: text("id").primaryKey(),
     runId: text("run_id")
       .notNull()
       .references(() => testRuns.id, { onDelete: "cascade" }),
-    seq: integer("seq").notNull(),
+    seq: bigint("seq", { mode: "number" }).notNull(),
     type: text("type").notNull(),
-    payload: text("payload", { mode: "json" })
+    payload: jsonb("payload")
       .$type<Record<string, unknown>>()
       .notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [uniqueIndex("test_run_events_run_seq_idx").on(table.runId, table.seq)],
 );

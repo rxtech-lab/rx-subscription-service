@@ -1,7 +1,7 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, pgTable, text, timestamp, jsonb, bigint } from "drizzle-orm/pg-core";
 import { applications } from "./applications";
 
-export const aiConversations = sqliteTable(
+export const aiConversations = pgTable(
   "ai_conversations",
   {
     id: text("id").primaryKey(),
@@ -14,16 +14,16 @@ export const aiConversations = sqliteTable(
     // summary that stands in for the first `summaryMessageCount` model messages
     // when the conversation is sent to the model.
     summary: text("summary"),
-    summaryMessageCount: integer("summary_message_count").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    summaryMessageCount: bigint("summary_message_count", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("ai_conversations_user_updated_idx").on(table.rxlabUserId, table.updatedAt),
   ],
 );
 
-export const aiMessages = sqliteTable(
+export const aiMessages = pgTable(
   "ai_messages",
   {
     id: text("id").primaryKey(),
@@ -31,8 +31,8 @@ export const aiMessages = sqliteTable(
       .notNull()
       .references(() => aiConversations.id, { onDelete: "cascade" }),
     role: text("role", { enum: ["system", "user", "assistant"] }).notNull(),
-    parts: text("parts", { mode: "json" }).$type<unknown[]>().notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    parts: jsonb("parts").$type<unknown[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("ai_messages_conversation_created_idx").on(
@@ -47,7 +47,7 @@ export const aiMessages = sqliteTable(
  * applied it. `actorType: "ai"` plus `conversationId` makes an AI-driven change
  * traceable back to the exact chat that produced it.
  */
-export const auditLogs = sqliteTable(
+export const auditLogs = pgTable(
   "audit_logs",
   {
     id: text("id").primaryKey(),
@@ -59,10 +59,10 @@ export const auditLogs = sqliteTable(
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id"),
-    before: text("before", { mode: "json" }).$type<Record<string, unknown> | null>(),
-    after: text("after", { mode: "json" }).$type<Record<string, unknown> | null>(),
+    before: jsonb("before").$type<Record<string, unknown> | null>(),
+    after: jsonb("after").$type<Record<string, unknown> | null>(),
     conversationId: text("conversation_id"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("audit_logs_app_created_idx").on(table.applicationId, table.createdAt),

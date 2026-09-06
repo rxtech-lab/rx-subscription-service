@@ -127,7 +127,8 @@ export async function expireBalanceLots(
         .select()
         .from(balances)
         .where(and(eq(balances.appUserId, appUserId), eq(balances.unitId, unitId)))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!balance) return { lots: 0, units: 0 };
 
       const headroom = balance.amount - balance.reserved;

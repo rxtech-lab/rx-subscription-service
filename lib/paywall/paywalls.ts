@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import "server-only";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -284,7 +285,8 @@ export async function saveDraft(input: {
       .select()
       .from(paywalls)
       .where(eq(paywalls.id, input.paywallId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!current) throw new NotFoundError("paywall", input.paywallId);
 
     const [latestVersion] = await tx
@@ -297,7 +299,7 @@ export async function saveDraft(input: {
       throw new NotFoundError("paywall version", `${current.id}:latest`);
     }
 
-    if (JSON.stringify(current.draftSpec) === JSON.stringify(spec)) {
+    if (isDeepStrictEqual(current.draftSpec, spec)) {
       return { paywall: current, version: latestVersion };
     }
 
@@ -352,7 +354,8 @@ export async function publishPaywall(input: {
       .select()
       .from(paywalls)
       .where(eq(paywalls.id, input.paywallId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!current) throw new NotFoundError("paywall", input.paywallId);
 
     const [latestVersion] = await tx
@@ -366,7 +369,7 @@ export async function publishPaywall(input: {
     }
 
     const spec = suppliedSpec ?? assertSpec(current.draftSpec);
-    const sameAsDraft = JSON.stringify(current.draftSpec) === JSON.stringify(spec);
+    const sameAsDraft = isDeepStrictEqual(current.draftSpec, spec);
 
     let version: PaywallVersion;
     let versionNumber = latestVersion.version;
@@ -440,7 +443,8 @@ export async function restorePaywallVersion(input: {
       .select()
       .from(paywalls)
       .where(eq(paywalls.id, input.paywallId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!current) throw new NotFoundError("paywall", input.paywallId);
 
     const [latestVersion] = await tx
@@ -494,8 +498,7 @@ export async function restorePaywallVersion(input: {
 
 export async function deletePaywall(input: { paywallId: string; actor: Actor }): Promise<void> {
   const before = await requirePaywall(input.paywallId);
-  // The column is declared `on delete set null`, but SQLite only enforces that
-  // with foreign keys switched on; clearing explicitly keeps it true regardless.
+  // Clear application assignments before deleting the template.
   await db
     .update(applications)
     .set({ paywallId: null })

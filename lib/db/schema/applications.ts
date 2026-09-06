@@ -1,10 +1,4 @@
-import {
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { index, pgTable, text, uniqueIndex, timestamp, boolean } from "drizzle-orm/pg-core";
 import { paywalls } from "./paywalls";
 
 export const API_ENVIRONMENTS = ["xcode", "sandbox", "production"] as const;
@@ -20,7 +14,7 @@ export function isTestApiEnvironment(environment: ApiEnvironment): boolean {
  * client id, so it stays stable across syncs and can be used as the foreign key
  * everywhere else. Rows are upserted from the rxlab admin API on demand.
  */
-export const applications = sqliteTable("applications", {
+export const applications = pgTable("applications", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -30,16 +24,16 @@ export const applications = sqliteTable("applications", {
     .default("active"),
   defaultCurrency: text("default_currency").notNull().default("usd"),
   /** Run every saved test suite after subscription configuration changes. */
-  runTestsOnChange: integer("run_tests_on_change", { mode: "boolean" })
+  runTestsOnChange: boolean("run_tests_on_change")
     .notNull()
     .default(false),
   /** The paywall template this app shows; deleting the template clears it. */
   paywallId: text("paywall_id").references(() => paywalls.id, {
     onDelete: "set null",
   }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-  syncedAt: integer("synced_at", { mode: "timestamp_ms" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+  syncedAt: timestamp("synced_at", { withTimezone: true, mode: "date", precision: 3 }),
 });
 
 export const API_KEY_KINDS = ["secret", "publishable"] as const;
@@ -60,7 +54,7 @@ export type ApiKeyKind = (typeof API_KEY_KINDS)[number];
  *   from the request. It reaches only the read and purchase endpoints, so a
  *   leaked copy cannot move value or read a stranger's billing.
  */
-export const applicationApiKeys = sqliteTable(
+export const applicationApiKeys = pgTable(
   "application_api_keys",
   {
     id: text("id").primaryKey(),
@@ -86,9 +80,9 @@ export const applicationApiKeys = sqliteTable(
     allowedClientIds: text("allowed_client_ids"),
     keyPrefix: text("key_prefix").notNull(),
     hashedKey: text("hashed_key").notNull().unique(),
-    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
-    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: "date", precision: 3 }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date", precision: 3 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     index("application_api_keys_app_idx").on(table.applicationId),

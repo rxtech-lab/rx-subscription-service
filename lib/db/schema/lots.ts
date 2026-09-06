@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, pgTable, text, timestamp, bigint } from "drizzle-orm/pg-core";
 import { appUsers, ledgerEntries } from "./users";
 import { balanceUnits } from "./units";
 import { plans, BALANCE_EXPIRY_POLICIES } from "./plans";
@@ -22,7 +22,7 @@ import { subscriptions } from "./billing";
  * Debits draw soonest-expiring first, so a user never loses units they could
  * have spent.
  */
-export const balanceLots = sqliteTable(
+export const balanceLots = pgTable(
   "balance_lots",
   {
     id: text("id").primaryKey(),
@@ -36,13 +36,13 @@ export const balanceLots = sqliteTable(
     ledgerEntryId: text("ledger_entry_id").references(() => ledgerEntries.id, {
       onDelete: "set null",
     }),
-    originalAmount: integer("original_amount").notNull(),
-    remaining: integer("remaining").notNull(),
+    originalAmount: bigint("original_amount", { mode: "number" }).notNull(),
+    remaining: bigint("remaining", { mode: "number" }).notNull(),
     /**
      * Null means "does not expire". An `after_plan_end` lot is deliberately
      * null until the subscription ends, at which point it is stamped.
      */
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date", precision: 3 }),
     /**
      * Retained so an `after_plan_end` lot can be stamped later, and so the
      * console can explain why a lot expires when it does.
@@ -50,16 +50,16 @@ export const balanceLots = sqliteTable(
     expiryPolicy: text("expiry_policy", { enum: BALANCE_EXPIRY_POLICIES })
       .notNull()
       .default("never"),
-    expiryMonths: integer("expiry_months"),
+    expiryMonths: bigint("expiry_months", { mode: "number" }),
     /** Set for plan grants, so plan end can find the lots it has to stamp. */
     subscriptionId: text("subscription_id").references(() => subscriptions.id, {
       onDelete: "set null",
     }),
     planId: text("plan_id").references(() => plans.id, { onDelete: "set null" }),
     /** When the sweep actually zeroed this lot, for auditing. */
-    expiredAt: integer("expired_at", { mode: "timestamp_ms" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    expiredAt: timestamp("expired_at", { withTimezone: true, mode: "date", precision: 3 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
   },
   (table) => [
     // The debit path's hot query: open lots for one balance, soonest expiry
