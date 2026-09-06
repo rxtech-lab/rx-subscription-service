@@ -5,6 +5,7 @@ import {
   type JWSTransactionDecodedPayload,
 } from "@apple/app-store-server-library";
 import { and, eq } from "drizzle-orm";
+import { appleTransactionDiagnostic, appleUserDiagnostic } from "./diagnostics";
 import { db } from "@/lib/db";
 import {
   appUsers,
@@ -88,6 +89,7 @@ async function authoritativeState(input: {
     signedTransaction,
   );
   let status: number | undefined;
+  const submittedTransaction = transaction;
   let renewal: JWSRenewalInfoDecodedPayload | null = null;
 
   if (
@@ -151,7 +153,7 @@ async function authoritativeState(input: {
       }
     }
   }
-  return { signedTransaction, transaction, status, renewal };
+  return { signedTransaction, transaction, submittedTransaction, status, renewal };
 }
 
 async function reverseTransactionGrants(input: {
@@ -474,13 +476,45 @@ export async function fulfillAppleTransaction(input: {
     fetchAuthoritative: input.fetchAuthoritative ?? false,
   });
   const transaction = authoritative.transaction;
+  const diagnostic = {
+    applicationId: input.integration.applicationId,
+    requestedEnvironment: input.environment,
+    expectedUser: appleUserDiagnostic(input.expectedUser),
+    submitted: appleTransactionDiagnostic(authoritative.submittedTransaction),
+    authoritative: appleTransactionDiagnostic(transaction),
+    subscriptionStatus: authoritative.status ?? input.status ?? null,
+  };
   const token = transaction.appAccountToken;
-  if (!token) throw new ValidationError("Apple transaction has no appAccountToken");
+  if (!token) {
+    console.warn("apple_iap.account_token_rejected", { ...diagnostic, reason: "missing_token" });
+    throw new ValidationError("Apple transaction has no appAccountToken");
+  }
   const account = await findAppleAccountByToken(token);
   if (!account || account.applicationId !== input.integration.applicationId) {
+    console.warn("apple_iap.account_token_rejected", {
+      ...diagnostic,
+      reason: account ? "application_mismatch" : "unknown_token",
+    });
     throw new ValidationError("Apple account token is unknown");
   }
   if (input.expectedUser && account.appUserId !== input.expectedUser.id) {
+    // Only query diagnostic ownership on this failure path. Logging must not
+    // turn a known ownership rejection into a different database error.
+    const owner = await db.select({
+      id: appUsers.id,
+      applicationId: appUsers.applicationId,
+      environment: appUsers.environment,
+      rxlabUserId: appUsers.rxlabUserId,
+    }).from(appUsers).where(eq(appUsers.id, account.appUserId)).limit(1)
+      .then((rows) => rows[0]).catch(() => undefined);
+    console.warn("apple_iap.account_token_rejected", {
+      ...diagnostic,
+      reason: "user_mismatch",
+      accountLinkId: account.id,
+      linkedAppUserId: account.appUserId,
+      owner: appleUserDiagnostic(owner),
+      sameIdentity: owner ? owner.rxlabUserId === input.expectedUser.rxlabUserId : null,
+    });
     throw new ValidationError("Apple account token belongs to another user");
   }
   const [user] = await db
