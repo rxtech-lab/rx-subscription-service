@@ -1,3 +1,4 @@
+import { appleTokenActionSchema } from "@/lib/iap/apple/admin-schema";
 import { z } from "zod";
 
 /**
@@ -91,6 +92,7 @@ const suiteSourceEditSchema = z.discriminatedUnion("type", [
 ]);
 
 export const writeToolSchemas = {
+  manageAppleAccountToken: appleTokenActionSchema,
   createPlan: z.object({
     key: z.string().describe("URL-safe identifier, lowercase"),
     name: z.string(),

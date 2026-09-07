@@ -1,3 +1,4 @@
+import { AppleUserAccount } from "@/components/console/apple-user-account";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -377,6 +378,8 @@ export default async function UserDetailPage({
           ))}
         </div>
       </Card>
+
+      <AppleUserAccount applicationId={appId} appUserId={user.id} />
 
       {fulfillmentMissing ? (
         <div

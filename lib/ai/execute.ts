@@ -1,3 +1,4 @@
+import { manageAppleAccountToken } from "@/lib/iap/apple/admin";
 import "server-only";
 import type { Actor } from "@/lib/subscription/shared";
 import {
@@ -70,6 +71,8 @@ export async function executeWriteTool(input: {
 
   try {
     switch (input.name) {
+      case "manageAppleAccountToken":
+        return { ok: true, result: await manageAppleAccountToken(applicationId, actor, parsed.data) };
       case "createPlan": {
         const args = parsed.data as typeof writeToolSchemas.createPlan._output;
         return { ok: true, result: await createPlan({ applicationId, actor, ...args }) };

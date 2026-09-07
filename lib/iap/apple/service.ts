@@ -1,10 +1,12 @@
 import "server-only";
+import { appleLogTransaction, recordAppleLog } from "./logs";
 import {
   Status,
   type JWSRenewalInfoDecodedPayload,
   type JWSTransactionDecodedPayload,
 } from "@apple/app-store-server-library";
 import { and, eq } from "drizzle-orm";
+import { appleTransactionDiagnostic, appleUserDiagnostic } from "./diagnostics";
 import { db } from "@/lib/db";
 import {
   appUsers,
@@ -88,6 +90,7 @@ async function authoritativeState(input: {
     signedTransaction,
   );
   let status: number | undefined;
+  const submittedTransaction = transaction;
   let renewal: JWSRenewalInfoDecodedPayload | null = null;
 
   if (
@@ -151,7 +154,7 @@ async function authoritativeState(input: {
       }
     }
   }
-  return { signedTransaction, transaction, status, renewal };
+  return { signedTransaction, transaction, submittedTransaction, status, renewal };
 }
 
 async function reverseTransactionGrants(input: {
@@ -456,7 +459,7 @@ async function fulfillOneTime(input: {
   return saved;
 }
 
-export async function fulfillAppleTransaction(input: {
+async function fulfillAppleTransactionImpl(input: {
   integration: AppleStoreIntegration;
   environment: ApiEnvironment;
   signedTransaction: string;
@@ -466,7 +469,7 @@ export async function fulfillAppleTransaction(input: {
   fetchAuthoritative?: boolean;
   refundReversed?: boolean;
   stateSignedAt?: Date;
-}): Promise<AppleFulfillmentResult> {
+}, onVerified: (transaction: JWSTransactionDecodedPayload) => void): Promise<AppleFulfillmentResult> {
   const authoritative = await authoritativeState({
     integration: input.integration,
     environment: input.environment,
@@ -474,13 +477,60 @@ export async function fulfillAppleTransaction(input: {
     fetchAuthoritative: input.fetchAuthoritative ?? false,
   });
   const transaction = authoritative.transaction;
+  onVerified(transaction);
+  const diagnostic = {
+    applicationId: input.integration.applicationId,
+    requestedEnvironment: input.environment,
+    expectedUser: appleUserDiagnostic(input.expectedUser),
+    submitted: appleTransactionDiagnostic(authoritative.submittedTransaction),
+    authoritative: appleTransactionDiagnostic(transaction),
+    subscriptionStatus: authoritative.status ?? input.status ?? null,
+  };
+  const logRejection = async (reason: string, info: Record<string, unknown> = {}) => {
+    await recordAppleLog(input.integration.applicationId, input.expectedUser?.id ?? null,
+      "account_token_rejected", {
+        level: "error", environment: input.environment, error: reason,
+        ...appleLogTransaction(transaction),
+        info: { ...diagnostic, ...info },
+      });
+  };
   const token = transaction.appAccountToken;
-  if (!token) throw new ValidationError("Apple transaction has no appAccountToken");
+  if (!token) {
+    console.warn("apple_iap.account_token_rejected", { ...diagnostic, reason: "missing_token" });
+    await logRejection("missing_token");
+    throw new ValidationError("Apple transaction has no appAccountToken");
+  }
   const account = await findAppleAccountByToken(token);
   if (!account || account.applicationId !== input.integration.applicationId) {
+    console.warn("apple_iap.account_token_rejected", {
+      ...diagnostic,
+      reason: account ? "application_mismatch" : "unknown_token",
+    });
+    await logRejection(account ? "application_mismatch" : "unknown_token");
     throw new ValidationError("Apple account token is unknown");
   }
   if (input.expectedUser && account.appUserId !== input.expectedUser.id) {
+    // Only query diagnostic ownership on this failure path. Logging must not
+    // turn a known ownership rejection into a different database error.
+    const owner = await db.select({
+      id: appUsers.id,
+      applicationId: appUsers.applicationId,
+      environment: appUsers.environment,
+      rxlabUserId: appUsers.rxlabUserId,
+    }).from(appUsers).where(eq(appUsers.id, account.appUserId)).limit(1)
+      .then((rows) => rows[0]).catch(() => undefined);
+    console.warn("apple_iap.account_token_rejected", {
+      ...diagnostic,
+      reason: "user_mismatch",
+      accountLinkId: account.id,
+      linkedAppUserId: account.appUserId,
+      owner: appleUserDiagnostic(owner),
+      sameIdentity: owner ? owner.rxlabUserId === input.expectedUser.rxlabUserId : null,
+    });
+    await logRejection("user_mismatch", {
+      owner: appleUserDiagnostic(owner), linkedAppUserId: account.appUserId,
+      sameIdentity: owner ? owner.rxlabUserId === input.expectedUser.rxlabUserId : null,
+    });
     throw new ValidationError("Apple account token belongs to another user");
   }
   const [user] = await db
@@ -664,4 +714,30 @@ export async function fulfillAppleTransaction(input: {
     purchase,
     subscription,
   };
+}
+
+export async function fulfillAppleTransaction(input: Parameters<typeof fulfillAppleTransactionImpl>[0]) {
+  let verified: JWSTransactionDecodedPayload | undefined;
+  try {
+    const result = await fulfillAppleTransactionImpl(input, (transaction) => { verified = transaction; });
+    await recordAppleLog(input.integration.applicationId, input.expectedUser?.id ?? null, "transaction_fulfilled", {
+      level: "info", environment: input.environment,
+      accountToken: verified?.appAccountToken,
+      transactionId: result.transaction.transactionId,
+      originalTransactionId: result.transaction.originalTransactionId,
+      productId: result.transaction.productId,
+      info: { processed: result.processed },
+    });
+    return result;
+  } catch (error) {
+    // The ownership failures already have a richer verified-transaction log.
+    const message = error instanceof Error && error.name === "ValidationError" ? error.message : "Apple transaction processing failed";
+    if (!["Apple transaction has no appAccountToken", "Apple account token is unknown", "Apple account token belongs to another user"].includes(message)) {
+      await recordAppleLog(input.integration.applicationId, input.expectedUser?.id ?? null, "transaction_failed", {
+        level: "error", environment: input.environment, error: message,
+        ...(verified ? appleLogTransaction(verified) : {}),
+      });
+    }
+    throw error;
+  }
 }

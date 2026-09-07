@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "bun scripts/migrate.ts",
+    "db:check": "bun scripts/migrate.ts --check"
   },
   "dependencies": {
     "@ai-sdk/gateway": "3.0.153",
