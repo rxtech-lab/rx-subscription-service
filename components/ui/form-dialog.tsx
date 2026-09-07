@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, KeyRound, PencilLine, Plus, X } from "lucide-react";
+import { Download, FileText, KeyRound, PencilLine, Plus, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -22,6 +22,7 @@ export function useCloseFormDialog() {
 }
 
 const iconFor = {
+  details: FileText,
   plus: Plus,
   edit: PencilLine,
   key: KeyRound,

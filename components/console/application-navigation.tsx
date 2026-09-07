@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   Coins,
   FlaskConical,
+  ScrollText,
   Gauge,
   IdCard,
   LayoutDashboard,
@@ -39,6 +40,7 @@ const SECTIONS: NavigationItem[] = [
   { href: "/test", label: "Test", icon: FlaskConical },
   { href: "/subscriptions", label: "Subscriptions", icon: RefreshCcw },
   { href: "/paywall", label: "Paywall", icon: Smartphone },
+  { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 
