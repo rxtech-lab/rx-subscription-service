@@ -108,7 +108,7 @@ export async function addPlanEntitlementAction(
         kind,
         roleId: optionalText(formData, "roleId"),
         permissionKey: optionalText(formData, "permissionKey"),
-        permissionScope: checkbox(formData, "permissionAll") ? "all" : "selected",
+        permissionScope: optionalText(formData, "permissionScope") ?? (checkbox(formData, "permissionAll") ? "all" : "selected"),
         permissionTargetIds:
           optionalText(formData, "permissionTargetIds")
             ?.split(",")

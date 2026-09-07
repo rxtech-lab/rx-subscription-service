@@ -470,3 +470,34 @@ bun run db:generate     # after changing lib/db/schema/*
 bun run scripts/seed-demo.ts   # seed a demo app and print an API key
 ```
 </content>
+
+### Permission scopes and groups
+
+In **Permissions**, define a key such as `market.publish`, an optional group
+(`market` or `market.publish`), and comma-separated scope choices. The defaults
+are `read`, `write`, `all`, `read:id`, `write:id`, and `all:id`. Custom actions
+such as `approve` and `approve:id` use the same rules. Groups default to the
+permission key's dot-separated prefix, or **Ungrouped**. The key search combobox fetches up to 20 matching keys from the server as you
+type, scoped to the selected group. Use the arrow keys and Enter to select a
+suggestion, then Filter to apply it; free-text searches also work. Submitted
+searches filter keys in the database. Group filters do not change grants.
+
+In **Roles → Edit permissions**, select one scope per permission and enter
+comma-separated target IDs for a scope ending in `:id`. `write` does not imply
+`read`; `all` includes every action, while `all:id` includes every action only
+for the listed targets. IDs cannot contain whitespace, commas, or colons, and
+`all` is reserved. Scope choices control future role assignments; editing the
+choices does not revoke existing grants. Edit the role to change its access.
+
+Entitlements retain the existing expression format: `read` on `market.publish`
+becomes `read:market.publish:all`; `write:id` becomes
+`write:market.publish:id1,id2`; `all:id` becomes `market.publish:id1,id2`.
+Existing expressions and roles remain compatible. App-side checks can use
+`hasPermission(expressions, "market.publish", targetId, "write")` and
+`permissionTargets(expressions, "market.publish", "write")` from
+`lib/permissions/expression.ts`. Omitting the action retains the legacy exact-key
+check. An omitted target asks whether any access exists; use the returned target
+list when filtering resources.
+
+Apply the permission group/scope migration with `bun run db:migrate` before
+running the updated console.

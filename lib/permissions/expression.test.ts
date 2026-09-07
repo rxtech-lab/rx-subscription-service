@@ -157,3 +157,31 @@ describe("isPermissionExpression", () => {
     expect(isPermissionExpression("read")).toBe(false);
   });
 });
+
+describe("custom action scopes", () => {
+  it("serializes broad, targeted and custom actions without changing legacy expressions", () => {
+    expect(buildPermissionExpression({ key: "market", scope: "read", targetIds: [] })).toBe("read:market:all");
+    expect(buildPermissionExpression({ key: "market", scope: "write:id", targetIds: ["p1"] })).toBe("write:market:p1");
+    expect(buildPermissionExpression({ key: "market", scope: "all:id", targetIds: ["p1"] })).toBe("market:p1");
+    expect(buildPermissionExpression({ key: "market", scope: "approve", targetIds: [] })).toBe("approve:market:all");
+  });
+
+  it("keeps actions and targets isolated while allowing all actions for selected ids", () => {
+    const grants = ["read:market:all", "write:market:p1", "market:p2"];
+    expect(hasPermission(grants, "market", "p3", "read")).toBe(true);
+    expect(hasPermission(grants, "market", "p3", "write")).toBe(false);
+    expect(hasPermission(grants, "market", "p1", "write")).toBe(true);
+    expect(hasPermission(grants, "market", "p1", "approve")).toBe(false);
+    expect(hasPermission(grants, "market", "p2", "approve")).toBe(true);
+    expect(hasPermission(grants, "other", "p2", "read")).toBe(false);
+    expect(permissionTargets(grants, "market", "write")).toEqual(["p1", "p2"]);
+    expect(permissionTargets(grants, "market", "read")).toBe("all");
+  });
+
+  it("rejects target ids that could become broader grants", () => {
+    for (const target of ["all", "p1,p2", "p1:all", "p 1"]) {
+      expect(buildPermissionExpression({ key: "market", scope: "write:id", targetIds: [target] })).toBeNull();
+    }
+    expect(buildPermissionExpression({ key: "market", scope: "write:id", targetIds: [] })).toBeNull();
+  });
+});

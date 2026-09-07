@@ -1,4 +1,5 @@
 import "server-only";
+import { buildPermissionExpression } from "@/lib/permissions/expression";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -331,7 +332,7 @@ type EntitlementFields = {
   kind: EntitlementKind;
   roleId?: string | null;
   permissionKey?: string | null;
-  permissionScope?: "all" | "selected" | null;
+  permissionScope?: string | null;
   permissionTargetIds?: string[] | null;
   usageItemId?: string | null;
   limitValue?: number | null;
@@ -474,8 +475,8 @@ async function assertEntitlementShape(input: EntitlementFields) {
       if (!blankToNull(input.permissionKey)) {
         throw new ValidationError("permissionKey is required for a permission grant");
       }
-      if (input.permissionScope === "selected" && !input.permissionTargetIds?.length) {
-        throw new ValidationError("a selected permission grant needs target ids");
+      if (!buildPermissionExpression({ key: input.permissionKey!, scope: input.permissionScope ?? "all", targetIds: input.permissionTargetIds ?? [] })) {
+        throw new ValidationError("provide a valid permission scope and target ids for scopes ending in :id");
       }
       return;
     }

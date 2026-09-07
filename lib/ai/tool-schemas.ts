@@ -220,7 +220,7 @@ export const writeToolSchemas = {
     kind: z.enum(["role", "permission", "usage_limit", "balance_grant", "feature"]),
     roleId: z.string().optional().describe("Required when kind is role"),
     permissionKey: z.string().optional(),
-    permissionScope: z.enum(["all", "selected"]).optional(),
+    permissionScope: z.string().optional().describe("Scope such as read, write:id, all, all:id or a custom action"),
     permissionTargetIds: z.array(z.string()).optional(),
     usageItemId: z.string().optional(),
     limitValue: z
@@ -276,6 +276,8 @@ export const writeToolSchemas = {
     key: z.string().describe('Permission key such as "read:a" — no :all suffix'),
     title: z.string(),
     description: z.string().optional(),
+    group: z.string().optional(),
+    scopeOptions: z.array(z.string()).optional().describe("Custom scopes, e.g. read, write, all, write:id, approve:id"),
     supportsAll: z.boolean().default(true),
     supportsIds: z.boolean().default(true),
   }),
@@ -285,7 +287,7 @@ export const writeToolSchemas = {
     grants: z.array(
       z.object({
         permissionId: z.string(),
-        scope: z.enum(["all", "selected"]),
+        scope: z.string().describe("One of the permission scopeOptions; :id scopes need targetIds"),
         targetIds: z.array(z.string()).default([]),
       }),
     ),
