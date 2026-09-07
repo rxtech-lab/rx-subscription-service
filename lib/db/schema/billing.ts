@@ -32,9 +32,9 @@ export type SubscriptionBillingProvider =
   (typeof SUBSCRIPTION_BILLING_PROVIDERS)[number];
 
 /**
- * `entitlementSnapshot` freezes what the plan granted at purchase time, so
- * editing a plan never silently changes what existing subscribers already paid
- * for. Live plan edits only affect new subscriptions and renewals.
+ * `entitlementSnapshot` records grants captured for purchase history.
+ * Existing subscriptions use current plan grants for access and future period
+ * credits without changing historical balances or resetting usage periods.
  */
 export const subscriptions = pgTable(
   "subscriptions",

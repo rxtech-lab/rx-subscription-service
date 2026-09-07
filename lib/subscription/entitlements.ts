@@ -95,9 +95,9 @@ export async function getUsageLimitOverrides(
 /**
  * The entitlement rows that apply to a subscription.
  *
- * A subscription carries a snapshot of what its plan granted at purchase, so
- * editing a plan does not retroactively change what existing subscribers have.
- * Subscriptions created before a snapshot existed fall back to the live plan.
+ * Subscriptions use the current plan for all grants, so edits apply to existing
+ * subscribers. Subscription snapshots remain as purchase history.
+ * One-time purchases keep their snapshots; missing snapshots use the live plan.
  */
 function snapshotEntitlements(
   snapshot: Record<string, unknown> | null,
@@ -202,10 +202,11 @@ export async function resolveEntitlements(input: {
   if (rows.length === 0 && roleIds.size === 0) return empty;
 
   const liveByPlan = new Map<string, PlanEntitlement[]>();
-  const planIdsNeedingLive = rows
-    .filter((row) => snapshotEntitlements(row.entitlementSnapshot) === null)
-    .map((row) => row.planId)
-    .filter((planId): planId is string => planId !== null);
+  const planIdsNeedingLive = [...new Set(
+    rows
+      .filter((row) => row.subscriptionId !== null || snapshotEntitlements(row.entitlementSnapshot) === null)
+      .map((row) => row.planId),
+  )];
 
   if (planIdsNeedingLive.length > 0) {
     const live = await db
@@ -225,10 +226,9 @@ export async function resolveEntitlements(input: {
   const balanceGrants: { unitId: string; amount: number }[] = [];
 
   for (const row of rows) {
-    const entitlements =
-      snapshotEntitlements(row.entitlementSnapshot) ??
-      liveByPlan.get(row.planId) ??
-      [];
+    const live = liveByPlan.get(row.planId) ?? [];
+    const purchased = snapshotEntitlements(row.entitlementSnapshot) ?? live;
+    const entitlements = row.subscriptionId === null ? purchased : live;
 
     for (const entitlement of entitlements) {
       switch (entitlement.kind) {

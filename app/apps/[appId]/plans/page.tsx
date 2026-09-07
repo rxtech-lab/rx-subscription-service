@@ -545,7 +545,7 @@ export default async function PlansPage({
         <FormDialog
           triggerLabel="Add grant"
           title="Add a plan grant"
-          description="Choose a grant kind, then complete only the fields that apply to it."
+          description="Subscription grant changes also apply to existing subscribers. Access and usage limits update immediately; balance amounts apply at the next grant."
           size="lg"
           triggerVariant="secondary"
         >

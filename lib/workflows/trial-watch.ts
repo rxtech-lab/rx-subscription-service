@@ -85,12 +85,8 @@ async function reconcileFromStripe(context: TrialContext): Promise<string | null
 }
 
 /**
- * Refresh the frozen entitlement copy.
- *
- * `resolveEntitlementLimit` reads `trialLimitValue` while the subscription is
- * trialing and `limitValue` afterwards, both out of this snapshot. Rebuilding
- * it at the boundary means a plan edited during the trial takes effect on the
- * paid allowance the subscriber is now on.
+ * Capture the paid-stage plan for history. Access and recurring balance grants
+ * use the current plan independently of this historical snapshot.
  */
 async function resnapshotEntitlements(context: TrialContext) {
   "use step";
