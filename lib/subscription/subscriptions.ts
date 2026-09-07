@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appUsers,
+  ledgerEntries,
   planEntitlements,
   plans,
   purchases,
@@ -118,15 +119,6 @@ function internalPeriodEnd(plan: Plan, start: Date): Date {
         ? 3 * plan.intervalCount
         : plan.intervalCount;
   return addMonthsUtc(start, months);
-}
-
-function snapshottedBalanceGrants(
-  snapshot: Record<string, unknown> | null,
-): BalanceGrantEntitlement[] | undefined {
-  const entitlements = snapshot?.entitlements;
-  return Array.isArray(entitlements)
-    ? (entitlements as BalanceGrantEntitlement[])
-    : undefined;
 }
 
 async function endInternalSubscriptions(ids: string[], endedAt: Date) {
@@ -253,9 +245,6 @@ export async function syncInternalDefaultSubscriptions(input: {
         periodKey: String(period.start.getTime()),
         periodEnd: period.end,
         subscriptionId: row.subscription.id,
-        entitlements: snapshottedBalanceGrants(
-          row.subscription.entitlementSnapshot,
-        ),
         status: "active",
         idempotencyPrefix: "internal_plan_grant",
       });
@@ -351,7 +340,6 @@ export async function syncInternalDefaultSubscriptions(input: {
       periodKey: String(periodStart.getTime()),
       periodEnd,
       subscriptionId: subscription.id,
-      entitlements: snapshot.entitlements as BalanceGrantEntitlement[],
       status: "active",
       idempotencyPrefix: "internal_plan_grant",
     });
@@ -379,9 +367,8 @@ export async function syncInternalDefaultSubscriptions(input: {
 }
 
 /**
- * The slice of a plan entitlement `grantPeriodBalances` needs. Accepted as a
- * parameter so a caller holding an entitlement snapshot can grant from that
- * frozen copy instead of re-reading the live — possibly since edited — plan.
+ * The slice of a plan entitlement `grantPeriodBalances` needs. One-time
+ * purchases can supply a snapshot; recurring grants use the current plan.
  */
 export interface BalanceGrantEntitlement {
   kind: string;
@@ -393,8 +380,8 @@ export interface BalanceGrantEntitlement {
 }
 
 /**
- * Freeze what a plan grants right now. Stored on the subscription so a later
- * edit to the plan does not change what an existing subscriber already bought.
+ * Capture grants for purchase history and one-time fulfillment. Recurring
+ * subscriptions use the current plan for access and future period grants.
  */
 export async function buildEntitlementSnapshot(planId: string) {
   const entitlements = await db
@@ -585,6 +572,7 @@ export async function grantPeriodBalances(input: {
   periodEnd?: Date | null;
   /** Recorded on each lot so plan end can find `after_plan_end` grants. */
   subscriptionId?: string | null;
+  /** Only one-time purchases use supplied snapshots; subscriptions use live grants. */
   entitlements?: BalanceGrantEntitlement[];
   /** Selects a trial-specific grant amount when status is `trialing`. */
   status?: string;
@@ -594,7 +582,7 @@ export async function grantPeriodBalances(input: {
   referenceId?: string;
 }) {
   const entitlements =
-    input.entitlements ??
+    (input.subscriptionId ? undefined : input.entitlements) ??
     (await db
       .select()
       .from(planEntitlements)
@@ -619,9 +607,24 @@ export async function grantPeriodBalances(input: {
     // both land when a provider reuses the same period anchor at the boundary.
     const hasDistinctTrialAmount =
       typeof grant.trialAmount === "number" && grant.trialAmount !== grant.amount;
-    const stageKey = hasDistinctTrialAmount
-      ? `${input.periodKey}:${input.status === "trialing" ? "trial" : "non_trial"}`
-      : input.periodKey;
+    const keyPrefix = `${input.idempotencyPrefix ?? "plan_grant"}:${input.appUserId}:${input.planId}:${grant.unitId}`;
+    const legacyKey = `${keyPrefix}:${input.periodKey}`;
+    const stagedKey = `${legacyKey}:${input.status === "trialing" ? "trial" : "non_trial"}`;
+    const idempotencyKey = hasDistinctTrialAmount ? stagedKey : legacyKey;
+    if (input.subscriptionId) {
+      // A live plan edit can switch between equal and distinct trial amounts.
+      // Recognize the prior key format as the same credit, while keeping trial
+      // and paid stages distinct when both were configured separately.
+      const [prior] = await db
+        .select()
+        .from(ledgerEntries)
+        .where(eq(ledgerEntries.idempotencyKey, hasDistinctTrialAmount ? legacyKey : stagedKey))
+        .limit(1);
+      if (prior) {
+        results.push({ entry: prior, duplicate: true as const });
+        continue;
+      }
+    }
     results.push(
       await creditBalance({
         appUserId: input.appUserId,
@@ -629,7 +632,7 @@ export async function grantPeriodBalances(input: {
         amount,
         kind: "plan_grant",
         description: "Plan allowance",
-        idempotencyKey: `${input.idempotencyPrefix ?? "plan_grant"}:${input.appUserId}:${input.planId}:${grant.unitId}:${stageKey}`,
+        idempotencyKey,
         referenceType: input.referenceType ?? "plan",
         referenceId: input.referenceId ?? input.planId,
         expiresAt: resolveExpiresAt({

@@ -90,13 +90,22 @@ per extra unit.
 
 ### Plan edits and existing subscribers
 
-A subscription stores a snapshot of what its plan granted at purchase, so editing
-a live plan never retroactively changes what someone already paid for. Price
-changes mint a new Stripe Price; existing subscriptions keep billing on theirs.
+Usage allowance changes apply to existing subscriptions on the next entitlement
+or usage read. Adding, editing, or removing a plan usage grant uses the current
+plan, even when the subscriber's purchase snapshot predates that grant. Trial
+limits still follow subscription status, per-user overrides take precedence,
+and usage already consumed and period boundaries are preserved. No snapshot
+backfill is needed.
+
+Roles, permissions, and features also use the current plan. Recurring balance
+grants use the current plan at the next grant event; editing a plan does not
+re-credit or debit existing balances. One-time purchases retain their purchased
+grants. Price changes mint a new Stripe Price; existing subscriptions keep
+billing on theirs.
 
 A free recurring plan with no trial can enable **Subscribe users automatically**.
 When a user has no plan in that group, the service creates an internal subscription
-without Stripe or an app store, applies the plan's entitlement snapshot, and renews
+without Stripe or an app store, applies the plan's current grants, and renews
 its period grants idempotently. A confirmed paid plan in the same group replaces the
 automatic free subscription; merely opening Checkout does not remove free access.
 
