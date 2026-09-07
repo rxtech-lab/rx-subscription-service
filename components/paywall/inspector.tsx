@@ -602,8 +602,10 @@ function FilterField({
   const planGroup = typeof value?.planGroup === "string" ? value.planGroup : "";
   const intervals = Array.isArray(value?.billingIntervals) ? (value.billingIntervals as string[]) : [];
 
-  const emit = (next: { planGroup?: string; billingIntervals?: string[] }, coalesce?: boolean) => {
+  const hideAutoSubscribe = value?.hideAutoSubscribe === true;
+  const emit = (next: { planGroup?: string; billingIntervals?: string[]; hideAutoSubscribe?: boolean }, coalesce?: boolean) => {
     const cleaned: Record<string, unknown> = {};
+    if (next.hideAutoSubscribe ?? hideAutoSubscribe) cleaned.hideAutoSubscribe = true;
     if (next.planGroup) cleaned.planGroup = next.planGroup;
     if (next.billingIntervals?.length) cleaned.billingIntervals = next.billingIntervals;
     onChange(Object.keys(cleaned).length ? cleaned : undefined, coalesce);
@@ -618,6 +620,15 @@ function FilterField({
         onChange={(event) => emit({ planGroup: event.target.value, billingIntervals: intervals }, true)}
         onBlur={onBlur}
       />
+      <label className="flex items-center gap-1.5 text-xs text-slate-700">
+        <input
+          type="checkbox"
+          className="size-3.5 rounded border-slate-300"
+          checked={hideAutoSubscribe}
+          onChange={(event) => emit({ planGroup, billingIntervals: intervals, hideAutoSubscribe: event.target.checked })}
+        />
+        Hide auto-enroll plans
+      </label>
       <div className="flex flex-wrap gap-2">
         {INTERVALS.map((interval) => (
           <label key={interval} className="flex items-center gap-1.5 text-xs text-slate-700">
