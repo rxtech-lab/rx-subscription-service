@@ -72,6 +72,7 @@ export interface ResolvedPaywall {
 
 interface ProductFilter {
   planGroup?: string;
+  hideAutoSubscribe?: boolean;
   billingIntervals?: string[];
 }
 
@@ -233,6 +234,7 @@ export function applyProductFilter<T extends CatalogProduct>(
 ): T[] {
   if (!filter) return products;
   return products.filter((product) => {
+    if (filter.hideAutoSubscribe && product.autoSubscribe) return false;
     if (filter.planGroup && product.planGroup !== filter.planGroup) return false;
     if (filter.billingIntervals?.length && !filter.billingIntervals.includes(product.billingInterval)) {
       return false;

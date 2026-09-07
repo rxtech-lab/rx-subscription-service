@@ -253,6 +253,7 @@ export const nodeProps = {
       filter: z
         .object({
           planGroup: z.string().optional().describe("Only plans in this group."),
+          hideAutoSubscribe: z.boolean().optional().describe("Hide plans that users are automatically enrolled in."),
           billingIntervals: z.array(z.enum(BILLING_INTERVAL_OPTIONS)).optional(),
         })
         .strict()
