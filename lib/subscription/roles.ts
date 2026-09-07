@@ -167,8 +167,8 @@ export async function requirePermission(applicationId: string, permissionId: str
 }
 
 /**
- * Permission keys carry their own colons (`read:a`), so they are validated
- * segment by segment rather than with the flat key rule.
+ * Permission keys support dots (`marketplace.publish`) and colons (`read:a`),
+ * so they have a separate segment rule from other application keys.
  */
 function assertPermissionKey(value: string): string {
   const key = value.trim().toLowerCase();
@@ -176,7 +176,13 @@ function assertPermissionKey(value: string): string {
   if (segments.length < 1 || segments.length > 3) {
     throw new ValidationError("permission key must have 1-3 colon-separated segments");
   }
-  for (const segment of segments) assertKey(segment, "permission key segment");
+  for (const segment of segments) {
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(segment)) {
+      throw new ValidationError(
+        "permission key segment must start with a lowercase letter or number and contain only lowercase alphanumeric characters, ., - or _, 1-64 characters",
+      );
+    }
+  }
   return key;
 }
 
