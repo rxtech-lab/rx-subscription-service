@@ -469,7 +469,7 @@ async function fulfillAppleTransactionImpl(input: {
   fetchAuthoritative?: boolean;
   refundReversed?: boolean;
   stateSignedAt?: Date;
-}, onVerified: (transaction: JWSTransactionDecodedPayload) => void): Promise<AppleFulfillmentResult> {
+}, onVerified: (transaction: JWSTransactionDecodedPayload, submitted: JWSTransactionDecodedPayload) => void): Promise<AppleFulfillmentResult> {
   const authoritative = await authoritativeState({
     integration: input.integration,
     environment: input.environment,
@@ -477,7 +477,7 @@ async function fulfillAppleTransactionImpl(input: {
     fetchAuthoritative: input.fetchAuthoritative ?? false,
   });
   const transaction = authoritative.transaction;
-  onVerified(transaction);
+  onVerified(transaction, authoritative.submittedTransaction);
   const diagnostic = {
     applicationId: input.integration.applicationId,
     requestedEnvironment: input.environment,
@@ -718,15 +718,24 @@ async function fulfillAppleTransactionImpl(input: {
 
 export async function fulfillAppleTransaction(input: Parameters<typeof fulfillAppleTransactionImpl>[0]) {
   let verified: JWSTransactionDecodedPayload | undefined;
+  let submitted: JWSTransactionDecodedPayload | undefined;
   try {
-    const result = await fulfillAppleTransactionImpl(input, (transaction) => { verified = transaction; });
+    const result = await fulfillAppleTransactionImpl(input, (transaction, original) => { verified = transaction; submitted = original; });
     await recordAppleLog(input.integration.applicationId, input.expectedUser?.id ?? null, "transaction_fulfilled", {
       level: "info", environment: input.environment,
       accountToken: verified?.appAccountToken,
       transactionId: result.transaction.transactionId,
       originalTransactionId: result.transaction.originalTransactionId,
       productId: result.transaction.productId,
-      info: { processed: result.processed },
+      info: {
+        processed: result.processed,
+        submittedTransactionId: submitted?.transactionId,
+        submittedPurchaseDate: submitted?.purchaseDate,
+        submittedExpiresDate: submitted?.expiresDate,
+        subscriptionStatus: result.subscription?.status ?? null,
+        expiresAt: result.transaction.expiresAt,
+        currentPeriodEnd: result.subscription?.currentPeriodEnd ?? null,
+      },
     });
     return result;
   } catch (error) {
