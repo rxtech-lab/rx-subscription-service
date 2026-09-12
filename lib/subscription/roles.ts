@@ -1,5 +1,7 @@
 import "server-only";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { permissionSearchPattern } from "@/lib/permissions/search";
+import { isTargetedScope, normalizeScopeOptions, permissionScopeOptions } from "@/lib/permissions/scope-options";
+import { and, asc, eq, inArray, ilike, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { permissions, rolePermissions, subscriptionRoles } from "@/lib/db/schema";
 import {
@@ -151,6 +153,26 @@ export async function listPermissions(applicationId: string) {
     .orderBy(asc(permissions.sortOrder), asc(permissions.key));
 }
 
+const permissionGroupSql = sql<string>`coalesce(nullif(${permissions.group}, ''),
+  case when strpos(${permissions.key}, '.') > 0
+    then regexp_replace(${permissions.key}, '[.][^.]+$', '') else 'Ungrouped' end)`;
+
+export async function searchPermissions(applicationId: string, query: string, group = "", limit?: number) {
+  const filters = and(
+    eq(permissions.applicationId, applicationId),
+    ilike(permissions.key, permissionSearchPattern(query)),
+    group ? eq(permissionGroupSql, group) : undefined,
+  );
+  const search = db.select().from(permissions).where(filters)
+    .orderBy(asc(permissionGroupSql), asc(permissions.key)).$dynamic();
+  return limit === undefined ? search : search.limit(limit);
+}
+
+export async function listPermissionGroups(applicationId: string) {
+  return db.selectDistinct({ group: permissionGroupSql }).from(permissions)
+    .where(eq(permissions.applicationId, applicationId)).orderBy(asc(permissionGroupSql));
+}
+
 export async function requirePermission(applicationId: string, permissionId: string) {
   const [permission] = await db
     .select()
@@ -191,6 +213,8 @@ export async function createPermission(input: {
   key: string;
   title: string;
   description?: string | null;
+  group?: string | null;
+  scopeOptions?: string[];
   supportsAll?: boolean;
   supportsIds?: boolean;
   sortOrder?: number;
@@ -222,6 +246,8 @@ export async function createPermission(input: {
       key,
       title: input.title.trim(),
       description: input.description?.trim() || null,
+      group: input.group === undefined ? undefined : input.group?.trim() || null,
+      scopeOptions: input.scopeOptions === undefined ? undefined : normalizeScopeOptions(input.scopeOptions),
       supportsAll: input.supportsAll ?? true,
       supportsIds: input.supportsIds ?? true,
       sortOrder: input.sortOrder ?? 0,
@@ -246,6 +272,8 @@ export async function updatePermission(input: {
   permissionId: string;
   title?: string;
   description?: string | null;
+  group?: string | null;
+  scopeOptions?: string[];
   supportsAll?: boolean;
   supportsIds?: boolean;
   actor: Actor;
@@ -259,6 +287,8 @@ export async function updatePermission(input: {
         input.description === undefined
           ? before.description
           : input.description?.trim() || null,
+      group: input.group === undefined ? undefined : input.group?.trim() || null,
+      scopeOptions: input.scopeOptions === undefined ? undefined : normalizeScopeOptions(input.scopeOptions),
       supportsAll: input.supportsAll ?? before.supportsAll,
       supportsIds: input.supportsIds ?? before.supportsIds,
       updatedAt: new Date(),
@@ -313,7 +343,7 @@ export async function setRolePermissions(input: {
   const permissionIds = input.grants.map((grant) => grant.permissionId);
   if (permissionIds.length > 0) {
     const owned = await db
-      .select({ id: permissions.id, supportsAll: permissions.supportsAll, supportsIds: permissions.supportsIds })
+      .select()
       .from(permissions)
       .where(
         and(
@@ -330,18 +360,12 @@ export async function setRolePermissions(input: {
           `permission ${grant.permissionId} does not belong to this application`,
         );
       }
-      if (grant.scope === "all" && !permission.supportsAll) {
-        throw new ValidationError("this permission does not support an all scope");
+      if (!permissionScopeOptions(permission).includes(grant.scope)) {
+        throw new ValidationError("this permission does not support the selected scope");
       }
-      if (grant.scope === "selected") {
-        if (!permission.supportsIds) {
-          throw new ValidationError("this permission does not support target ids");
-        }
-        if (grant.targetIds.length === 0) {
-          throw new ValidationError("a selected grant needs at least one target id");
-        }
-        if (grant.targetIds.some((id) => id.includes(":") || /\s/.test(id))) {
-          throw new ValidationError("target ids may not contain colons or whitespace");
+      if (isTargetedScope(grant.scope)) {
+        if (!grant.targetIds.length || grant.targetIds.some((id) => !id || id === "all" || /[:,\s]/.test(id))) {
+          throw new ValidationError("provide target ids without commas, colons or whitespace; all is reserved");
         }
       }
     }
@@ -359,7 +383,7 @@ export async function setRolePermissions(input: {
         roleId: input.roleId,
         permissionId: grant.permissionId,
         scope: grant.scope,
-        targetIds: grant.scope === "all" ? [] : grant.targetIds,
+        targetIds: isTargetedScope(grant.scope) ? [...new Set(grant.targetIds)].sort() : [],
         createdAt: now,
         updatedAt: now,
       })),

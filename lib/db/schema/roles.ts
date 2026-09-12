@@ -43,6 +43,8 @@ export const permissions = pgTable(
     key: text("key").notNull(),
     title: text("title").notNull(),
     description: text("description"),
+    group: text("permission_group"),
+    scopeOptions: jsonb("scope_options").$type<string[]>(),
     supportsAll: boolean("supports_all").notNull().default(true),
     supportsIds: boolean("supports_ids").notNull().default(true),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
@@ -64,7 +66,7 @@ export const rolePermissions = pgTable(
     permissionId: text("permission_id")
       .notNull()
       .references(() => permissions.id, { onDelete: "cascade" }),
-    scope: text("scope", { enum: ["all", "selected"] }).notNull(),
+    scope: text("scope").notNull(),
     targetIds: jsonb("target_ids")
       .$type<string[]>()
       .notNull()

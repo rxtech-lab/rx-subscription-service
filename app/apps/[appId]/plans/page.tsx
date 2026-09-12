@@ -1,3 +1,4 @@
+import { buildPermissionExpression } from "@/lib/permissions/expression";
 import Link from "next/link";
 import {
   addPlanEntitlementAction,
@@ -236,7 +237,7 @@ export default async function PlansPage({
                                         ? `${labelFor.unit(entitlement.unitId)}: trial ${entitlement.trialAmount ?? entitlement.amount}, non-trial ${entitlement.amount}/period`
                                         : `${entitlement.amount} ${labelFor.unit(entitlement.unitId)}/period`
                                       : entitlement.kind === "permission"
-                                        ? `${entitlement.permissionKey}:${entitlement.permissionScope === "all" ? "all" : (entitlement.permissionTargetIds ?? []).join(",")}`
+                                        ? buildPermissionExpression({ key: entitlement.permissionKey ?? "", scope: entitlement.permissionScope ?? "all", targetIds: entitlement.permissionTargetIds ?? [] })
                                         : `${entitlement.featureKey}=${entitlement.featureValue ?? "on"}`}
                               </span>
                               <InlineActionButton
@@ -642,11 +643,10 @@ export default async function PlansPage({
               <Field label="Permission key" hint="Bare key such as read:a">
                 <Input name="permissionKey" placeholder="read:a" />
               </Field>
-              <label className="flex items-center gap-2 text-xs text-neutral-700">
-                <input type="checkbox" name="permissionAll" defaultChecked />
-                Grant over all targets
-              </label>
-              <Field label="Target ids" hint="Comma separated, when not all">
+              <Field label="Permission scope" hint="read, write, all, write:id, all:id, or a custom action">
+                <Input name="permissionScope" defaultValue="all" />
+              </Field>
+              <Field label="Target ids" hint="Comma separated, for scopes ending in :id">
                 <Input name="permissionTargetIds" placeholder="id1,id2" />
               </Field>
             </div>

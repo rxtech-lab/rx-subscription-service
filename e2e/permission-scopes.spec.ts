@@ -1,0 +1,31 @@
+import { expect, test } from "@playwright/test";
+import { E2E_APPLICATION_ID, E2E_SECRET } from "./fixtures";
+
+test("custom scopes persist and permission groups can be filtered", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "X-E2E-Secret": E2E_SECRET });
+  await page.goto(`/apps/${E2E_APPLICATION_ID}/permissions`);
+  await page.getByRole("button", { name: "New permission", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('[name="key"]').fill("market.publish");
+  await dialog.locator('[name="title"]').fill("Publish market listing");
+  await dialog.locator('[name="group"]').fill("market");
+  await dialog.locator('[name="scopeOptions"]').fill("read, write, all, write:id, all:id, approve:id");
+  await dialog.getByRole("button", { name: "Create permission", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Publish market listing" })).toContainText("approve:id");
+  const search = page.getByRole("combobox", { name: "Search permissions" });
+  await search.fill("market.p");
+  await expect(page.getByRole("option", { name: /market.publish Publish market listing/ })).toBeVisible();
+  await search.press("ArrowDown");
+  await search.press("Enter");
+  await expect(search).toHaveValue("market.publish");
+  await page.getByLabel("Permission group", { exact: true }).selectOption("market");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Publish market listing" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "read:reports" })).toHaveCount(0);
+  await page.getByLabel("Search permissions").fill("missing-permission");
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+  await expect(page.getByText("No matching permissions")).toBeVisible();
+  await page.goto(`/apps/${E2E_APPLICATION_ID}/roles`);
+  await page.getByRole("button", { name: "Edit permissions", exact: true }).first().click();
+  await expect(page.getByRole("dialog").locator("option", { hasText: /^approve:id$/ })).toHaveCount(1);
+});
