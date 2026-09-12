@@ -171,6 +171,13 @@ curl "$BASE/api/v1/entitlements" \
 The iOS client for this is [RxSubscriptionIOS](https://github.com/rxtech-lab/RxSubscriptionIOS),
 which takes a publishable key and a closure that hands it a fresh access token.
 
+The entitlements response keeps purchased subscriptions and one-time plans in
+`plans`. Automatically assigned free plans use `defaultPlans` instead, with
+`billingProvider: "internal"`. Both contribute to the returned roles,
+permissions, features, balances, and usage allowances. This keeps existing
+clients that recognize only store billing providers compatible, and prevents a
+free default plan from being mistaken for a paid subscription.
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/v1/entitlements` | Plans, roles, permission expressions, balances, and usage in one call |
