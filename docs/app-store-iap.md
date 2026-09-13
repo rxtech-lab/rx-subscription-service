@@ -103,3 +103,16 @@ Refunds and revocations reverse the grants from the exact transaction. If the
 user already spent consumable units, the balance may become negative. A refund
 reversal restores the purchase and grants without duplication. Partial refunds
 use Apple's revocation percentage.
+
+
+## Complimentary access
+
+The agent can grant time-limited RxArgo plan access to an existing sandbox or
+production user through `grantComplimentarySubscription`, after approval. This
+creates a local complimentary subscription, not an Apple transaction, and needs
+no StoreKit product mapping. The response exposes it in `complimentaryPlans`;
+its roles, permissions, features, balances, and usage allowances are resolved
+normally. Apple purchase history, renewal state, and receipts are unchanged.
+
+Use `grantUserCredits` for an approved, non-expiring balance credit without a
+subscription. Both tools require the exact environment and an audit reason.

@@ -1,3 +1,5 @@
+import { userCreditGrantSchema } from "@/lib/subscription/credit-grant-schema";
+import { complimentaryGrantSchema } from "@/lib/subscription/complimentary-schema";
 import { appleTokenActionSchema } from "@/lib/iap/apple/admin-schema";
 import { z } from "zod";
 
@@ -398,6 +400,9 @@ export const writeToolSchemas = {
   }),
 
   deleteTestUser: z.object({ appUserId: z.string() }),
+
+  grantComplimentarySubscription: complimentaryGrantSchema,
+  grantUserCredits: userCreditGrantSchema,
 
   grantTestSubscription: z.object({
     appUserId: z.string(),

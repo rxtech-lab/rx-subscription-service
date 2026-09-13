@@ -263,3 +263,25 @@ describe("coupon tool schemas", () => {
     ).toBe(false);
   });
 });
+
+
+describe("complimentary grants", () => {
+  const grant = { appUserId: "user", planId: "plan", environment: "production", periodDays: 30, reason: "Support credit" };
+  it("requires an explicit supported environment and bounded duration", () => {
+    for (const patch of [{ environment: undefined }, { environment: "xcode" }, { periodDays: 0 }, { periodDays: 1.5 }, { periodDays: 3651 }, { reason: " " }]) {
+      expect(writeToolSchemas.grantComplimentarySubscription.safeParse({ ...grant, ...patch }).success).toBe(false);
+    }
+    for (const environment of ["sandbox", "production"]) {
+      expect(writeToolSchemas.grantComplimentarySubscription.parse({ ...grant, environment }).environment).toBe(environment);
+    }
+  });
+});
+
+
+it("requires a positive integer credit amount, explicit environment, unit, and reason", () => {
+  const grant = { appUserId: "user", environment: "production", unitId: "points", amount: 100, reason: "Support credit" };
+  for (const patch of [{ environment: undefined }, { environment: "xcode" }, { unitId: "" }, { amount: 0 }, { amount: -1 }, { amount: 0.5 }, { amount: Number.MAX_SAFE_INTEGER + 1 }, { reason: " " }]) {
+    expect(writeToolSchemas.grantUserCredits.safeParse({ ...grant, ...patch }).success).toBe(false);
+  }
+  expect(writeToolSchemas.grantUserCredits.parse(grant)).toEqual(grant);
+});

@@ -173,10 +173,44 @@ which takes a publishable key and a closure that hands it a fresh access token.
 
 The entitlements response keeps purchased subscriptions and one-time plans in
 `plans`. Automatically assigned free plans use `defaultPlans` instead, with
-`billingProvider: "internal"`. Both contribute to the returned roles,
-permissions, features, balances, and usage allowances. This keeps existing
+`billingProvider: "internal"`. Time-limited administrative grants use
+`complimentaryPlans`, with `billingProvider: "complimentary"`. All three contribute
+to the returned roles, permissions, features, balances, and usage allowances. This keeps existing
 clients that recognize only store billing providers compatible, and prevents a
 free default plan from being mistaken for a paid subscription.
+
+### Granting access and credits through chat
+
+An administrator can ask the application agent:
+
+- “Give jane@example.com Pro access for 30 days in production, reason: support goodwill.”
+- “Add 500 points to jane@example.com in sandbox, reason: purchase testing.”
+
+The agent looks up the existing user in the named environment and the plan or
+balance unit, then presents the existing write-tool approval. Sandbox and
+production are always selected explicitly. A user must already have a record
+in that environment; the same RxLab identity may have a different record in each.
+
+`grantComplimentarySubscription` grants an active plan for 1–3,650 days, with one
+allowance credit for the entire period. It never renews, creates no payment or
+Apple transaction, and rejects overlapping plans in the same group. It replaces
+an automatic free tier in that group; the free tier resumes after access expires.
+Access expires on the next entitlement read, with a background sweep for idle
+users. Cancel it early using **Subscriptions → Actions → Cancel now**. Stored
+allowance credits retain the plan's configured expiry policy.
+
+`grantUserCredits` adds a positive amount to the existing balance without needing
+a subscription. These administrative credits do not expire. Amounts passed to
+the tool are integers in the unit's smallest denomination (`precision: 2` means
+12.50 credits is `amount: 1250`). The agent displays the human-readable amount
+before approval. This tool cannot deduct credits or replace a balance.
+
+Both tools validate application and environment ownership, record the reason and
+administrator, and use the approved tool-call ID to avoid duplicate grants on
+retries. The grant, ledger entries, and audit commit together. Neither creates
+revenue. Existing iOS clients continue receiving the resolved benefits; clients
+that show a plan badge based only on purchased `plans` need to read
+`complimentaryPlans` to display complimentary membership.
 
 | Endpoint | Purpose |
 |---|---|

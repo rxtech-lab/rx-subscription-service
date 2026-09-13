@@ -57,7 +57,7 @@ it("applies a newly added plan allowance to an existing subscriber with an empty
   ]);
 });
 
-it.each(["apple_app_store", "stripe", "internal"])("applies grant edits and removals to existing %s subscriptions", async (provider) => {
+it.each(["apple_app_store", "stripe", "internal", "complimentary"])("applies grant edits and removals to existing %s subscriptions", async (provider) => {
   mocks.rows.set(subscriptions, [subscription([usageGrant(null)], "active", provider)]);
   expect((await resolveEntitlements(owner)).usageLimits.quick).toBe(1000);
   mocks.rows.set(planEntitlements, [usageGrant(5)]);
@@ -75,7 +75,7 @@ it.each(["trialing", "active", "past_due"])("uses current grants for %s and reta
   expect((await resolveEntitlements(owner)).usageLimits.quick).toBeNull();
 });
 
-it.each(["apple_app_store", "stripe", "internal"])("applies added, edited, and removed access grants for %s subscribers", async (provider) => {
+it.each(["apple_app_store", "stripe", "internal", "complimentary"])("applies added, edited, and removed access grants for %s subscribers", async (provider) => {
   mocks.rows.set(subscriptions, [subscription([
     { kind: "feature", featureKey: "old_feature", featureValue: "enabled" },
     { kind: "balance_grant", unitId: "points", amount: 100 },
