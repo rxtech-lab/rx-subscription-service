@@ -98,7 +98,7 @@ export async function getApplicationAnalytics(
         planName: plans.name,
         // A subscription sold through a store is worth the store's price, not
         // the local one, whenever the two differ.
-        priceAmountCents: sql<number>`COALESCE(${storeProductPrices.priceAmountCents}, ${plans.priceAmountCents})`,
+        priceAmountCents: sql<number>`CASE WHEN ${subscriptions.billingProvider} = 'complimentary' THEN 0 ELSE COALESCE(${storeProductPrices.priceAmountCents}, ${plans.priceAmountCents}) END`,
         billingInterval: plans.billingInterval,
         intervalCount: plans.intervalCount,
         currency: sql<string>`COALESCE(${storeProductPrices.currency}, ${plans.currency})`,

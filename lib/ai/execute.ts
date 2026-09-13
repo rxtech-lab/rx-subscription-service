@@ -1,3 +1,4 @@
+import { grantUserCredits } from "@/lib/subscription/credit-grants";
 import { manageAppleAccountToken } from "@/lib/iap/apple/admin";
 import "server-only";
 import type { Actor } from "@/lib/subscription/shared";
@@ -26,7 +27,7 @@ import {
   createTopupProduct,
   updateTopupProduct,
 } from "@/lib/subscription/topups";
-import { cancelSubscription } from "@/lib/subscription/subscriptions";
+import { cancelSubscription, grantComplimentarySubscription } from "@/lib/subscription/subscriptions";
 import {
   createTestUser,
   creditTestBalance,
@@ -49,16 +50,17 @@ import { writeToolSchemas, type WriteToolName } from "./tool-schemas";
 /**
  * Apply an approved write tool call.
  *
- * The model never reaches this directly: the chat route defines write tools
- * without an executor, the panel asks the human to approve, and only then does a
- * server action call in here. Input is re-validated against the same schema, and
- * `applicationId` comes from the authorized session — never from the model.
+ * The chat route signs write-tool approvals; the SDK executes the registered
+ * server-side tool only after the administrator approves in the panel. Input is
+ * re-validated against the same schema, and `applicationId` comes from the
+ * authorized session — never from the model.
  */
 export async function executeWriteTool(input: {
   name: WriteToolName;
   args: unknown;
   applicationId: string;
   actor: Actor;
+  operationId?: string;
 }): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
   const schema = writeToolSchemas[input.name];
   const parsed = schema.safeParse(input.args);
@@ -221,6 +223,22 @@ export async function executeWriteTool(input: {
         };
       }
 
+      case "grantUserCredits": {
+        const args = parsed.data as typeof writeToolSchemas.grantUserCredits._output;
+        if (!input.operationId) return { ok: false, error: "Missing credit operation ID" };
+        return {
+          ok: true,
+          result: await grantUserCredits({ applicationId, actor, ...args, operationId: input.operationId }),
+        };
+      }
+      case "grantComplimentarySubscription": {
+        const args = parsed.data as typeof writeToolSchemas.grantComplimentarySubscription._output;
+        if (!input.operationId) return { ok: false, error: "Missing grant operation ID" };
+        return {
+          ok: true,
+          result: await grantComplimentarySubscription({ applicationId, actor, ...args, operationId: input.operationId }),
+        };
+      }
       // Test-user tools. Every one resolves its `appUserId` through
       // `requireTestUser`, so an approved call naming a real subscriber is
       // rejected here rather than mutating a live account.

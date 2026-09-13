@@ -118,7 +118,7 @@ export default async function SubscriptionsPage({
       <Card>
         <CardHeader
           title="Subscriptions"
-          description="Paid subscriptions follow Stripe or the App Store. Automatic free plans are managed internally."
+          description="Paid subscriptions follow Stripe or the App Store. Automatic free plans and complimentary access are managed in RxArgo."
           action={
             canTest ? (
               <FormDialog
@@ -250,9 +250,11 @@ export default async function SubscriptionsPage({
                     <span className="text-xs font-medium text-neutral-600">
                       {subscription.billingProvider === "apple_app_store"
                         ? "App Store"
-                        : subscription.billingProvider === "internal"
-                          ? "Automatic"
-                          : "Stripe"}
+                        : subscription.billingProvider === "complimentary"
+                          ? "Complimentary"
+                          : subscription.billingProvider === "internal"
+                            ? "Automatic"
+                            : "Stripe"}
                     </span>
                   </Td>
                   <Td>

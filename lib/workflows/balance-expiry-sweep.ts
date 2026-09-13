@@ -1,3 +1,4 @@
+import { expireComplimentarySubscriptions } from "@/lib/subscription/subscriptions";
 import { expireBalanceLots } from "@/lib/subscription/balance-lots";
 
 /**
@@ -19,8 +20,9 @@ const MAX_BATCHES = 40;
 
 async function sweepBatch(limit: number) {
   "use step";
+  const subscriptions = await expireComplimentarySubscriptions({ limit });
   const result = await expireBalanceLots({ limit });
-  return result;
+  return { ...result, subscriptions };
 }
 
 export async function balanceExpirySweepWorkflow() {
@@ -35,7 +37,7 @@ export async function balanceExpirySweepWorkflow() {
     const result = await sweepBatch(BATCH_SIZE);
     lots += result.lots;
     units += result.units;
-    if (result.lots === 0 && result.units === 0) break;
+    if (result.lots === 0 && result.units === 0 && result.subscriptions === 0) break;
   }
 
   return { lots, units };

@@ -109,3 +109,17 @@ it("preserves purchased one-time plans and returns an empty default-plan list wh
   expect(body.plans).toEqual([JSON.parse(JSON.stringify(purchased))]);
   expect(body.defaultPlans).toEqual([]);
 });
+
+
+it("returns complimentary access separately without breaking store-provider decoders", async () => {
+  mocks.resolveEntitlements.mockResolvedValue({
+    ...freeEntitlements, plans: [heldPlan("complimentary"), heldPlan("apple_app_store")],
+    roleKeys: ["pro"], features: { export: "enabled" },
+  });
+  const response = await GET(new Request("https://example.com/api/v1/entitlements"));
+  expect(await response.json()).toMatchObject({
+    plans: [{ billingProvider: "apple_app_store" }], defaultPlans: [],
+    complimentaryPlans: [{ billingProvider: "complimentary", planKey: "pro" }],
+    roles: ["pro"], features: { export: "enabled" },
+  });
+});
