@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema";
 import { ensureAppUser } from "@/lib/subscription/users";
 import { syncInternalDefaultSubscriptions } from "@/lib/subscription/subscriptions";
+import { ApplicationLinkError, resolveLinkedApplication } from "@/lib/applications/links";
 import { readRequestCredentials } from "./credentials";
 import { ApiError } from "./errors";
 import { resolveApiKey } from "./keys";
@@ -18,6 +19,7 @@ import { assertKeyKindAllows } from "./scopes";
 import { requireUserTokenIssuer, verifyUserToken, type UserTokenPrincipal } from "./user-token";
 
 export interface ApiContext {
+  /** Effective data owner, which may differ from the API key's application. */
   application: Application;
   keyId: string;
   environment: ApiEnvironment;
@@ -84,8 +86,18 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     });
   }
 
+  let effectiveApplication: Application;
+  try {
+    effectiveApplication = await resolveLinkedApplication(application);
+  } catch (error) {
+    if (error instanceof ApplicationLinkError) {
+      throw new ApiError(403, error.code, error.message);
+    }
+    throw error;
+  }
+
   return {
-    application,
+    application: effectiveApplication,
     keyId: resolved.keyId,
     environment: resolved.environment,
     kind: resolved.kind,

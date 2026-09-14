@@ -5,10 +5,12 @@ import { BrandMark } from "@/components/console/brand-mark";
 import { ConsoleHeader } from "@/components/console/console-header";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { authStatus } from "@/lib/auth";
+import { getApplicationLinkSummaries } from "@/lib/applications/links";
 import { getConsoleUser, getManagedApplications } from "@/lib/console/session";
 
 export default async function HomePage() {
-  if (!authStatus.configured) {
+  const user = await getConsoleUser();
+  if (!authStatus.configured && !user) {
     return (
       <main className="relative flex min-h-full flex-1 items-center justify-center overflow-hidden px-6 py-16">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.12),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(20,184,166,0.09),transparent_32%)]" />
@@ -37,10 +39,10 @@ export default async function HomePage() {
     );
   }
 
-  const user = await getConsoleUser();
   if (!user) redirect("/login");
 
   const applications = await getManagedApplications();
+  const applicationLinks = await getApplicationLinkSummaries(applications.map((application) => application.id));
   const displayName = user.name || user.email || "Admin";
 
   return (
@@ -99,7 +101,7 @@ export default async function HomePage() {
               />
             </Card>
           ) : (
-            <ApplicationGrid applications={applications} />
+            <ApplicationGrid applications={applications} applicationLinks={applicationLinks} />
           )}
         </div>
       </main>
