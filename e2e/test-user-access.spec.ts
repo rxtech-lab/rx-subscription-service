@@ -49,9 +49,14 @@ test.describe.serial("test user roles and usage limits", () => {
       roleIds: [E2E_ROLE_ID],
     });
 
+    // Name the permission to gate on: the page otherwise falls back to the
+    // application's first permission, which any other spec can displace by
+    // defining one that sorts earlier.
+    const gated = `/test/${E2E_APPLICATION_ID}/gated?permission=${encodeURIComponent(E2E_PERMISSION_KEY)}`;
+
     const locked = await signedInAs(browser, withoutRole.sessionToken);
     const lockedPage = await locked.newPage();
-    await lockedPage.goto(`/test/${E2E_APPLICATION_ID}/gated`);
+    await lockedPage.goto(gated);
     await expect(lockedPage.getByText("Locked")).toBeVisible();
     await expect(
       lockedPage.locator("code", { hasText: E2E_PERMISSION_KEY }),
@@ -62,7 +67,7 @@ test.describe.serial("test user roles and usage limits", () => {
     // resolves into the permission that guards the section.
     const unlocked = await signedInAs(browser, withRole.sessionToken);
     const unlockedPage = await unlocked.newPage();
-    await unlockedPage.goto(`/test/${E2E_APPLICATION_ID}/gated`);
+    await unlockedPage.goto(gated);
     await expect(unlockedPage.getByText("You are in")).toBeVisible();
     await unlocked.close();
 
