@@ -56,7 +56,7 @@ it.each(["plan_grant", "apple_plan_grant", "internal_plan_grant"])("uses current
   expect(mocks.credit).toHaveBeenCalledWith(expect.objectContaining({
     amount: 1000, expiryPolicy: "period_end", expiresAt: renewal.periodEnd,
     subscriptionId: "sub", idempotencyKey: `${idempotencyPrefix}:user:plan:points:period-1`,
-  }));
+  }), expect.anything());
 });
 
 it("does not replay an already credited period after changing its amount", async () => {
@@ -87,12 +87,12 @@ it("uses zero trial grants and picks up added or removed balance units for futur
   expect(await grantPeriodBalances({ ...renewal, status: "trialing" })).toEqual([]);
   mocks.grants = [{ kind: "balance_grant", unitId: "tokens", amount: 500 }];
   await grantPeriodBalances(renewal);
-  expect(mocks.credit).toHaveBeenCalledWith(expect.objectContaining({ unitId: "tokens", amount: 500 }));
+  expect(mocks.credit).toHaveBeenCalledWith(expect.objectContaining({ unitId: "tokens", amount: 500 }), expect.anything());
   mocks.grants = [];
   expect(await grantPeriodBalances({ ...renewal, periodKey: "period-2" })).toEqual([]);
 });
 
 it("preserves one-time purchased balance grants", async () => {
   await grantPeriodBalances({ ...renewal, subscriptionId: null });
-  expect(mocks.credit).toHaveBeenCalledWith(expect.objectContaining({ amount: 100, subscriptionId: null }));
+  expect(mocks.credit).toHaveBeenCalledWith(expect.objectContaining({ amount: 100, subscriptionId: null }), expect.anything());
 });

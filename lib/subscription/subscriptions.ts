@@ -1,6 +1,6 @@
 import "server-only";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { and, desc, eq, gt, inArray, lte, ne, or } from "drizzle-orm";
+import { db, type DbExecutor } from "@/lib/db";
 import {
   appUsers,
   ledgerEntries,
@@ -25,6 +25,7 @@ import { balanceAmountForSubscriptionStatus } from "./entitlement-rules";
 import { stampLotsForPlanEnd } from "./balance-lots";
 import { requirePlan } from "./plans";
 import { simulatedNow } from "./test-clock";
+import { complimentaryGrantSchema } from "./complimentary-schema";
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due"] as const;
 
@@ -41,18 +42,20 @@ export async function listOwnedPlans(input: {
   applicationId: string;
   appUserId: string;
   excludeSubscriptionId?: string;
-}): Promise<OwnedPlan[]> {
+  now?: Date;
+}, executor: DbExecutor = db): Promise<OwnedPlan[]> {
   const subscriptionConditions = [
     eq(subscriptions.applicationId, input.applicationId),
     eq(subscriptions.appUserId, input.appUserId),
     inArray(subscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+    or(ne(subscriptions.billingProvider, "complimentary"), gt(subscriptions.currentPeriodEnd, input.now ?? new Date()))!,
   ];
   if (input.excludeSubscriptionId) {
     subscriptionConditions.push(ne(subscriptions.id, input.excludeSubscriptionId));
   }
 
   const [activeSubscriptions, oneTimePurchases] = await Promise.all([
-    db
+    executor
       .select({
         planId: plans.id,
         planName: plans.name,
@@ -63,7 +66,7 @@ export async function listOwnedPlans(input: {
       .from(subscriptions)
       .innerJoin(plans, eq(subscriptions.planId, plans.id))
       .where(and(...subscriptionConditions)),
-    db
+    executor
       .select({
         planId: plans.id,
         planName: plans.name,
@@ -91,12 +94,14 @@ export async function assertPlanGroupAvailable(input: {
   appUserId: string;
   plan: Plan;
   excludeSubscriptionId?: string;
-}) {
+  now?: Date;
+}, executor: DbExecutor = db) {
   const ownedPlans = await listOwnedPlans({
     applicationId: input.applicationId,
     appUserId: input.appUserId,
     excludeSubscriptionId: input.excludeSubscriptionId,
-  });
+    now: input.now,
+  }, executor);
   const conflict = ownedPlans.find(
     (ownedPlan) =>
       ownedPlan.planGroup === input.plan.planGroup &&
@@ -111,6 +116,119 @@ export async function assertPlanGroupAvailable(input: {
   );
 }
 
+/** Grant access without creating a store purchase or modifying a provider subscription. */
+export async function grantComplimentarySubscription(input: {
+  applicationId: string;
+  appUserId: string;
+  environment: "sandbox" | "production";
+  planId: string;
+  periodDays: number;
+  reason: string;
+  /** Stable SDK tool-call ID, so a resumed approval cannot grant twice. */
+  operationId: string;
+  actor: Actor;
+}) {
+  const parsed = complimentaryGrantSchema.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0].message);
+  const args = parsed.data;
+  if (!input.operationId.trim() || input.operationId.length > 200) {
+    throw new ValidationError("A valid grant operation ID is required");
+  }
+
+  return db.transaction(async (tx) => {
+    // Serialize grants for this user, including grants to different plans in one group.
+    const [user] = await tx.select().from(appUsers).where(and(
+      eq(appUsers.id, args.appUserId), eq(appUsers.applicationId, input.applicationId),
+    )).limit(1).for("update");
+    if (!user) throw new NotFoundError("app user", args.appUserId);
+    if (user.environment !== args.environment) {
+      throw new ValidationError(`User belongs to ${user.environment}, not ${args.environment}`);
+    }
+
+    const providerSubscriptionId = `grant:${input.operationId}`;
+    const [previous] = await tx.select().from(subscriptions).where(and(
+      eq(subscriptions.applicationId, input.applicationId),
+      eq(subscriptions.appUserId, user.id),
+      eq(subscriptions.billingProvider, "complimentary"),
+      eq(subscriptions.providerSubscriptionId, providerSubscriptionId),
+    )).limit(1);
+    if (previous) {
+      const details = previous.entitlementSnapshot?.complimentary as
+        { periodDays?: number; reason?: string } | undefined;
+      if (previous.planId !== args.planId || details?.periodDays !== args.periodDays || details?.reason !== args.reason) {
+        throw new ValidationError("This grant operation was already used with different details");
+      }
+      return { subscription: previous, environment: user.environment, duplicate: true };
+    }
+
+    const [plan] = await tx.select().from(plans).where(and(
+      eq(plans.id, args.planId), eq(plans.applicationId, input.applicationId),
+    )).limit(1).for("share");
+    if (!plan) throw new NotFoundError("plan", args.planId);
+    if (plan.status !== "active") throw new ValidationError("Choose an active plan for complimentary access");
+    if (plan.autoSubscribe) throw new ValidationError("This plan already provides automatic free access");
+
+    const now = simulatedNow(user.testClockOffsetMs);
+    await expireComplimentarySubscriptions({ applicationId: input.applicationId, appUserId: user.id, now }, tx);
+    await assertPlanGroupAvailable({ applicationId: input.applicationId, appUserId: user.id, plan, now }, tx);
+    const snapshot = await buildEntitlementSnapshot(plan.id, tx);
+    const periodEnd = new Date(now.getTime() + args.periodDays * 86_400_000);
+    const [subscription] = await tx.insert(subscriptions).values({
+      id: newId(), applicationId: input.applicationId, appUserId: user.id, planId: plan.id,
+      status: "active", billingProvider: "complimentary", providerSubscriptionId,
+      currentPeriodStart: now, currentPeriodEnd: periodEnd, cancelAtPeriodEnd: true,
+      entitlementSnapshot: { ...snapshot, complimentary: { periodDays: args.periodDays, reason: args.reason } },
+      startedAt: now, createdAt: new Date(), updatedAt: new Date(),
+    }).returning();
+
+    await replaceInternalDefaultForPlan({ applicationId: input.applicationId, appUserId: user.id, planId: plan.id }, tx);
+    // One allowance grant for this access period; there are no paid renewals.
+    await grantPeriodBalances({
+      applicationId: input.applicationId, appUserId: user.id, planId: plan.id,
+      subscriptionId: subscription.id, periodKey: subscription.id, periodEnd,
+      status: "active", idempotencyPrefix: "complimentary_plan_grant",
+      referenceType: "subscription", referenceId: subscription.id,
+    }, tx);
+    await recordAudit({
+      applicationId: input.applicationId, actor: input.actor,
+      action: "subscription.grant_complimentary", entityType: "subscription", entityId: subscription.id,
+      after: { ...subscription, environment: user.environment, reason: args.reason },
+    }, tx);
+    return { subscription, environment: user.environment, duplicate: false };
+  });
+}
+
+/** Expiry is enforced on access reads and also swept for inactive users. */
+export async function expireComplimentarySubscriptions(input: {
+  applicationId?: string;
+  appUserId?: string;
+  now?: Date;
+  limit?: number;
+} = {}, executor: DbExecutor = db) {
+  const now = input.now ?? new Date();
+  return executor.transaction(async (tx) => {
+    const rows = await tx.select().from(subscriptions).where(and(
+      eq(subscriptions.billingProvider, "complimentary"),
+      inArray(subscriptions.status, [...ACTIVE_SUBSCRIPTION_STATUSES]),
+      lte(subscriptions.currentPeriodEnd, now),
+      input.applicationId ? eq(subscriptions.applicationId, input.applicationId) : undefined,
+      input.appUserId ? eq(subscriptions.appUserId, input.appUserId) : undefined,
+    )).limit(input.limit ?? 500).for("update");
+    for (const before of rows) {
+      const endedAt = before.currentPeriodEnd!;
+      await tx.update(subscriptions).set({ status: "expired", endedAt, cancelAtPeriodEnd: false, updatedAt: now })
+        .where(eq(subscriptions.id, before.id));
+      await stampLotsForPlanEnd({ subscriptionId: before.id, endedAt }, tx);
+      await recordAudit({
+        applicationId: before.applicationId, actor: { type: "system", id: null },
+        action: "subscription.expire_complimentary", entityType: "subscription", entityId: before.id,
+        before, after: { status: "expired", endedAt },
+      }, tx);
+    }
+    return rows.length;
+  });
+}
+
 function internalPeriodEnd(plan: Plan, start: Date): Date {
   const months =
     plan.billingInterval === "year"
@@ -121,9 +239,9 @@ function internalPeriodEnd(plan: Plan, start: Date): Date {
   return addMonthsUtc(start, months);
 }
 
-async function endInternalSubscriptions(ids: string[], endedAt: Date) {
+async function endInternalSubscriptions(ids: string[], endedAt: Date, executor: DbExecutor = db) {
   if (ids.length === 0) return;
-  const ended = await db
+  const ended = await executor
     .update(subscriptions)
     .set({
       status: "canceled",
@@ -135,7 +253,7 @@ async function endInternalSubscriptions(ids: string[], endedAt: Date) {
     .returning({ id: subscriptions.id });
   await Promise.all(
     ended.map((row) =>
-      stampLotsForPlanEnd({ subscriptionId: row.id, endedAt }),
+      stampLotsForPlanEnd({ subscriptionId: row.id, endedAt }, executor),
     ),
   );
 }
@@ -149,9 +267,9 @@ export async function replaceInternalDefaultForPlan(input: {
   applicationId: string;
   appUserId: string;
   planId: string;
-}) {
-  const target = await requirePlan(input.applicationId, input.planId);
-  const rows = await db
+}, executor: DbExecutor = db) {
+  const target = await requirePlan(input.applicationId, input.planId, executor);
+  const rows = await executor
     .select({ id: subscriptions.id })
     .from(subscriptions)
     .innerJoin(plans, eq(subscriptions.planId, plans.id))
@@ -168,6 +286,7 @@ export async function replaceInternalDefaultForPlan(input: {
   await endInternalSubscriptions(
     rows.map((row) => row.id),
     new Date(),
+    executor,
   );
 }
 
@@ -192,6 +311,7 @@ export async function syncInternalDefaultSubscriptions(input: {
     .limit(1);
   if (!user) throw new NotFoundError("app user", input.appUserId);
   const now = input.now ?? simulatedNow(user.testClockOffsetMs);
+  await expireComplimentarySubscriptions({ ...input, now });
   const internal = await db
     .select({ subscription: subscriptions, plan: plans })
     .from(subscriptions)
@@ -263,7 +383,7 @@ export async function syncInternalDefaultSubscriptions(input: {
         ne(plans.billingInterval, "one_time"),
       ),
     );
-  const owned = await listOwnedPlans(input);
+  const owned = await listOwnedPlans({ ...input, now });
   const enrolled = [];
 
   for (const plan of defaultPlans) {
@@ -383,8 +503,8 @@ export interface BalanceGrantEntitlement {
  * Capture grants for purchase history and one-time fulfillment. Recurring
  * subscriptions use the current plan for access and future period grants.
  */
-export async function buildEntitlementSnapshot(planId: string) {
-  const entitlements = await db
+export async function buildEntitlementSnapshot(planId: string, executor: DbExecutor = db) {
+  const entitlements = await executor
     .select()
     .from(planEntitlements)
     .where(eq(planEntitlements.planId, planId));
@@ -580,10 +700,10 @@ export async function grantPeriodBalances(input: {
   idempotencyPrefix?: string;
   referenceType?: string;
   referenceId?: string;
-}) {
+}, executor: DbExecutor = db) {
   const entitlements =
     (input.subscriptionId ? undefined : input.entitlements) ??
-    (await db
+    (await executor
       .select()
       .from(planEntitlements)
       .where(eq(planEntitlements.planId, input.planId)));
@@ -615,7 +735,7 @@ export async function grantPeriodBalances(input: {
       // A live plan edit can switch between equal and distinct trial amounts.
       // Recognize the prior key format as the same credit, while keeping trial
       // and paid stages distinct when both were configured separately.
-      const [prior] = await db
+      const [prior] = await executor
         .select()
         .from(ledgerEntries)
         .where(eq(ledgerEntries.idempotencyKey, hasDistinctTrialAmount ? legacyKey : stagedKey))
@@ -645,7 +765,7 @@ export async function grantPeriodBalances(input: {
         expiryMonths: months,
         subscriptionId: input.subscriptionId ?? null,
         planId: input.planId,
-      }),
+      }, executor),
     );
   }
   return results;

@@ -25,7 +25,8 @@ test("automatically subscribes a user to the free default plan exactly once", as
     });
     expect(response.ok()).toBe(true);
     await expect(response.json()).resolves.toMatchObject({
-      plans: [
+      plans: [],
+      defaultPlans: [
         {
           planId: E2E_DEFAULT_PLAN_ID,
           status: "active",

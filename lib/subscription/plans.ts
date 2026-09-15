@@ -1,7 +1,7 @@
 import "server-only";
 import { buildPermissionExpression } from "@/lib/permissions/expression";
 import { and, asc, eq, ne } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, type DbExecutor } from "@/lib/db";
 import {
   balanceUnits,
   planEntitlements,
@@ -40,8 +40,8 @@ export async function listPlans(
     : rows.filter((plan) => plan.status !== "archived");
 }
 
-export async function requirePlan(applicationId: string, planId: string) {
-  const [plan] = await db
+export async function requirePlan(applicationId: string, planId: string, executor: DbExecutor = db) {
+  const [plan] = await executor
     .select()
     .from(plans)
     .where(and(eq(plans.id, planId), eq(plans.applicationId, applicationId)))

@@ -497,9 +497,11 @@ export default async function UserDetailPage({
                     <span className="text-xs text-neutral-500">
                       {subscription.billingProvider === "apple_app_store"
                         ? "App Store"
-                        : subscription.billingProvider === "internal"
-                          ? "Automatic"
-                          : "Stripe"}
+                        : subscription.billingProvider === "complimentary"
+                          ? "Complimentary"
+                          : subscription.billingProvider === "internal"
+                            ? "Automatic"
+                            : "Stripe"}
                     </span>
                   </Td>
                   <Td>

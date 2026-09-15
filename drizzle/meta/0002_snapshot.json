@@ -1,6 +1,6 @@
 {
-  "id": "1e2c066d-5f85-45d2-83dc-3ba51850cd03",
-  "prevId": "3b7954fb-2307-4eb3-9696-69b44168142d",
+  "id": "71826f87-52fe-49d3-a54d-1097f63f008d",
+  "prevId": "1e2c066d-5f85-45d2-83dc-3ba51850cd03",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -619,6 +619,18 @@
         "description": {
           "name": "description",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "permission_group": {
+          "name": "permission_group",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope_options": {
+          "name": "scope_options",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

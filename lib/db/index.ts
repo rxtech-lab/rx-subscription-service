@@ -16,3 +16,6 @@ export const client = globalForDb.postgresClient ?? postgres(url, {
 if (process.env.NODE_ENV !== "production") globalForDb.postgresClient = client;
 export const db = drizzle(client, { schema });
 export { schema };
+
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbExecutor = typeof db | DbTransaction;

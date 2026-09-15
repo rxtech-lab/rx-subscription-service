@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, eq, gt, inArray, isNotNull, lte, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, type DbExecutor } from "@/lib/db";
 import { balanceLots, balances, ledgerEntries } from "@/lib/db/schema";
 import { newId } from "./shared";
 import { planLotExpiry, resolveExpiresAfterPlanEnd } from "./balance-expiry-rules";
@@ -27,8 +27,8 @@ export { drainLots, openLot, type OpenLotInput } from "./balance-lots-core";
 export async function stampLotsForPlanEnd(input: {
   subscriptionId: string;
   endedAt: Date;
-}) {
-  const pending = await db
+}, executor: DbExecutor = db) {
+  const pending = await executor
     .select()
     .from(balanceLots)
     .where(
@@ -45,7 +45,7 @@ export async function stampLotsForPlanEnd(input: {
     if (lot.expiresAt) continue;
     const expiresAt = resolveExpiresAfterPlanEnd(input.endedAt, lot.expiryMonths);
     if (!expiresAt) continue;
-    await db
+    await executor
       .update(balanceLots)
       .set({ expiresAt, updatedAt: now })
       .where(and(eq(balanceLots.id, lot.id), sql`${balanceLots.expiresAt} IS NULL`));

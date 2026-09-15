@@ -39,7 +39,12 @@ export async function GET(request: Request) {
           level: user.level,
           levelKey: user.levelKey,
         },
-        plans: entitlements.plans,
+        // Shipped clients decode billingProvider as a closed store-provider
+        // enum and treat any held plan as a purchase. Keep local access grants
+        // separate while their benefits remain in the resolved entitlement data.
+        plans: entitlements.plans.filter((plan) => !["internal", "complimentary"].includes(plan.billingProvider)),
+        defaultPlans: entitlements.plans.filter((plan) => plan.billingProvider === "internal"),
+        complimentaryPlans: entitlements.plans.filter((plan) => plan.billingProvider === "complimentary"),
         roles: entitlements.roleKeys,
         permissions: entitlements.permissions,
         features: entitlements.features,

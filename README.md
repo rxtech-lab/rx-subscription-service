@@ -2,7 +2,8 @@
 
 A shared subscription, billing, and usage layer for rxlab applications. One
 deployment serves every app: each has its own plans, topups, roles, permissions,
-balance units, and usage items, and each user gets independent balances per app.
+balance units, and usage items, and each user gets independent balances per app
+unless the application links to another application's shared subscription data.
 
 - **Next.js 16** App Router, server actions for the console
 - **Neon PostgreSQL + Drizzle** for storage
@@ -111,6 +112,31 @@ automatic free subscription; merely opening Checkout does not remove free access
 
 ## Machine API
 
+### Sharing subscriptions between applications
+
+In **Application settings → General → Shared subscriptions**, choose **Link to
+another app**. For A → B, keep using A's API keys: all `/api/v1` reads and writes
+use B's plans, top-ups, coupons, paywall, store configuration, users, subscriptions,
+usage, balances, purchases, invoices, and reservations. Configure and manage the
+shared data in B; changes apply to A's next API request without copying records.
+The same RxLab user ID resolves to the same user in B within each environment.
+
+A's key kind, OAuth client allow-list, verified user, revocation, and environment
+still control access. Xcode, sandbox, and production remain isolated. Chains
+such as A → B → C resolve to C. The admin must manage every application in a
+new link's chain. Self-links and cycles are rejected, concurrent link edits are
+serialized, and disabled or invalid links fail closed.
+
+Linking does not migrate or merge A's existing records or transfer existing
+provider subscriptions. Selecting **None** restores A's own data. Incoming
+provider webhooks continue to settle the application recorded in their original
+purchase metadata; app API calls use the linked application's store setup.
+Deleting an application that is still a link target is restricted.
+
+Apply the `0001_application_links.sql` migration before deploying this feature.
+
+### Environments
+
 Your applications talk to `/api/v1` with an environment-scoped application API
 key (`X-Api-Key`, created under Settings). The endpoint URL stays the same; the
 key selects the data plane:
@@ -170,6 +196,47 @@ curl "$BASE/api/v1/entitlements" \
 
 The iOS client for this is [RxSubscriptionIOS](https://github.com/rxtech-lab/RxSubscriptionIOS),
 which takes a publishable key and a closure that hands it a fresh access token.
+
+The entitlements response keeps purchased subscriptions and one-time plans in
+`plans`. Automatically assigned free plans use `defaultPlans` instead, with
+`billingProvider: "internal"`. Time-limited administrative grants use
+`complimentaryPlans`, with `billingProvider: "complimentary"`. All three contribute
+to the returned roles, permissions, features, balances, and usage allowances. This keeps existing
+clients that recognize only store billing providers compatible, and prevents a
+free default plan from being mistaken for a paid subscription.
+
+### Granting access and credits through chat
+
+An administrator can ask the application agent:
+
+- “Give jane@example.com Pro access for 30 days in production, reason: support goodwill.”
+- “Add 500 points to jane@example.com in sandbox, reason: purchase testing.”
+
+The agent looks up the existing user in the named environment and the plan or
+balance unit, then presents the existing write-tool approval. Sandbox and
+production are always selected explicitly. A user must already have a record
+in that environment; the same RxLab identity may have a different record in each.
+
+`grantComplimentarySubscription` grants an active plan for 1–3,650 days, with one
+allowance credit for the entire period. It never renews, creates no payment or
+Apple transaction, and rejects overlapping plans in the same group. It replaces
+an automatic free tier in that group; the free tier resumes after access expires.
+Access expires on the next entitlement read, with a background sweep for idle
+users. Cancel it early using **Subscriptions → Actions → Cancel now**. Stored
+allowance credits retain the plan's configured expiry policy.
+
+`grantUserCredits` adds a positive amount to the existing balance without needing
+a subscription. These administrative credits do not expire. Amounts passed to
+the tool are integers in the unit's smallest denomination (`precision: 2` means
+12.50 credits is `amount: 1250`). The agent displays the human-readable amount
+before approval. This tool cannot deduct credits or replace a balance.
+
+Both tools validate application and environment ownership, record the reason and
+administrator, and use the approved tool-call ID to avoid duplicate grants on
+retries. The grant, ledger entries, and audit commit together. Neither creates
+revenue. Existing iOS clients continue receiving the resolved benefits; clients
+that show a plan badge based only on purchased `plans` need to read
+`complimentaryPlans` to display complimentary membership.
 
 | Endpoint | Purpose |
 |---|---|

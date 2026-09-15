@@ -29,6 +29,21 @@ describe("labelProducts", () => {
 });
 
 describe("applyProductFilter", () => {
+  it("hides auto-enroll plans only when requested, alongside other filters", () => {
+    const products = [{ ...SAMPLE_PRODUCTS[0], autoSubscribe: true }, ...SAMPLE_PRODUCTS.slice(1)];
+    expect(applyProductFilter(products, undefined)).toHaveLength(3);
+    expect(applyProductFilter(products, { hideAutoSubscribe: false })).toHaveLength(3);
+    expect(applyProductFilter(products, { hideAutoSubscribe: true }).map((p) => p.key)).toEqual(["yearly", "lifetime"]);
+    expect(applyProductFilter(products, { hideAutoSubscribe: true, billingIntervals: ["month"] })).toEqual([]);
+    const resolved = resolveProductList(labelProducts(products), {
+      filter: { hideAutoSubscribe: true },
+      highlight: "first",
+      periodFilter: { showAll: true },
+    });
+    expect(resolved.highlightedProductId).not.toBe(products[0].id);
+    expect(resolved.periodOptions.flatMap((option) => option.productIds)).not.toContain(products[0].id);
+  });
+
   it("filters by plan group and billing interval", () => {
     expect(applyProductFilter(SAMPLE_PRODUCTS, { planGroup: "lifetime" }).map((p) => p.key)).toEqual(["lifetime"]);
     expect(

@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, type DbExecutor } from "@/lib/db";
 import { balances } from "@/lib/db/schema";
 import { newId } from "./shared";
 
@@ -15,8 +15,8 @@ export class InsufficientBalanceError extends Error {
 }
 
 /** Create a balance row on demand so callers never have to pre-provision one. */
-export async function ensureBalanceRow(appUserId: string, unitId: string) {
-  const [existing] = await db
+export async function ensureBalanceRow(appUserId: string, unitId: string, executor: DbExecutor = db) {
+  const [existing] = await executor
     .select()
     .from(balances)
     .where(and(eq(balances.appUserId, appUserId), eq(balances.unitId, unitId)))
@@ -24,7 +24,7 @@ export async function ensureBalanceRow(appUserId: string, unitId: string) {
   if (existing) return existing;
 
   const now = new Date();
-  const [created] = await db
+  const [created] = await executor
     .insert(balances)
     .values({
       id: newId(),
@@ -39,7 +39,7 @@ export async function ensureBalanceRow(appUserId: string, unitId: string) {
     .returning();
   if (created) return created;
 
-  const [raced] = await db
+  const [raced] = await executor
     .select()
     .from(balances)
     .where(and(eq(balances.appUserId, appUserId), eq(balances.unitId, unitId)))

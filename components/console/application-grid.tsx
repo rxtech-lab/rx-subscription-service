@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowUpRight, Boxes, Search, X } from "lucide-react";
+import { ArrowUpRight, Boxes, Link2, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import type { ApplicationLinkSummary } from "@/lib/applications/links";
 
 interface ApplicationSummary {
   id: string;
@@ -41,22 +42,28 @@ function initials(name: string): string {
 
 export function ApplicationGrid({
   applications,
+  applicationLinks,
 }: {
   applications: ApplicationSummary[];
+  applicationLinks: Record<string, ApplicationLinkSummary>;
 }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
   const filteredApplications = useMemo(
     () =>
       normalizedQuery
-        ? applications.filter(
-            (application) =>
-              application.name.toLowerCase().includes(normalizedQuery) ||
+        ? applications.filter((application) => {
+            const link = applicationLinks[application.id];
+            const related = [link?.linkedTo, link?.effectiveApplication, ...(link?.sharedWith ?? [])];
+            return application.name.toLowerCase().includes(normalizedQuery) ||
               application.id.toLowerCase().includes(normalizedQuery) ||
-              application.description?.toLowerCase().includes(normalizedQuery),
-          )
+              application.description?.toLowerCase().includes(normalizedQuery) ||
+              related.some((target) => target && (
+                target.name.toLowerCase().includes(normalizedQuery) || target.id.toLowerCase().includes(normalizedQuery)
+              ));
+          })
         : applications,
-    [applications, normalizedQuery],
+    [applications, applicationLinks, normalizedQuery],
   );
 
   return (
@@ -115,6 +122,7 @@ export function ApplicationGrid({
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredApplications.map((application, index) => {
             const accent = ACCENTS[index % ACCENTS.length];
+            const link = applicationLinks[application.id];
 
             return (
               <Link
@@ -142,6 +150,27 @@ export function ApplicationGrid({
                     {application.description ||
                       "Manage plans, permissions, usage, and billing settings."}
                   </p>
+                  {link && (link.linkedTo || link.sharedWith.length > 0 || link.unavailable) ? (
+                    <div className={`mt-4 flex items-start gap-2 rounded-xl px-3 py-2.5 ${link.unavailable ? "bg-amber-50 text-amber-800" : "bg-blue-50 text-blue-800"}`}>
+                      <Link2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                      <div className="min-w-0 text-xs leading-5">
+                        <p className="break-words font-semibold">
+                          {link.linkedTo
+                            ? `Linked to ${link.linkedTo.name}`
+                            : link.unavailable
+                              ? "Link unavailable"
+                              : `Shared with ${link.sharedWith.map((app) => app.name).join(", ")}`}
+                        </p>
+                        <p className={link.unavailable ? "text-amber-700" : "text-blue-600"}>
+                          {link.unavailable
+                            ? "Review the application link in Settings."
+                            : link.effectiveApplication && link.effectiveApplication.id !== link.linkedTo?.id
+                              ? `Uses ${link.effectiveApplication.name}'s subscriptions and paywall`
+                              : "Shared subscriptions and paywall"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="mt-5 flex items-center gap-2 border-t border-slate-100 pt-4">

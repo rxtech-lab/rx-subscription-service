@@ -23,10 +23,11 @@ export const BILLING_PROVIDERS = [
 ] as const;
 export type BillingProvider = (typeof BILLING_PROVIDERS)[number];
 
-/** Free default subscriptions are owned locally and never mirrored to a store. */
+/** Automatic free plans and complimentary grants are never mirrored to a store. */
 export const SUBSCRIPTION_BILLING_PROVIDERS = [
   ...BILLING_PROVIDERS,
   "internal",
+  "complimentary",
 ] as const;
 export type SubscriptionBillingProvider =
   (typeof SUBSCRIPTION_BILLING_PROVIDERS)[number];

@@ -1,5 +1,5 @@
 import "server-only";
-import { db } from "@/lib/db";
+import { db, type DbExecutor } from "@/lib/db";
 import { auditLogs } from "@/lib/db/schema";
 
 export function newId(): string {
@@ -73,8 +73,8 @@ export async function recordAudit(input: {
   entityId: string | null;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
-}): Promise<void> {
-  await db.insert(auditLogs).values({
+}, executor: DbExecutor = db): Promise<void> {
+  await executor.insert(auditLogs).values({
     id: newId(),
     applicationId: input.applicationId,
     actorType: input.actor.type,

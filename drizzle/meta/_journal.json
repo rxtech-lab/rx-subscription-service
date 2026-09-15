@@ -12,8 +12,15 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1788796004184,
-      "tag": "0001_special_zodiak",
+      "when": 1789404406487,
+      "tag": "0001_application_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789438202535,
+      "tag": "0002_permission_groups_and_scope_options",
       "breakpoints": true
     }
   ]

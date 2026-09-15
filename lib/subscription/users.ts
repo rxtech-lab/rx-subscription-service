@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db, type DbExecutor } from "@/lib/db";
 import {
   appUsers,
   balances,
@@ -215,6 +215,7 @@ export async function listAppUserOptions(
       email: appUsers.email,
       displayName: appUsers.displayName,
       isTest: appUsers.isTest,
+      environment: appUsers.environment,
     })
     .from(appUsers)
     .where(usersScope(applicationId, options.includeTest ?? false))
@@ -309,8 +310,8 @@ export async function getBalances(appUserId: string) {
     .orderBy(asc(balanceUnits.key));
 }
 
-async function findLedgerEntry(idempotencyKey: string) {
-  const [entry] = await db
+async function findLedgerEntry(idempotencyKey: string, executor: DbExecutor = db) {
+  const [entry] = await executor
     .select()
     .from(ledgerEntries)
     .where(eq(ledgerEntries.idempotencyKey, idempotencyKey))
@@ -350,15 +351,15 @@ export interface CreditExpiry {
  * Idempotent on `idempotencyKey`: a retried Stripe webhook or API call returns
  * the original ledger entry instead of crediting twice.
  */
-export async function creditBalance(input: BalanceMutation & CreditExpiry) {
+export async function creditBalance(input: BalanceMutation & CreditExpiry, executor: DbExecutor = db) {
   const amount = assertPositiveInteger(input.amount, "amount");
-  const existing = await findLedgerEntry(input.idempotencyKey);
+  const existing = await findLedgerEntry(input.idempotencyKey, executor);
   if (existing) return { entry: existing, duplicate: true as const };
 
-  await ensureBalanceRow(input.appUserId, input.unitId);
+  await ensureBalanceRow(input.appUserId, input.unitId, executor);
   const now = new Date();
 
-  const entry = await db.transaction(async (tx) => {
+  const entry = await executor.transaction(async (tx) => {
     // Read before the increment so a negative balance — units clawed back after
     // they were already spent — can be settled out of this credit rather than
     // opening a lot for units that only cover an existing debt.
