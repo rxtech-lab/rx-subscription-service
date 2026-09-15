@@ -1,3 +1,7 @@
+import { PermissionSearch } from "@/components/forms/permission-search";
+import { permissionGroup } from "@/lib/permissions/search";
+import { Fragment } from "react";
+import { DEFAULT_PERMISSION_SCOPES, permissionScopeOptions } from "@/lib/permissions/scope-options";
 import {
   createPermissionAction,
   deletePermissionAction,
@@ -18,25 +22,34 @@ import {
   Th,
 } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
-import { listPermissions } from "@/lib/subscription/roles";
+import { searchPermissions, listPermissionGroups } from "@/lib/subscription/roles";
 
-export default async function PermissionsPage({ params }: PageProps<"/apps/[appId]">) {
+export default async function PermissionsPage({ params, searchParams }: PageProps<"/apps/[appId]/permissions">) {
   const { appId } = await params;
   await requireApplicationAccess(appId);
 
-  const permissions = await listPermissions(appId);
+  const query = await searchParams;
+  const search = typeof query.q === "string" ? query.q.slice(0, 200) : "";
+  const selectedGroup = typeof query.group === "string" ? query.group.slice(0, 200) : "";
+  const [visible, groupRows] = await Promise.all([
+    searchPermissions(appId, search, selectedGroup),
+    listPermissionGroups(appId),
+  ]);
+  const groups = groupRows.map((row) => row.group);
+  const groupOf = permissionGroup;
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader
           title="Permissions"
-          description="The vocabulary your application checks. Scope is attached per role, not here."
+          description="Organize permissions into groups and customize the scopes each role can grant."
         />
-        {permissions.length === 0 ? (
+        <PermissionSearch key={`${search}:${selectedGroup}`} applicationId={appId} initialQuery={search} initialGroup={selectedGroup} groups={groups} />
+        {visible.length === 0 ? (
           <EmptyState
-            title="No permissions defined"
-            description="Add the actions your application wants to gate."
+            title={groups.length ? "No matching permissions" : "No permissions defined"}
+            description={groups.length ? "Try another search or group filter." : "Add the actions your application wants to gate."}
           />
         ) : (
           <Table>
@@ -49,8 +62,12 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
               </tr>
             </thead>
             <tbody>
-              {permissions.map((permission) => (
-                <tr key={permission.id}>
+              {visible.map((permission, index) => (
+                <Fragment key={permission.id}>
+                {index === 0 || groupOf(visible[index - 1]) !== groupOf(permission) ? (
+                  <tr><td colSpan={4} className="bg-neutral-50 px-4 py-2 text-sm font-semibold">{groupOf(permission)}</td></tr>
+                ) : null}
+                <tr>
                   <Td>
                     <code className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs">
                       {permission.key}
@@ -66,12 +83,7 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
                   </Td>
                   <Td>
                     <span className="text-xs text-neutral-600">
-                      {[
-                        permission.supportsAll ? `${permission.key}:all` : null,
-                        permission.supportsIds ? `${permission.key}:id1,id2` : null,
-                      ]
-                        .filter(Boolean)
-                        .join("  ·  ")}
+                      {permissionScopeOptions(permission).map((scope) => scope === "selected" ? "all:id" : scope).join(" · ")}
                     </span>
                   </Td>
                   <Td>
@@ -117,22 +129,12 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
                                 />
                               </Field>
                             </div>
-                            <label className="flex items-center gap-2 text-xs text-neutral-700">
-                              <input
-                                type="checkbox"
-                                name="supportsAll"
-                                defaultChecked={permission.supportsAll}
-                              />
-                              Allow an all scope
-                            </label>
-                            <label className="flex items-center gap-2 text-xs text-neutral-700">
-                              <input
-                                type="checkbox"
-                                name="supportsIds"
-                                defaultChecked={permission.supportsIds}
-                              />
-                              Allow specific target ids
-                            </label>
+                            <Field label="Group" hint="e.g. market or market.publish; blank uses the key prefix">
+                              <Input name="group" defaultValue={permission.group ?? ""} placeholder="market" />
+                            </Field>
+                            <Field label="Scopes" hint="Comma-separated names; add :id for specific targets">
+                              <Input name="scopeOptions" required defaultValue={permissionScopeOptions(permission).map((scope) => scope === "selected" ? "all:id" : scope).join(", ")} />
+                            </Field>
                           </div>
                         </ActionForm>
                       </FormDialog>
@@ -155,6 +157,7 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
                     </ActionMenu>
                   </Td>
                 </tr>
+                </Fragment>
               ))}
             </tbody>
           </Table>
@@ -165,13 +168,13 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
         <FormDialog
           triggerLabel="New permission"
           title="Create a permission"
-          description="Use the bare key. A role decides whether it applies to everything or specific ids."
+          description="Define a permission, its group, and the scopes available to roles."
         >
         <ActionForm action={createPermissionAction} submitLabel="Create permission">
           <input type="hidden" name="applicationId" value={appId} />
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Field label="Key" hint="e.g. read:a">
-              <Input name="key" required placeholder="read:a" />
+            <Field label="Key" hint="e.g. market.publish">
+              <Input name="key" required placeholder="market.publish" />
             </Field>
             <Field label="Title">
               <Input name="title" required placeholder="Read articles" />
@@ -181,14 +184,12 @@ export default async function PermissionsPage({ params }: PageProps<"/apps/[appI
                 <Textarea name="description" rows={2} />
               </Field>
             </div>
-            <label className="flex items-center gap-2 text-xs text-neutral-700">
-              <input type="checkbox" name="supportsAll" defaultChecked />
-              Allow an all scope
-            </label>
-            <label className="flex items-center gap-2 text-xs text-neutral-700">
-              <input type="checkbox" name="supportsIds" defaultChecked />
-              Allow specific target ids
-            </label>
+            <Field label="Group" hint="e.g. market or market.publish; blank uses the key prefix">
+              <Input name="group" placeholder="market" />
+            </Field>
+            <Field label="Scopes" hint="Custom scopes work too: approve, approve:id">
+              <Input name="scopeOptions" required defaultValue={DEFAULT_PERMISSION_SCOPES.join(", ")} />
+            </Field>
           </div>
         </ActionForm>
         </FormDialog>

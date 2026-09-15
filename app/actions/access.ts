@@ -1,7 +1,11 @@
 "use server";
 
+import { requireApplicationAccess } from "@/lib/console/session";
+import type { PermissionSuggestion } from "@/lib/permissions/search";
+
 import {
   createPermission,
+  searchPermissions,
   createRole,
   deletePermission,
   deleteRole,
@@ -92,7 +96,7 @@ export async function setRolePermissionsAction(
     if (typeof permissionId !== "string") continue;
     if (!checkbox(formData, `enabled:${permissionId}`)) continue;
 
-    const scope = text(formData, `scope:${permissionId}`) === "all" ? "all" : "selected";
+    const scope = text(formData, `scope:${permissionId}`);
     const targetIds = text(formData, `targets:${permissionId}`)
       .split(",")
       .map((id) => id.trim())
@@ -123,6 +127,8 @@ export async function createPermissionAction(
         key: text(formData, "key"),
         title: text(formData, "title"),
         description: optionalText(formData, "description"),
+        group: optionalText(formData, "group"),
+        scopeOptions: text(formData, "scopeOptions").split(","),
         supportsAll: checkbox(formData, "supportsAll"),
         supportsIds: checkbox(formData, "supportsIds"),
         actor,
@@ -147,6 +153,8 @@ export async function updatePermissionAction(
         permissionId: text(formData, "permissionId"),
         title: text(formData, "title"),
         description: optionalText(formData, "description"),
+        group: optionalText(formData, "group"),
+        scopeOptions: text(formData, "scopeOptions").split(","),
         supportsAll: checkbox(formData, "supportsAll"),
         supportsIds: checkbox(formData, "supportsIds"),
         actor,
@@ -169,4 +177,17 @@ export async function deletePermissionAction(formData: FormData): Promise<void> 
     });
   });
   revalidateApp(applicationId, "permissions");
+}
+
+export async function searchPermissionKeysAction(
+  applicationId: string,
+  query: string,
+  group: string,
+): Promise<PermissionSuggestion[]> {
+  await requireApplicationAccess(applicationId);
+  if (typeof query !== "string" || typeof group !== "string" || query.length > 200 || group.length > 200) {
+    return [];
+  }
+  const matches = await searchPermissions(applicationId, query, group, 20);
+  return matches.map(({ id, key, title }) => ({ id, key, title }));
 }

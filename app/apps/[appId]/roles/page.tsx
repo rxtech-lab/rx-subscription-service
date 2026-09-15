@@ -1,3 +1,4 @@
+import { permissionScopeOptions } from "@/lib/permissions/scope-options";
 import {
   createRoleAction,
   deleteRoleAction,
@@ -166,6 +167,8 @@ export default async function RolesPage({ params }: PageProps<"/apps/[appId]">) 
                         <div className="space-y-2">
                           {permissions.map((permission) => {
                             const grant = grantByPermission.get(permission.id);
+                            const choices = permissionScopeOptions(permission);
+                            const currentScope = grant?.scope === "selected" && permission.scopeOptions ? "all:id" : grant?.scope;
                             return (
                               <div
                                 key={permission.id}
@@ -189,15 +192,15 @@ export default async function RolesPage({ params }: PageProps<"/apps/[appId]">) 
                                 </span>
                                 <Select
                                   name={`scope:${permission.id}`}
-                                  defaultValue={grant?.scope ?? "all"}
+                                  defaultValue={currentScope ?? choices[0]}
                                   className="h-8 w-auto text-xs"
                                 >
-                                  {permission.supportsAll ? (
-                                    <option value="all">all</option>
+                                  {currentScope && !choices.includes(currentScope) ? (
+                                    <option value={currentScope}>{currentScope} (no longer available)</option>
                                   ) : null}
-                                  {permission.supportsIds ? (
-                                    <option value="selected">selected ids</option>
-                                  ) : null}
+                                  {choices.map((scope) => (
+                                    <option key={scope} value={scope}>{scope === "selected" ? "all:id" : scope}</option>
+                                  ))}
                                 </Select>
                                 <Input
                                   name={`targets:${permission.id}`}

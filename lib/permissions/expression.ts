@@ -1,3 +1,5 @@
+import { isTargetedScope } from "./scope-options";
+
 /**
  * Permission expressions, in the same syntax rxlab-auth uses for its admin API
  * (`lib/admin-api/permissions.ts`) but generalized to any permission key.
@@ -10,7 +12,7 @@
  * the same restriction rxlab-auth enforces.
  */
 
-export type PermissionScope = "all" | "selected";
+export type PermissionScope = string;
 
 export interface PermissionExpression {
   key: string;
@@ -52,11 +54,17 @@ export function parsePermissionExpression(
 export function buildPermissionExpression(
   expression: PermissionExpression,
 ): string | null {
-  const key = expression.key.trim();
-  if (!key) return null;
-  if (expression.scope === "all") return `${key}:all`;
+  let key = expression.key.trim();
+  if (!key || /\s/.test(key)) return null;
+  const scope = expression.scope;
+  if (!/^[a-z][a-z0-9._-]*(?::id)?$/.test(scope)) return null;
+  if (scope === "selected:id") return null;
+  const action = scope.split(":")[0];
+  if (action !== "all" && action !== "selected") key = `${action}:${key}`;
+  if (!isTargetedScope(scope)) return `${key}:all`;
 
   const targetIds = normalizeTargetIds(expression.targetIds);
+  if (targetIds.some((id) => id === "all" || /[:,\s]/.test(id))) return null;
   return targetIds.length > 0 ? `${key}:${targetIds.join(",")}` : null;
 }
 
@@ -107,12 +115,18 @@ export function serializePermissionList(
  * Does this permission set allow `key` — and, when `targetId` is given, that
  * specific target? Omitting `targetId` asks only whether the key is granted at
  * all, which is the right question for non-scoped permissions.
+ * Pass an action to include both that action and the permission-wide all grant.
  */
 export function hasPermission(
   permissions: readonly string[],
   key: string,
   targetId?: string,
+  action?: string,
 ): boolean {
+  if (action !== undefined) {
+    return hasPermission(permissions, key, targetId) ||
+      hasPermission(permissions, `${action}:${key}`, targetId);
+  }
   const match = parsePermissionList(permissions).find(
     (expression) => expression.key === key,
   );
@@ -126,7 +140,15 @@ export function hasPermission(
 export function permissionTargets(
   permissions: readonly string[],
   key: string,
+  action?: string,
 ): "all" | string[] | null {
+  if (action !== undefined) {
+    const broad = permissionTargets(permissions, key);
+    const specific = permissionTargets(permissions, `${action}:${key}`);
+    if (broad === "all" || specific === "all") return "all";
+    if (broad === null && specific === null) return null;
+    return normalizeTargetIds([...(broad ?? []), ...(specific ?? [])]);
+  }
   const match = parsePermissionList(permissions).find(
     (expression) => expression.key === key,
   );

@@ -109,7 +109,7 @@ export const planEntitlements = pgTable(
       onDelete: "cascade",
     }),
     permissionKey: text("permission_key"),
-    permissionScope: text("permission_scope", { enum: ["all", "selected"] }),
+    permissionScope: text("permission_scope"),
     permissionTargetIds: jsonb("permission_target_ids").$type<
       string[]
     >(),
