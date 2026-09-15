@@ -3,6 +3,7 @@ import type { Plan } from "@/lib/db/schema";
 import type { StoreProductMappingWithPrice } from "@/lib/iap/configuration";
 import {
   appleMappingsByPlan,
+  byPriceAscending,
   catalogPlatformForRequest,
   planPayload,
   purchaseOptions,
@@ -183,5 +184,34 @@ describe("planPayload", () => {
     expect(
       planPayload(PLAN, { enabled: false }, byPlan, "ios").priceAmountCents,
     ).toBe(999);
+  });
+});
+
+describe("byPriceAscending", () => {
+  it("orders cheapest first", () => {
+    const ordered = byPriceAscending([
+      { key: "large", priceAmountCents: 4_999 },
+      { key: "small", priceAmountCents: 499 },
+      { key: "medium", priceAmountCents: 1_999 },
+    ]);
+    expect(ordered.map((item) => item.key)).toEqual(["small", "medium", "large"]);
+  });
+
+  it("keeps the configured order among items priced the same", () => {
+    const ordered = byPriceAscending([
+      { key: "first", priceAmountCents: 999 },
+      { key: "second", priceAmountCents: 999 },
+      { key: "free", priceAmountCents: 0 },
+    ]);
+    expect(ordered.map((item) => item.key)).toEqual(["free", "first", "second"]);
+  });
+
+  it("leaves the input array untouched", () => {
+    const items = [
+      { key: "large", priceAmountCents: 4_999 },
+      { key: "small", priceAmountCents: 499 },
+    ];
+    byPriceAscending(items);
+    expect(items.map((item) => item.key)).toEqual(["large", "small"]);
   });
 });

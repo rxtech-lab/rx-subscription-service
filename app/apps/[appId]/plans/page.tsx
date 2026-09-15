@@ -1,5 +1,4 @@
 import { buildPermissionExpression } from "@/lib/permissions/expression";
-import Link from "next/link";
 import {
   addPlanEntitlementAction,
   createPlanAction,
@@ -13,6 +12,7 @@ import {
   saveApplePlanProductAction,
 } from "@/app/actions/store-products";
 import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
+import { StatusTabs } from "@/components/ui/status-tabs";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
   Badge,
@@ -34,7 +34,7 @@ import { listPlanEntitlements, listPlans } from "@/lib/subscription/plans";
 import { listRoles } from "@/lib/subscription/roles";
 import { listUsageItems } from "@/lib/subscription/usage-items";
 import { listBalanceUnits } from "@/lib/subscription/units";
-import { cn, formatInterval, formatMoney } from "@/lib/utils";
+import { formatInterval, formatMoney } from "@/lib/utils";
 
 type PlanTab = "active" | "archived";
 
@@ -55,50 +55,16 @@ function PlanTabs({
   archivedCount: number;
 }) {
   const tabs = [
-    { id: "active", label: "Active", count: activeCount },
-    { id: "archived", label: "Archived", count: archivedCount },
-  ] as const;
+    { id: "active", label: "Active", count: activeCount, href: `/apps/${appId}/plans` },
+    {
+      id: "archived",
+      label: "Archived",
+      count: archivedCount,
+      href: `/apps/${appId}/plans?tab=archived`,
+    },
+  ];
 
-  return (
-    <nav aria-label="Plan status">
-      <ul className="inline-flex items-center gap-1 rounded-xl border border-slate-200/80 bg-white p-1">
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTab;
-          const href =
-            tab.id === "active"
-              ? `/apps/${appId}/plans`
-              : `/apps/${appId}/plans?tab=archived`;
-
-          return (
-            <li key={tab.id}>
-              <Link
-                href={href}
-                aria-current={isActive ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
-                  isActive
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
-                )}
-              >
-                {tab.label}
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[10px] leading-none",
-                    isActive
-                      ? "bg-white/15 text-white"
-                      : "bg-slate-100 text-slate-500",
-                  )}
-                >
-                  {tab.count}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
+  return <StatusTabs label="Plan status" tabs={tabs} activeTab={activeTab} />;
 }
 
 export default async function PlansPage({
