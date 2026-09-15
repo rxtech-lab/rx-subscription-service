@@ -173,3 +173,18 @@ export function planPayload(
       : purchaseOptions({ local, appleIntegration, apple }),
   };
 }
+
+/**
+ * Cheapest first. Catalog items carry the price of whichever platform asked, so
+ * ordering happens on the resolved payload rather than on the stored row — an
+ * App Store price can rank a pack differently than its Stripe price does. Sort
+ * is stable, so items priced the same keep their configured order.
+ *
+ * Amounts are compared as-is: a catalog that mixes currencies is a pricing bug
+ * to fix in the console, not something an ordering helper can convert away.
+ */
+export function byPriceAscending<T extends { priceAmountCents: number }>(
+  items: T[],
+): T[] {
+  return [...items].sort((a, b) => a.priceAmountCents - b.priceAmountCents);
+}

@@ -28,6 +28,7 @@ import {
   Th,
   statusTone,
 } from "@/components/ui/primitives";
+import { StatusTabs } from "@/components/ui/status-tabs";
 import { requireApplicationAccess } from "@/lib/console/session";
 import { listStoreProductMappings } from "@/lib/iap/configuration";
 import { listPlans } from "@/lib/subscription/plans";
@@ -36,17 +37,53 @@ import { listEligibilityRules, listTopupProducts } from "@/lib/subscription/topu
 import { listBalanceUnits } from "@/lib/subscription/units";
 import { formatMoney } from "@/lib/utils";
 
-export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">) {
+type TopupTab = "all" | "active" | "archived";
+
+function topupTab(value: string | string[] | undefined): TopupTab {
+  const tab = Array.isArray(value) ? value[0] : value;
+  if (tab === "active" || tab === "archived") return tab;
+  return "all";
+}
+
+export default async function TopupsPage({
+  params,
+  searchParams,
+}: PageProps<"/apps/[appId]/topups">) {
   const { appId } = await params;
+  const { tab } = await searchParams;
   await requireApplicationAccess(appId);
 
-  const [topups, units, plans, roles, storeMappings] = await Promise.all([
+  const [allTopups, units, plans, roles, storeMappings] = await Promise.all([
     listTopupProducts(appId, { includeArchived: true }),
     listBalanceUnits(appId),
     listPlans(appId),
     listRoles(appId),
     listStoreProductMappings(appId),
   ]);
+
+  // The tabs name the status badge on the row, so "Active" is the status
+  // itself — a draft pack is only listed under "All".
+  const activeTab = topupTab(tab);
+  const activeTopups = allTopups.filter((topup) => topup.status === "active");
+  const archivedTopups = allTopups.filter((topup) => topup.status === "archived");
+  const topups =
+    activeTab === "active"
+      ? activeTopups
+      : activeTab === "archived"
+        ? archivedTopups
+        : allTopups;
+
+  const tabs = [
+    { id: "all", label: "All", count: allTopups.length },
+    { id: "active", label: "Active", count: activeTopups.length },
+    { id: "archived", label: "Archived", count: archivedTopups.length },
+  ].map((item) => ({
+    ...item,
+    href:
+      item.id === "all"
+        ? `/apps/${appId}/topups`
+        : `/apps/${appId}/topups?tab=${item.id}`,
+  }));
   const appleByTopup = new Map(
     storeMappings
       .filter(
@@ -71,6 +108,8 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
 
   return (
     <div className="space-y-6">
+      <StatusTabs label="Topup status" tabs={tabs} activeTab={activeTab} />
+
       <Card>
         <CardHeader
           title="Topups"
@@ -78,8 +117,16 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
         />
         {topups.length === 0 ? (
           <EmptyState
-            title="No topups yet"
-            description="Create a pack below. You will need a balance unit first."
+            title={
+              allTopups.length === 0
+                ? "No topups yet"
+                : `No ${activeTab} topups`
+            }
+            description={
+              allTopups.length === 0
+                ? "Create a pack below. You will need a balance unit first."
+                : "Nothing matches this filter. Switch tabs to see the other packs."
+            }
           />
         ) : (
           <Table>
@@ -390,7 +437,7 @@ export default async function TopupsPage({ params }: PageProps<"/apps/[appId]">)
             <div className="mt-4 space-y-3">
               <Field label="Topup">
                 <Select name="topupId" required>
-                  {topups.map((topup) => (
+                  {allTopups.map((topup) => (
                     <option key={topup.id} value={topup.id}>
                       {topup.name}
                     </option>

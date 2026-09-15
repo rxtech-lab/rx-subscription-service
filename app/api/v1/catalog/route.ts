@@ -8,6 +8,7 @@ import {
 import {
   appleMappingsByPlan,
   appleMappingsByTopup,
+  byPriceAscending,
   catalogPlatformForRequest,
   planPayload,
   platformPrice,
@@ -29,6 +30,9 @@ import {
  * Prices follow the platform that asked: a StoreKit client is quoted App Store
  * prices without passing anything, and `?platform=` or an `X-Platform` header
  * overrides that. Every response also lists each purchase option's own price.
+ *
+ * Plans and topups both come back cheapest first, on the quoted platform price,
+ * so a paywall can render the list top to bottom without sorting it again.
  */
 export async function GET(request: Request) {
   try {
@@ -88,15 +92,17 @@ export async function GET(request: Request) {
       });
     }
 
+    const planPayloads = activePlans.map((plan) =>
+      planPayload(plan, appleIntegration, appleByPlan, platform),
+    );
+
     return Response.json(
       {
         // Named so a client can tell which store's prices it is holding —
         // detection is automatic, and a misprice should be visible, not silent.
         platform,
-        plans: activePlans.map((plan) =>
-          planPayload(plan, appleIntegration, appleByPlan, platform),
-        ),
-        topups: topupPayload,
+        plans: byPriceAscending(planPayloads),
+        topups: byPriceAscending(topupPayload),
       },
       { headers: noStore },
     );
