@@ -1,0 +1,2 @@
+ALTER TABLE "applications" ADD COLUMN "linked_application_id" text;--> statement-breakpoint
+ALTER TABLE "applications" ADD CONSTRAINT "applications_linked_application_id_applications_id_fk" FOREIGN KEY ("linked_application_id") REFERENCES "public"."applications"("id") ON DELETE restrict ON UPDATE no action;

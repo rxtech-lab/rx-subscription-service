@@ -1,4 +1,4 @@
-import { index, pgTable, text, uniqueIndex, timestamp, boolean } from "drizzle-orm/pg-core";
+import { index, pgTable, text, uniqueIndex, timestamp, boolean, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { paywalls } from "./paywalls";
 
 export const API_ENVIRONMENTS = ["xcode", "sandbox", "production"] as const;
@@ -23,6 +23,11 @@ export const applications = pgTable("applications", {
     .notNull()
     .default("active"),
   defaultCurrency: text("default_currency").notNull().default("usd"),
+  /** All app API data belongs to this application when linked. Credentials stay local. */
+  linkedApplicationId: text("linked_application_id").references(
+    (): AnyPgColumn => applications.id,
+    { onDelete: "restrict" },
+  ),
   /** Run every saved test suite after subscription configuration changes. */
   runTestsOnChange: boolean("run_tests_on_change")
     .notNull()

@@ -2,7 +2,8 @@
 
 A shared subscription, billing, and usage layer for rxlab applications. One
 deployment serves every app: each has its own plans, topups, roles, permissions,
-balance units, and usage items, and each user gets independent balances per app.
+balance units, and usage items, and each user gets independent balances per app
+unless the application links to another application's shared subscription data.
 
 - **Next.js 16** App Router, server actions for the console
 - **Neon PostgreSQL + Drizzle** for storage
@@ -110,6 +111,31 @@ its period grants idempotently. A confirmed paid plan in the same group replaces
 automatic free subscription; merely opening Checkout does not remove free access.
 
 ## Machine API
+
+### Sharing subscriptions between applications
+
+In **Application settings → General → Shared subscriptions**, choose **Link to
+another app**. For A → B, keep using A's API keys: all `/api/v1` reads and writes
+use B's plans, top-ups, coupons, paywall, store configuration, users, subscriptions,
+usage, balances, purchases, invoices, and reservations. Configure and manage the
+shared data in B; changes apply to A's next API request without copying records.
+The same RxLab user ID resolves to the same user in B within each environment.
+
+A's key kind, OAuth client allow-list, verified user, revocation, and environment
+still control access. Xcode, sandbox, and production remain isolated. Chains
+such as A → B → C resolve to C. The admin must manage every application in a
+new link's chain. Self-links and cycles are rejected, concurrent link edits are
+serialized, and disabled or invalid links fail closed.
+
+Linking does not migrate or merge A's existing records or transfer existing
+provider subscriptions. Selecting **None** restores A's own data. Incoming
+provider webhooks continue to settle the application recorded in their original
+purchase metadata; app API calls use the linked application's store setup.
+Deleting an application that is still a link target is restricted.
+
+Apply the `0001_application_links.sql` migration before deploying this feature.
+
+### Environments
 
 Your applications talk to `/api/v1` with an environment-scoped application API
 key (`X-Api-Key`, created under Settings). The endpoint URL stays the same; the

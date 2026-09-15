@@ -2,6 +2,7 @@ import { KeyRound, Settings2, Smartphone, Workflow } from "lucide-react";
 import Link from "next/link";
 import {
   updateAppleIntegrationAction,
+  updateApplicationLinkAction,
   updateTestAutomationSettingsAction,
 } from "@/app/actions/settings";
 import { createApiKeyAction, deleteApiKeyAction } from "@/app/actions/users";
@@ -25,7 +26,9 @@ import {
   Th,
 } from "@/components/ui/primitives";
 import { listApiKeys, parseAllowedClientIds } from "@/lib/api/keys";
+import { getApplicationLinkSettings } from "@/lib/applications/links";
 import {
+  getManagedApplications,
   getSelectableOAuthClients,
   requireApplicationAccess,
 } from "@/lib/console/session";
@@ -107,6 +110,9 @@ export default async function SettingsPage({
   const application = await requireApplicationAccess(appId);
 
   const activeTab = settingsTab(tab);
+  const applicationLink = activeTab === "general"
+    ? await getApplicationLinkSettings(appId, (await getManagedApplications()).map((app) => app.id))
+    : null;
   const query = first(q)?.trim() ?? "";
   const [apiKeyData, oauthClients, testAutomation, appleIntegration, storeMappings] =
     await Promise.all([
@@ -157,6 +163,55 @@ export default async function SettingsPage({
             <dd className="font-mono text-xs text-neutral-900">{application.id}</dd>
           </div>
         </dl>
+        </Card>
+      ) : null}
+
+      {activeTab === "general" && applicationLink ? (
+        <Card>
+          <CardHeader
+            title="Shared subscriptions"
+            description="Link this application to another application to use its plans, usage, top-ups, users, subscriptions, balances, and paywall."
+          />
+          <ActionForm
+            key={applicationLink.linkedApplicationId ?? "independent"}
+            action={updateApplicationLinkAction}
+            submitLabel="Save application link"
+            pendingLabel="Saving application link…"
+            className="space-y-4 px-5 py-4"
+          >
+            <input type="hidden" name="applicationId" value={appId} />
+            <Field label="Link to another app" hint="Choose an application you manage. All app API reads and writes will use its shared data.">
+              <Select name="linkedApplicationId" defaultValue={applicationLink.linkedApplicationId ?? ""}>
+                <option value="">None — use this application&apos;s own data</option>
+                {applicationLink.linkedApplicationId && !applicationLink.options.some((option) => option.id === applicationLink.linkedApplicationId) ? (
+                  <option value={applicationLink.linkedApplicationId} disabled>Current link unavailable — choose another app or unlink</option>
+                ) : null}
+                {applicationLink.options.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}{option.name !== option.effectiveName ? ` (uses ${option.effectiveName})` : ""} — {option.id}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <p className="text-xs leading-5 text-slate-500">
+              Keep using this application&apos;s API keys. Each key keeps its environment and access restrictions.
+              Linking does not copy or merge existing data. Unlink to use this application&apos;s own data again.
+            </p>
+            {applicationLink.effectiveApplication ? (
+              <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-950">
+                <p>API requests for {application.name} use {applicationLink.effectiveApplication.name}.</p>
+                <Link
+                  href={`/apps/${applicationLink.effectiveApplication.id}`}
+                  prefetch={false}
+                  className="mt-2 inline-block font-semibold text-blue-700 hover:underline"
+                >
+                  Manage shared subscriptions in {applicationLink.effectiveApplication.name}
+                </Link>
+              </div>
+            ) : applicationLink.error ? (
+              <p className="text-sm text-rose-600">{applicationLink.error} Choose another app or unlink.</p>
+            ) : null}
+          </ActionForm>
         </Card>
       ) : null}
 

@@ -12,6 +12,13 @@ export default defineConfig({
   testMatch: "**/*.spec.ts",
   fullyParallel: false,
   workers: 1,
+  // The suite runs against `next dev`, which compiles a route the first time a
+  // test opens it. On a CI runner that first hit can outlast the 5s assertion
+  // default and fail a check that is only waiting on the compiler — the paywall
+  // editor is the usual victim, since one test is all that ever opens it. The
+  // test budget goes up with it, so a slow compile cannot eat the whole test.
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
   use: { baseURL: E2E_BASE_URL },
   webServer: [
     {
