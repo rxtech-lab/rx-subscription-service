@@ -375,6 +375,19 @@ export const writeToolSchemas = {
     roleId: z.string().optional(),
   }),
 
+  setTopupGrant: z.object({
+    topupId: z.string(),
+    unitId: z
+      .string()
+      .describe("Bonus balance unit id from listBalanceUnits; not the topup's own unit"),
+    amount: z.number().int().positive().describe("Bonus units credited per pack"),
+  }),
+
+  removeTopupGrant: z.object({
+    topupId: z.string(),
+    grantId: z.string().describe("Grant id from listTopups bonusGrants"),
+  }),
+
   createTestUser: z.object({
     displayName: z.string().describe("Shown in the console and the test app"),
     email: z.string().optional(),

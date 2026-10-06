@@ -17,6 +17,8 @@ import {
   createTopupProduct,
   deleteTopupProduct,
   removeEligibilityRule,
+  removeTopupGrant,
+  setTopupGrant,
   type TopupEligibility,
   updateTopupProduct,
 } from "@/lib/subscription/topups";
@@ -310,4 +312,47 @@ export async function removeEligibilityRuleAction(formData: FormData): Promise<v
     });
   });
   revalidateApp(applicationId, "topups");
+}
+
+export async function setTopupGrantAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const applicationId = text(formData, "applicationId");
+  try {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
+      await setTopupGrant({
+        applicationId,
+        topupId: text(formData, "topupId"),
+        unitId: text(formData, "unitId"),
+        amount: integer(formData, "amount"),
+        actor,
+      });
+    });
+  } catch (error) {
+    return toActionState(error);
+  }
+  revalidateApp(applicationId, "topups");
+  return { success: "Bonus grant saved." };
+}
+
+export async function removeTopupGrantAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const applicationId = text(formData, "applicationId");
+  try {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
+      await removeTopupGrant({
+        applicationId,
+        topupId: text(formData, "topupId"),
+        grantId: text(formData, "grantId"),
+        actor,
+      });
+    });
+  } catch (error) {
+    return toActionState(error);
+  }
+  revalidateApp(applicationId, "topups");
+  return { success: "Bonus grant removed." };
 }

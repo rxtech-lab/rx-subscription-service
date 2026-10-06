@@ -28,9 +28,15 @@ import { listBalanceUnits, getBalanceUnitByKey } from "@/lib/subscription/units"
 import { getUsageItemByKey, listUsageItems } from "@/lib/subscription/usage-items";
 import {
   checkTopupEligibility,
+  listTopupGrants,
   listTopupProducts,
   requireTopupProduct,
 } from "@/lib/subscription/topups";
+import {
+  catalogTopupGrants,
+  grantsByTopup,
+  topupGrantCredits,
+} from "@/lib/subscription/topup-grant-rules";
 import { NotFoundError, ValidationError, type Actor } from "@/lib/subscription/shared";
 import { simulatedNow } from "@/lib/subscription/test-clock";
 
@@ -196,6 +202,8 @@ export async function runControlOp(input: {
       const topups = await listTopupProducts(applicationId);
       const units = await listBalanceUnits(applicationId);
       const byId = new Map(units.map((unit) => [unit.id, unit.key]));
+      const unitsById = new Map(units.map((unit) => [unit.id, unit]));
+      const grants = grantsByTopup(await listTopupGrants(topups.map((topup) => topup.id)));
       return topups.map((topup) => ({
         id: topup.id,
         key: topup.key,
@@ -203,6 +211,7 @@ export async function runControlOp(input: {
         description: topup.description,
         unit: byId.get(topup.unitId) ?? null,
         amount: topup.amount,
+        grants: catalogTopupGrants(grants.get(topup.id) ?? [], unitsById),
         priceAmountCents: topup.priceAmountCents,
         currency: topup.currency,
         status: topup.status,
@@ -442,6 +451,7 @@ export async function runControlOp(input: {
           credited: 0,
           unit: unitKey,
           balanceAfter: null,
+          grants: [],
           blockedBy: eligibility.failed.map((rule) => ({
             kind: rule.ruleType,
             reason: `blocked by ${rule.ruleType}`,
@@ -456,12 +466,34 @@ export async function runControlOp(input: {
         unitId: topup.unitId,
         amount: topup.amount,
       });
+      // Bonuses land alongside the pack, as a real fulfilment would credit them.
+      const grants = [];
+      for (const credit of topupGrantCredits({
+        grants: await listTopupGrants([topup.id]),
+        quantity: 1,
+        productName: topup.name,
+        idempotencyPrefix: `test_topup:${topup.id}`,
+      })) {
+        const bonus = await creditTestBalance({
+          applicationId,
+          actor,
+          appUserId: user.id,
+          unitId: credit.unitId,
+          amount: credit.amount,
+        });
+        grants.push({
+          unit: units.find((entry) => entry.id === credit.unitId)?.key ?? null,
+          credited: credit.amount,
+          balanceAfter: bonus.balanceAfter,
+        });
+      }
 
       return {
         eligible: true,
         credited: topup.amount,
         unit: unitKey,
         balanceAfter: entry.balanceAfter,
+        grants,
         blockedBy: null,
       };
     }

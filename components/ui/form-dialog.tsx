@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileText, KeyRound, PencilLine, Plus, X } from "lucide-react";
+import { Download, FileText, KeyRound, PencilLine, Plus, Trash2, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -27,6 +27,7 @@ const iconFor = {
   edit: PencilLine,
   key: KeyRound,
   download: Download,
+  remove: Trash2,
 };
 
 const widthFor = {

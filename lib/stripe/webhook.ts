@@ -16,7 +16,7 @@ import {
   recordPromotionCodeRedemption,
   releaseRedemptionBySession,
 } from "@/lib/subscription/coupons";
-import { checkTopupEligibility } from "@/lib/subscription/topups";
+import { checkTopupEligibility, creditTopupGrants } from "@/lib/subscription/topups";
 import {
   buildEntitlementSnapshot,
   grantPeriodBalances,
@@ -152,6 +152,15 @@ async function fulfillTopup(purchase: typeof purchases.$inferSelect) {
     kind: "topup",
     description: `Topup — ${product.name}`,
     idempotencyKey: `topup:${purchase.id}`,
+    referenceType: "purchase",
+    referenceId: purchase.id,
+  });
+  // Same reference as the primary credit, so `reverseTopup` claws these back too.
+  await creditTopupGrants({
+    topupId: product.id,
+    productName: product.name,
+    appUserId: purchase.appUserId,
+    idempotencyPrefix: `topup:${purchase.id}`,
     referenceType: "purchase",
     referenceId: purchase.id,
   });

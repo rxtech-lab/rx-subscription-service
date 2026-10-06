@@ -3,6 +3,8 @@ import {
   createTopupAction,
   deleteTopupAction,
   removeEligibilityRuleAction,
+  removeTopupGrantAction,
+  setTopupGrantAction,
   setTopupStatusAction,
   updateTopupAction,
 } from "@/app/actions/catalog";
@@ -33,7 +35,12 @@ import { requireApplicationAccess } from "@/lib/console/session";
 import { listStoreProductMappings } from "@/lib/iap/configuration";
 import { listPlans } from "@/lib/subscription/plans";
 import { listRoles } from "@/lib/subscription/roles";
-import { listEligibilityRules, listTopupProducts } from "@/lib/subscription/topups";
+import {
+  listEligibilityRules,
+  listTopupGrants,
+  listTopupProducts,
+} from "@/lib/subscription/topups";
+import { grantsByTopup } from "@/lib/subscription/topup-grant-rules";
 import { listBalanceUnits } from "@/lib/subscription/units";
 import { formatMoney } from "@/lib/utils";
 
@@ -100,7 +107,12 @@ export default async function TopupsPage({
     ),
   );
 
+  const grantsForTopup = grantsByTopup(
+    await listTopupGrants(topups.map((topup) => topup.id)),
+  );
+
   const unitKey = (id: string) => units.find((unit) => unit.id === id)?.key ?? id;
+  const unitName = (id: string) => units.find((unit) => unit.id === id)?.name ?? id;
   const planName = (id: string | null) =>
     plans.find((plan) => plan.id === id)?.name ?? id;
   const roleTitle = (id: string | null) =>
@@ -144,6 +156,8 @@ export default async function TopupsPage({
             <tbody>
               {topups.map((topup) => {
                 const rules = rulesByTopup.get(topup.id) ?? [];
+                const grants = grantsForTopup.get(topup.id) ?? [];
+                const bonusUnits = units.filter((unit) => unit.id !== topup.unitId);
                 return (
                   <tr key={topup.id}>
                     <Td>
@@ -152,6 +166,11 @@ export default async function TopupsPage({
                     </Td>
                     <Td>
                       {topup.amount.toLocaleString("en-US")} {unitKey(topup.unitId)}
+                      {grants.map((grant) => (
+                        <p key={grant.id} className="text-xs text-neutral-500">
+                          +{grant.amount.toLocaleString("en-US")} {unitKey(grant.unitId)}
+                        </p>
+                      ))}
                     </Td>
                     <Td>{formatMoney(topup.priceAmountCents, topup.currency)}</Td>
                     <Td>
@@ -269,6 +288,88 @@ export default async function TopupsPage({
                               </div>
                             </div>
                           </ActionForm>
+                        </FormDialog>
+                        <FormDialog
+                          triggerLabel="Bonus grants"
+                          title={`Bonus grants for ${topup.name}`}
+                          description="Extra units of other balances credited with every pack, and clawed back with it on a refund."
+                          icon="details"
+                          triggerVariant="menu"
+                          triggerSize="sm"
+                        >
+                          {grants.length === 0 ? (
+                            <p className="text-sm text-neutral-500">
+                              This pack grants only{" "}
+                              {topup.amount.toLocaleString("en-US")}{" "}
+                              {unitName(topup.unitId)}.
+                            </p>
+                          ) : (
+                            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                              {grants.map((grant) => (
+                                <li
+                                  key={grant.id}
+                                  className="flex items-center justify-between gap-3 px-3 py-2"
+                                >
+                                  <span className="text-sm text-neutral-900">
+                                    +{grant.amount.toLocaleString("en-US")}{" "}
+                                    {unitName(grant.unitId)}
+                                    <span className="ml-2 font-mono text-xs text-neutral-500">
+                                      {unitKey(grant.unitId)}
+                                    </span>
+                                  </span>
+                                  <FormDialog
+                                    triggerLabel="Remove"
+                                    title="Remove bonus grant?"
+                                    description={`Future purchases of ${topup.name} will no longer credit ${unitName(grant.unitId)}. Units already credited stay put.`}
+                                    icon="remove"
+                                    size="sm"
+                                    triggerVariant="ghost"
+                                    triggerSize="sm"
+                                  >
+                                    <ActionForm
+                                      action={removeTopupGrantAction}
+                                      submitLabel="Remove grant"
+                                      pendingLabel="Removing…"
+                                    >
+                                      <input type="hidden" name="applicationId" value={appId} />
+                                      <input type="hidden" name="topupId" value={topup.id} />
+                                      <input type="hidden" name="grantId" value={grant.id} />
+                                    </ActionForm>
+                                  </FormDialog>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {bonusUnits.length === 0 ? (
+                            <p className="mt-4 text-sm text-neutral-500">
+                              Create another balance unit to add a bonus grant.
+                            </p>
+                          ) : (
+                            <ActionForm
+                              action={setTopupGrantAction}
+                              submitLabel="Save bonus grant"
+                            >
+                              <input type="hidden" name="applicationId" value={appId} />
+                              <input type="hidden" name="topupId" value={topup.id} />
+                              <div className="mt-4 grid grid-cols-2 gap-3">
+                                <Field
+                                  label="Unit"
+                                  hint="Choosing a unit the pack already grants updates its amount."
+                                >
+                                  <Select name="unitId" required>
+                                    {bonusUnits.map((unit) => (
+                                      <option key={unit.id} value={unit.id}>
+                                        {unit.name}
+                                      </option>
+                                    ))}
+                                  </Select>
+                                </Field>
+                                <Field label="Units per pack">
+                                  <Input name="amount" type="number" min="1" required />
+                                </Field>
+                              </div>
+                            </ActionForm>
+                          )}
                         </FormDialog>
                         <FormDialog
                           triggerLabel="App Store product & price"

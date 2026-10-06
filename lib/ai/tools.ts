@@ -13,7 +13,12 @@ import { listPlanEntitlements, listPlans } from "@/lib/subscription/plans";
 import { getRolePermissions, listPermissions, listRoles } from "@/lib/subscription/roles";
 import { listBalanceUnits, listPointRates } from "@/lib/subscription/units";
 import { listUsageItems } from "@/lib/subscription/usage-items";
-import { listEligibilityRules, listTopupProducts } from "@/lib/subscription/topups";
+import {
+  listEligibilityRules,
+  listTopupGrants,
+  listTopupProducts,
+} from "@/lib/subscription/topups";
+import { grantsByTopup } from "@/lib/subscription/topup-grant-rules";
 import { listSubscriptions } from "@/lib/subscription/subscriptions";
 import {
   couponTerms,
@@ -161,17 +166,22 @@ export function buildTools(applicationId: string, actor: Actor) {
     }),
 
     listTopups: tool({
-      description: "List topup products and the eligibility rules gating each one.",
+      description:
+        "List topup products, the eligibility rules gating each one, and the bonus grants each credits on top of its own unit.",
       inputSchema: z.object({}),
       execute: async () => {
         const products = await listTopupProducts(applicationId, {
           includeArchived: true,
         });
+        const grants = grantsByTopup(
+          await listTopupGrants(products.map((product) => product.id)),
+        );
         const withRules = [];
         for (const product of products) {
           withRules.push({
             ...product,
             eligibilityRules: await listEligibilityRules(product.id),
+            bonusGrants: grants.get(product.id) ?? [],
           });
         }
         return withRules;
@@ -563,6 +573,20 @@ export function buildTools(applicationId: string, actor: Actor) {
       needsApproval: true,
       execute: runWrite("addTopupEligibilityRule"),
     }),
+    setTopupGrant: tool({
+      description:
+        "Add a bonus grant to a topup — extra units of another balance unit credited with every pack (e.g. 500 gold with a points pack) — or change the amount of an existing one. The pack's own unit is not allowed; use updateTopup to change its amount.",
+      inputSchema: writeToolSchemas.setTopupGrant,
+      needsApproval: true,
+      execute: runWrite("setTopupGrant"),
+    }),
+    removeTopupGrant: tool({
+      description:
+        "Remove one bonus grant from a topup. Call listTopups first and pass the grant id from its bonusGrants. Units already credited are not reversed.",
+      inputSchema: writeToolSchemas.removeTopupGrant,
+      needsApproval: true,
+      execute: runWrite("removeTopupGrant"),
+    }),
 
     createCoupon: tool({
       description:
@@ -689,6 +713,7 @@ export function systemPrompt(application: { id: string; name: string }): string 
     "- Set `createTopup.eligibility` to `standalone` when anyone may buy it, `plan` when one specific subscribed plan is required, or `role` for an access tier shared by plans. The create tool persists that link atomically with the topup.",
     "- Use a role-gated topup only when the role represents a reusable access tier, especially when multiple plans should qualify. List roles and the relevant plan entitlements first. Reuse a matching role; create one only when the requested access model needs a new role.",
     "- A role-gated topup must be reachable: before creating the topup, ensure every qualifying plan grants that role with `addPlanEntitlement` kind `role`. Never create an orphan role or add a role gate without a granting plan unless the role is default.",
+    "- To make a topup credit extra units of another balance unit (e.g. 500 gold with a points pack), create the topup first, then call `setTopupGrant`. Never add the topup's own unit as a bonus — change its `amount` with `updateTopup` instead.",
     "- A balance grant accumulates for good unless it is given a `balanceExpiryPolicy`. Choose `period_end` when the user says an allowance does not roll over, `duration` with `balanceExpiryMonths` for \"points expire after N months\", and `after_plan_end` with `balanceExpiryMonths` for \"points last N months after the plan ends\". Leave it at `never` when the user did not ask for expiry.",
     "- Do not confuse a `usage_limit` with an expiring `balance_grant`. A usage limit is an allowance that refills every period and is never spendable as a stored balance; a balance grant is stored units the user draws down, which expire only if a policy says so.",
     ...USAGE_LIMIT_PROMPT_RULES,

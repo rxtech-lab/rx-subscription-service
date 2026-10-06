@@ -75,5 +75,34 @@ export const topupEligibilityRules = pgTable(
   ],
 );
 
+/**
+ * Extra units a pack credits on top of its own — "5,000 points, plus 500 gold".
+ * Credited in the same fulfilment as the primary amount and against the same
+ * purchase reference, so a refund claws bonuses back in the same proportion.
+ * The pack's own unit is never a bonus; that is what `amount` is for.
+ */
+export const topupProductGrants = pgTable(
+  "topup_product_grants",
+  {
+    id: text("id").primaryKey(),
+    topupProductId: text("topup_product_id")
+      .notNull()
+      .references(() => topupProducts.id, { onDelete: "cascade" }),
+    unitId: text("unit_id")
+      .notNull()
+      .references(() => balanceUnits.id, { onDelete: "restrict" }),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date", precision: 3 }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("topup_product_grants_product_unit_idx").on(
+      table.topupProductId,
+      table.unitId,
+    ),
+    check("topup_product_grants_amount_positive", sql`${table.amount} > 0`),
+  ],
+);
+
 export type TopupProduct = typeof topupProducts.$inferSelect;
 export type TopupEligibilityRule = typeof topupEligibilityRules.$inferSelect;
+export type TopupProductGrant = typeof topupProductGrants.$inferSelect;
