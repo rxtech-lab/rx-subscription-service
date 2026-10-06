@@ -5,6 +5,8 @@ describe("automatic tests after assistant writes", () => {
   it("includes subscription configuration changes", () => {
     expect(isConfigurationWriteTool("updatePlan")).toBe(true);
     expect(isConfigurationWriteTool("updateTopup")).toBe(true);
+    expect(isConfigurationWriteTool("setTopupGrant")).toBe(true);
+    expect(isConfigurationWriteTool("removeTopupGrant")).toBe(true);
     expect(isConfigurationWriteTool("setRolePermissions")).toBe(true);
     expect(isConfigurationWriteTool("updateCoupon")).toBe(true);
   });

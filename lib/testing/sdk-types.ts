@@ -370,6 +370,8 @@ declare global {
     unit: string | null;
     /** Units credited on purchase. */
     amount: number;
+    /** Bonus units of other balance units credited with each pack. Empty when none. */
+    grants: RxTopupGrant[];
     /** Integer cents. */
     priceAmountCents: number;
     /** Lowercase ISO code. */
@@ -381,6 +383,16 @@ declare global {
     eligible: boolean | null;
     /** The rules that blocked it, when it is not eligible. */
     blockedBy: RxBlockedBy[] | null;
+  }
+
+  /** A bonus a pack credits on top of its own unit. */
+  interface RxTopupGrant {
+    /** Key of the bonus balance unit. */
+    unit: string;
+    /** The bonus unit's display name. */
+    name: string;
+    /** Bonus units credited per pack. */
+    amount: number;
   }
 
   /** A pack as 'rx.catalog()' returns it: priced for a platform, with its offers. */
@@ -639,6 +651,16 @@ declare global {
     balanceAfter: number;
   }
 
+  /** One bonus grant a topup purchase credited. */
+  interface RxTopupGrantCredit {
+    /** Key of the bonus unit credited. */
+    unit: string | null;
+    /** Bonus units credited. */
+    credited: number;
+    /** The bonus unit's balance after the credit. */
+    balanceAfter: number;
+  }
+
   /** The outcome of a topup purchase: the gate's verdict and what it credited. */
   interface RxTopupPurchase {
     /** Whether the gate passed. Nothing is credited when this is false. */
@@ -649,6 +671,8 @@ declare global {
     unit: string | null;
     /** The balance after the credit, or null when nothing was credited. */
     balanceAfter: number | null;
+    /** Bonus units credited alongside the pack. Empty when refused or when it has none. */
+    grants: RxTopupGrantCredit[];
     /** The rules that refused the purchase, or null when it went through. */
     blockedBy: RxBlockedBy[] | null;
   }

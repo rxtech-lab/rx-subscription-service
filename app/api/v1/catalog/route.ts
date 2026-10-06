@@ -15,7 +15,12 @@ import {
   purchaseOptions,
 } from "@/lib/subscription/catalog-payload";
 import { listPlans } from "@/lib/subscription/plans";
-import { checkTopupEligibility, listTopupProducts } from "@/lib/subscription/topups";
+import {
+  checkTopupEligibility,
+  listTopupGrants,
+  listTopupProducts,
+} from "@/lib/subscription/topups";
+import { catalogTopupGrants, grantsByTopup } from "@/lib/subscription/topup-grant-rules";
 import { listBalanceUnits } from "@/lib/subscription/units";
 import {
   getAppleIntegration,
@@ -25,7 +30,8 @@ import {
 /**
  * The purchasable catalog. When a user is supplied, each topup carries its
  * eligibility verdict so the app can render a locked pack with a reason instead
- * of failing at checkout.
+ * of failing at checkout. Each topup also lists the bonus units it credits on
+ * top of its own, as `grants`.
  *
  * Prices follow the platform that asked: a StoreKit client is quoted App Store
  * prices without passing anything, and `?platform=` or an `X-Platform` header
@@ -56,6 +62,9 @@ export async function GET(request: Request) {
     const activeTopups = topups.filter((topup) => topup.status === "active");
     const appleByPlan = appleMappingsByPlan(storeMappings);
     const appleByTopup = appleMappingsByTopup(storeMappings);
+    const grantsForTopup = grantsByTopup(
+      await listTopupGrants(activeTopups.map((topup) => topup.id)),
+    );
 
     // A publishable key always has a user, so eligibility is computed whether
     // or not the client bothered to name one.
@@ -85,6 +94,7 @@ export async function GET(request: Request) {
         description: topup.description,
         unit: unitsById.get(topup.unitId)?.key ?? null,
         amount: topup.amount,
+        grants: catalogTopupGrants(grantsForTopup.get(topup.id) ?? [], unitsById),
         ...platformPrice({ local, platform, appleIntegration, apple }),
         eligible: eligibility?.eligible ?? null,
         blockedBy: eligibility?.failed ?? null,

@@ -17,6 +17,8 @@ const CONFIGURATION_WRITE_TOOLS = new Set<WriteToolName>([
   "createTopup",
   "updateTopup",
   "addTopupEligibilityRule",
+  "setTopupGrant",
+  "removeTopupGrant",
   "createCoupon",
   "updateCoupon",
   "setCouponStatus",

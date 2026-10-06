@@ -99,7 +99,9 @@ hourly reconciliation replays an overlapping notification-history window and
 rechecks active subscriptions. The event UUID, transaction ID, renewal period,
 and balance mutations all have independent idempotency guards.
 
-Refunds and revocations reverse the grants from the exact transaction. If the
+Refunds and revocations reverse the grants from the exact transaction — a
+top-up's bonus grants included, since they are credited against the same
+transaction. If the
 user already spent consumable units, the balance may become negative. A refund
 reversal restores the purchase and grants without duplication. Partial refunds
 use Apple's revocation percentage.

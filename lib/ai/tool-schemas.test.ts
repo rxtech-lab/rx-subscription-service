@@ -31,6 +31,25 @@ describe("plan tool schemas", () => {
   });
 });
 
+describe("topup grant tool schemas", () => {
+  it("requires a positive integer bonus amount", () => {
+    const grant = { topupId: "topup-1", unitId: "unit-gold", amount: 500 };
+    expect(writeToolSchemas.setTopupGrant.parse(grant)).toEqual(grant);
+    expect(
+      writeToolSchemas.setTopupGrant.safeParse({ ...grant, amount: 0 }).success,
+    ).toBe(false);
+    expect(
+      writeToolSchemas.setTopupGrant.safeParse({ ...grant, amount: 1.5 }).success,
+    ).toBe(false);
+  });
+
+  it("removes a grant by id", () => {
+    expect(
+      writeToolSchemas.removeTopupGrant.safeParse({ topupId: "topup-1" }).success,
+    ).toBe(false);
+  });
+});
+
 describe("createTopup tool schema", () => {
   it("defaults to a standalone topup", () => {
     expect(writeToolSchemas.createTopup.parse(topup).eligibility).toEqual({

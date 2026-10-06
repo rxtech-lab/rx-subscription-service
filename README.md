@@ -63,7 +63,7 @@ and AI tool re-checks that before touching anything.
 | **Application** | An rxlab OAuth client. Its client id is the primary key here. |
 | **Balance unit** | What you meter — points, credits, anything. Integer amounts, with an exact integer conversion to money. |
 | **Plan** | Monthly, quarterly, yearly, or one-time. Grants roles, permissions, usage allowances, and balances. |
-| **Topup** | A purchasable bundle of units, optionally gated behind a plan or role. |
+| **Topup** | A purchasable bundle of units, optionally gated behind a plan or role. A pack can also carry bonus grants of other units — 5,000 points plus 500 gold — credited and refunded together with it. |
 | **Coupon** | An application-scoped discount code for selected plans or topups, with optional user and redemption restrictions. |
 | **Subscription role** | What a subscriber *bought* — distinct from rxlab-auth's `oauth_client_roles`, which describe who someone *is*. |
 | **Permission** | A customizable action, serialized as `read:a:all` or `read:a:id1,id2` — the same syntax rxlab-auth uses. |
@@ -259,6 +259,23 @@ that show a plan badge based only on purchased `plans` need to read
 | `POST /api/v1/iap/apple/account-token` | Get the stable environment-specific StoreKit `appAccountToken` for a user |
 | `PUT /api/v1/iap/apple/consumption-consent` | Store or withdraw refund-review consumption-data consent |
 | `POST /api/v1/iap/apple/transactions` | Verify, reconcile, and fulfill a StoreKit 2 signed transaction or restore |
+
+### Catalog
+
+Each topup in `GET /api/v1/catalog` names its own unit and amount, plus any
+bonus units it credits alongside them under `grants` — an empty array when it
+has none. Bonuses are credited in the same fulfilment as the pack (multiplied by
+the App Store quantity) and clawed back proportionally on a refund or dispute.
+
+```json
+{
+  "id": "…", "key": "points_5000", "name": "5,000 points",
+  "unit": "points", "amount": 5000,
+  "grants": [{ "unit": "gold", "name": "Gold", "amount": 500 }],
+  "priceAmountCents": 499, "currency": "usd",
+  "eligible": true, "blockedBy": [], "purchaseOptions": []
+}
+```
 
 ### Paywalls
 

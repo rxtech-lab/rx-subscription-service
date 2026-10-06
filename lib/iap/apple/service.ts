@@ -36,6 +36,7 @@ import {
 } from "@/lib/subscription/subscriptions";
 import {
   checkTopupEligibility,
+  creditTopupGrants,
   requireTopupProduct,
 } from "@/lib/subscription/topups";
 import {
@@ -346,6 +347,7 @@ async function fulfillOneTime(input: {
   let kind: "plan_one_time" | "topup";
   let failure: string | null = null;
   let snapshot: Record<string, unknown> | null = null;
+  let topupName: string | null = null;
 
   if (input.mapping.topupProductId) {
     kind = "topup";
@@ -355,6 +357,7 @@ async function fulfillOneTime(input: {
     );
     unitId = topup.unitId;
     unitsGranted = topup.amount * quantity;
+    topupName = topup.name;
     const eligibility = await checkTopupEligibility({
       applicationId: input.integration.applicationId,
       topupId: topup.id,
@@ -434,6 +437,17 @@ async function fulfillOneTime(input: {
         kind: "topup",
         description: "App Store top-up",
         idempotencyKey: `apple:topup:${input.transaction.transactionId}`,
+        referenceType: "store_transaction",
+        referenceId: input.storeTransactionId,
+      });
+      // Same reference as the pack's credit, so `reverseTransactionGrants`
+      // claws the bonuses back on a refund too.
+      await creditTopupGrants({
+        topupId: input.mapping.topupProductId!,
+        productName: topupName ?? "App Store top-up",
+        appUserId: input.user.id,
+        quantity,
+        idempotencyPrefix: `apple:topup:${input.transaction.transactionId}`,
         referenceType: "store_transaction",
         referenceId: input.storeTransactionId,
       });

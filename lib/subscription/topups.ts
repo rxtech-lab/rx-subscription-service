@@ -5,6 +5,7 @@ import {
   subscriptions,
   purchases,
   topupEligibilityRules,
+  topupProductGrants,
   topupProducts,
   type TopupRuleType,
 } from "@/lib/db/schema";
@@ -22,6 +23,8 @@ import { requireBalanceUnit } from "./units";
 import { requirePlan } from "./plans";
 import { requireRole } from "./roles";
 import { getUserRoleIds } from "./entitlements";
+import { topupGrantCredits } from "./topup-grant-rules";
+import { creditBalance } from "./users";
 
 export type TopupEligibility =
   | { type: "standalone" }
@@ -332,6 +335,140 @@ export async function removeEligibilityRule(input: {
     entityId: input.ruleId,
     before,
   });
+}
+
+/** Bonus grants for a set of packs, in one query. */
+export async function listTopupGrants(topupIds: string[]) {
+  if (topupIds.length === 0) return [];
+  return db
+    .select()
+    .from(topupProductGrants)
+    .where(inArray(topupProductGrants.topupProductId, topupIds))
+    .orderBy(asc(topupProductGrants.createdAt));
+}
+
+/**
+ * Add a bonus unit to a pack, or change the amount of one it already has. The
+ * pack's own unit is refused — raising the pack's `amount` is how to give more
+ * of that.
+ */
+export async function setTopupGrant(input: {
+  applicationId: string;
+  topupId: string;
+  unitId: string;
+  amount: number;
+  actor: Actor;
+}) {
+  const product = await requireTopupProduct(input.applicationId, input.topupId);
+  await requireBalanceUnit(input.applicationId, input.unitId);
+  if (input.unitId === product.unitId) {
+    throw new ValidationError(
+      "a pack cannot grant its own unit as a bonus — change the pack's amount instead",
+    );
+  }
+  const amount = assertPositiveInteger(input.amount, "amount");
+
+  const [before] = await db
+    .select()
+    .from(topupProductGrants)
+    .where(
+      and(
+        eq(topupProductGrants.topupProductId, input.topupId),
+        eq(topupProductGrants.unitId, input.unitId),
+      ),
+    )
+    .limit(1);
+
+  const [grant] = await db
+    .insert(topupProductGrants)
+    .values({
+      id: newId(),
+      topupProductId: input.topupId,
+      unitId: input.unitId,
+      amount,
+      createdAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [topupProductGrants.topupProductId, topupProductGrants.unitId],
+      set: { amount },
+    })
+    .returning();
+
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "topup.set_grant",
+    entityType: "topup_product_grant",
+    entityId: grant.id,
+    before: before ?? null,
+    after: grant,
+  });
+  return grant;
+}
+
+export async function removeTopupGrant(input: {
+  applicationId: string;
+  topupId: string;
+  grantId: string;
+  actor: Actor;
+}) {
+  await requireTopupProduct(input.applicationId, input.topupId);
+  const [before] = await db
+    .select()
+    .from(topupProductGrants)
+    .where(
+      and(
+        eq(topupProductGrants.id, input.grantId),
+        eq(topupProductGrants.topupProductId, input.topupId),
+      ),
+    )
+    .limit(1);
+  if (!before) throw new NotFoundError("topup grant", input.grantId);
+
+  await db
+    .delete(topupProductGrants)
+    .where(eq(topupProductGrants.id, input.grantId));
+  await recordAudit({
+    applicationId: input.applicationId,
+    actor: input.actor,
+    action: "topup.remove_grant",
+    entityType: "topup_product_grant",
+    entityId: input.grantId,
+    before,
+  });
+}
+
+/**
+ * Credit a fulfilled pack's bonus units. Call it right after the primary credit
+ * with that credit's key and reference: sharing the reference is what lets the
+ * Stripe and App Store refund paths claw bonuses back in proportion, and the
+ * per-unit keys make a replay a no-op.
+ */
+export async function creditTopupGrants(input: {
+  topupId: string;
+  productName: string;
+  appUserId: string;
+  quantity?: number;
+  idempotencyPrefix: string;
+  referenceType: string;
+  referenceId: string;
+}) {
+  const grants = await listTopupGrants([input.topupId]);
+  const credits = topupGrantCredits({
+    grants,
+    quantity: input.quantity ?? 1,
+    productName: input.productName,
+    idempotencyPrefix: input.idempotencyPrefix,
+  });
+  for (const credit of credits) {
+    await creditBalance({
+      appUserId: input.appUserId,
+      ...credit,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+    });
+  }
+  return credits;
 }
 
 export interface EligibilityResult {

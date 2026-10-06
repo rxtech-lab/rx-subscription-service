@@ -25,6 +25,8 @@ import { createUsageItem, updateUsageItem } from "@/lib/subscription/usage-items
 import {
   addEligibilityRule,
   createTopupProduct,
+  removeTopupGrant,
+  setTopupGrant,
   updateTopupProduct,
 } from "@/lib/subscription/topups";
 import { cancelSubscription, grantComplimentarySubscription } from "@/lib/subscription/subscriptions";
@@ -221,6 +223,18 @@ export async function executeWriteTool(input: {
           ok: true,
           result: await addEligibilityRule({ applicationId, actor, ...args }),
         };
+      }
+      case "setTopupGrant": {
+        const args = parsed.data as typeof writeToolSchemas.setTopupGrant._output;
+        return {
+          ok: true,
+          result: await setTopupGrant({ applicationId, actor, ...args }),
+        };
+      }
+      case "removeTopupGrant": {
+        const args = parsed.data as typeof writeToolSchemas.removeTopupGrant._output;
+        await removeTopupGrant({ applicationId, actor, ...args });
+        return { ok: true, result: { removed: true, grantId: args.grantId } };
       }
 
       case "grantUserCredits": {
