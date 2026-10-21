@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gt, inArray, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db, type DbExecutor } from "@/lib/db";
 import {
   appUsers,
@@ -9,6 +9,7 @@ import {
   purchases,
   subscriptions,
   type BalanceExpiryPolicy,
+  type BalanceGrantInterval,
   type Plan,
   type SubscriptionStatus,
 } from "@/lib/db/schema";
@@ -25,6 +26,7 @@ import { balanceAmountForSubscriptionStatus } from "./entitlement-rules";
 import { stampLotsForPlanEnd } from "./balance-lots";
 import { requirePlan } from "./plans";
 import { simulatedNow } from "./test-clock";
+import { dueGrantInstants, grantIntervalDays } from "./grant-schedule";
 import { complimentaryGrantSchema } from "./complimentary-schema";
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due"] as const;
@@ -189,10 +191,10 @@ export async function grantComplimentarySubscription(input: {
     }).returning();
 
     await replaceInternalDefaultForPlan({ applicationId: input.applicationId, appUserId: user.id, planId: plan.id }, tx);
-    // One allowance grant for this access period; there are no paid renewals.
+    // Start the configured allowance cadence; membership never renews.
     await grantPeriodBalances({
       applicationId: input.applicationId, appUserId: user.id, planId: plan.id,
-      subscriptionId: subscription.id, periodKey: subscription.id, periodEnd,
+      subscriptionId: subscription.id, periodKey: subscription.id, periodStart: now, periodEnd, now,
       status: "active", idempotencyPrefix: "complimentary_plan_grant",
       referenceType: "subscription", referenceId: subscription.id,
     }, tx);
@@ -370,6 +372,7 @@ export async function syncInternalDefaultSubscriptions(input: {
         appUserId: input.appUserId,
         planId: row.plan.id,
         periodKey: String(period.start.getTime()),
+        periodStart: period.start, now,
         periodEnd: period.end,
         subscriptionId: row.subscription.id,
         status: "active",
@@ -465,6 +468,7 @@ export async function syncInternalDefaultSubscriptions(input: {
       appUserId: input.appUserId,
       planId: plan.id,
       periodKey: String(periodStart.getTime()),
+      periodStart, now,
       periodEnd,
       subscriptionId: subscription.id,
       status: "active",
@@ -490,6 +494,7 @@ export async function syncInternalDefaultSubscriptions(input: {
     });
     enrolled.push(subscription);
   }
+  await grantScheduledBalances({ applicationId: input.applicationId, appUserId: input.appUserId, now });
   return enrolled;
 }
 
@@ -502,6 +507,9 @@ export interface BalanceGrantEntitlement {
   unitId: string | null;
   amount: number | null;
   trialAmount?: number | null;
+  balanceGrantInterval?: BalanceGrantInterval | null;
+  balanceGrantIntervalDays?: number | null;
+  createdAt?: Date;
   balanceExpiryPolicy?: BalanceExpiryPolicy | null;
   balanceExpiryMonths?: number | null;
 }
@@ -700,6 +708,9 @@ export async function grantPeriodBalances(input: {
   appUserId: string;
   planId: string;
   periodKey: string;
+  periodStart?: Date | null;
+  now?: Date;
+  scheduledOnly?: boolean;
   /** End of the period being granted, the anchor for `period_end` expiry. */
   periodEnd?: Date | null;
   /** Recorded on each lot so plan end can find `after_plan_end` grants. */
@@ -732,6 +743,27 @@ export async function grantPeriodBalances(input: {
       input.status ?? "active",
     );
     if (!amount || amount < 0) continue;
+    const days = grantIntervalDays(grant.balanceGrantInterval, grant.balanceGrantIntervalDays);
+    if (input.scheduledOnly && days === null) continue;
+    if (days !== null && input.subscriptionId && input.periodStart && input.periodEnd) {
+      for (const dueAt of dueGrantInstants({
+        periodStart: input.periodStart, periodEnd: input.periodEnd,
+        now: input.now ?? grantedAt, days, configuredAt: grant.createdAt,
+      })) {
+        results.push(await creditBalance({
+          appUserId: input.appUserId, unitId: grant.unitId!, amount, kind: "plan_grant",
+          description: "Scheduled plan allowance",
+          idempotencyKey: `scheduled_plan_grant:${input.subscriptionId}:${grant.unitId}:${dueAt.getTime()}:${input.status === "trialing" ? "trial" : "non_trial"}`,
+          referenceType: "subscription", referenceId: input.subscriptionId,
+          expiresAt: resolveExpiresAt({ policy: grant.balanceExpiryPolicy ?? "never", months: grant.balanceExpiryMonths ?? null, grantedAt: dueAt, periodEnd: input.periodEnd }),
+          expiryPolicy: grant.balanceExpiryPolicy ?? "never", expiryMonths: grant.balanceExpiryMonths ?? null,
+          subscriptionId: input.subscriptionId, planId: input.planId,
+        }, executor));
+      }
+      continue;
+    }
+    // Scheduled grants cannot fall back to a provider-specific period credit.
+    if (days !== null && input.subscriptionId) continue;
     const policy = grant.balanceExpiryPolicy ?? "never";
     const months = grant.balanceExpiryMonths ?? null;
     // Existing grants retain their historical key. Only a newly configured
@@ -930,4 +962,34 @@ export async function getActiveSubscriptionForPlan(input: {
     )
     .limit(1);
   return row ?? null;
+}
+
+/** Shared by authenticated user reads and the hourly workflow. Ledger keys make concurrent passes safe. */
+export async function grantScheduledBalances(input: {
+  applicationId?: string; appUserId?: string; now?: Date; afterId?: string; limit?: number;
+} = {}) {
+  const rows = await db.select({ subscription: subscriptions, offset: appUsers.testClockOffsetMs })
+    .from(subscriptions).innerJoin(appUsers, eq(appUsers.id, subscriptions.appUserId))
+    .where(and(
+      inArray(subscriptions.status, ["active", "trialing"]),
+      sql`EXISTS (SELECT 1 FROM ${planEntitlements} WHERE ${planEntitlements.planId} = ${subscriptions.planId} AND ${planEntitlements.kind} = 'balance_grant' AND ${planEntitlements.balanceGrantInterval} <> 'period')`,
+      ...(input.applicationId ? [eq(subscriptions.applicationId, input.applicationId)] : []),
+      ...(input.appUserId ? [eq(subscriptions.appUserId, input.appUserId)] : []),
+      ...(input.afterId ? [gt(subscriptions.id, input.afterId)] : []),
+    )).orderBy(subscriptions.id).limit(input.limit ?? 500);
+  for (const { subscription: sub, offset } of rows) {
+    const now = input.now ?? simulatedNow(offset);
+    if (!input.appUserId && sub.billingProvider === "internal" && sub.currentPeriodEnd && now >= sub.currentPeriodEnd) {
+      await syncInternalDefaultSubscriptions({ applicationId: sub.applicationId, appUserId: sub.appUserId, now });
+      continue;
+    }
+    if (sub.endedAt || !sub.currentPeriodStart || !sub.currentPeriodEnd || now >= sub.currentPeriodEnd) continue;
+    await grantPeriodBalances({
+      applicationId: sub.applicationId, appUserId: sub.appUserId, planId: sub.planId,
+      subscriptionId: sub.id, periodKey: String(sub.currentPeriodStart.getTime()),
+      periodStart: sub.currentPeriodStart, periodEnd: sub.currentPeriodEnd,
+      status: sub.status, now, scheduledOnly: true,
+    });
+  }
+  return { count: rows.length, afterId: rows.at(-1)?.subscription.id };
 }

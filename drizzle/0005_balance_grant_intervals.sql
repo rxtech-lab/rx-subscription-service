@@ -1,0 +1,4 @@
+ALTER TABLE "plan_entitlements" ADD COLUMN "balance_grant_interval" text DEFAULT 'period' NOT NULL;--> statement-breakpoint
+ALTER TABLE "plan_entitlements" ADD COLUMN "balance_grant_interval_days" bigint;--> statement-breakpoint
+ALTER TABLE "plan_entitlements" ADD CONSTRAINT "plan_entitlements_grant_interval_valid" CHECK ("plan_entitlements"."balance_grant_interval" IN ('period', 'day', 'week', 'custom_days'));--> statement-breakpoint
+ALTER TABLE "plan_entitlements" ADD CONSTRAINT "plan_entitlements_grant_days_valid" CHECK (("plan_entitlements"."balance_grant_interval" = 'custom_days' AND "plan_entitlements"."balance_grant_interval_days" IS NOT NULL AND "plan_entitlements"."balance_grant_interval_days" BETWEEN 1 AND 3650) OR ("plan_entitlements"."balance_grant_interval" <> 'custom_days' AND "plan_entitlements"."balance_grant_interval_days" IS NULL));

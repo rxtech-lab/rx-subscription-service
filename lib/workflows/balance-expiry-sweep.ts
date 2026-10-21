@@ -1,8 +1,8 @@
-import { expireComplimentarySubscriptions } from "@/lib/subscription/subscriptions";
+import { grantScheduledBalances, expireComplimentarySubscriptions } from "@/lib/subscription/subscriptions";
 import { expireBalanceLots } from "@/lib/subscription/balance-lots";
 
 /**
- * Expire lapsed balance lots across every user.
+ * Issue due scheduled allowances and expire lapsed balance lots across every user.
  *
  * The debit and read paths already sweep lazily, so a balance is never *used*
  * while stale. This job exists for the user who touches nothing: without it
@@ -25,8 +25,20 @@ async function sweepBatch(limit: number) {
   return { ...result, subscriptions };
 }
 
+async function grantBatch(afterId?: string) {
+  "use step";
+  return grantScheduledBalances({ afterId, limit: BATCH_SIZE });
+}
+
 export async function balanceExpirySweepWorkflow() {
   "use workflow";
+
+  let afterId: string | undefined;
+  for (;;) {
+    const result = await grantBatch(afterId);
+    if (result.count < BATCH_SIZE) break;
+    afterId = result.afterId;
+  }
 
   let lots = 0;
   let units = 0;

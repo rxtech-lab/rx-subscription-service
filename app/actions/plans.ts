@@ -2,6 +2,7 @@
 
 import type {
   BalanceExpiryPolicy,
+  BalanceGrantInterval,
   BillingInterval,
   EntitlementKind,
 } from "@/lib/db/schema";
@@ -120,6 +121,8 @@ export async function addPlanEntitlementAction(
         unitId: optionalText(formData, "unitId"),
         amount: optionalInteger(formData, "amount"),
         trialAmount: optionalInteger(formData, "trialAmount"),
+        balanceGrantInterval: (optionalText(formData, "balanceGrantInterval") ?? "period") as BalanceGrantInterval,
+        balanceGrantIntervalDays: optionalInteger(formData, "balanceGrantIntervalDays"),
         balanceExpiryPolicy: (optionalText(formData, "balanceExpiryPolicy") ??
           "never") as BalanceExpiryPolicy,
         balanceExpiryMonths: optionalInteger(formData, "balanceExpiryMonths"),

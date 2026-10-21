@@ -441,6 +441,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
       appUserId,
       planId,
       periodKey: String(currentPeriodStart.getTime()),
+      periodStart: currentPeriodStart,
       periodEnd: currentPeriodEnd,
       subscriptionId: row.id,
       status,

@@ -643,7 +643,7 @@ export function buildTools(applicationId: string, actor: Actor) {
       execute: runWrite("grantUserCredits"),
     }),
     grantComplimentarySubscription: tool({
-      description: "Grant a user's selected plan in sandbox or production without payment. Applies plan access and one allowance grant, expires after periodDays, and never auto-renews. Does not create an Apple/Stripe purchase or alter existing store subscriptions. Requires an active plan and an available plan group.",
+      description: "Grant a user's selected plan in sandbox or production without payment. Applies plan access and the configured balance grant cadence, expires after periodDays, and never auto-renews. Does not create an Apple/Stripe purchase or alter existing store subscriptions. Requires an active plan and an available plan group.",
       inputSchema: writeToolSchemas.grantComplimentarySubscription,
       needsApproval: true,
       execute: runWrite("grantComplimentarySubscription"),
