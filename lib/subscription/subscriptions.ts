@@ -608,6 +608,9 @@ export async function upsertSubscriptionFromStripe(input: {
     const [updated] = await db
       .update(subscriptions)
       .set({
+        planId: input.planId,
+        entitlementSnapshot: existing.planId === input.planId
+          ? existing.entitlementSnapshot : await buildEntitlementSnapshot(input.planId),
         billingProvider: "stripe",
         providerSubscriptionId: input.stripeSubscriptionId,
         providerProductId:
