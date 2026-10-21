@@ -86,12 +86,12 @@ export async function createPlanChangeSession(input: {
   if (!productId) throw new ValidationError("Plan price has no product");
   // Isolated configuration: this deep link can only change to the selected plan.
   const configuration = await client.billingPortal.configurations.create({
-    features: { subscription_update: {
+    features: { payment_method_update: { enabled: true }, subscription_update: {
       enabled: true, default_allowed_updates: ["price"],
       products: [{ product: productId, prices: [priceId] }],
       proration_behavior: "always_invoice",
     } },
-  }, { idempotencyKey: `plan-change-config:v1:${input.applicationId}:${priceId}` });
+  }, { idempotencyKey: `plan-change-config:v2:${input.applicationId}:${priceId}` });
   const session = await client.billingPortal.sessions.create({
     customer: referenceId(subscription.customer)!,
     configuration: configuration.id,
