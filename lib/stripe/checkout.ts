@@ -103,7 +103,7 @@ async function applyCoupon(input: {
  * No mode column is needed: a test user always transacts in the sandbox and a
  * real user always in live, so the row is unambiguous for the user it belongs to.
  */
-async function customerFor(user: AppUser, mode: StripeMode): Promise<string> {
+export async function customerFor(user: AppUser, mode: StripeMode): Promise<string> {
   const [existing] = await db
     .select()
     .from(stripeCustomers)

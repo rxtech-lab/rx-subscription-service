@@ -7,6 +7,7 @@ const schema = z.object({
   subscriptionId: z.string().min(1),
   planId: z.string().min(1),
   returnUrl: z.string().url(),
+  timing: z.enum(["immediate", "next_period"]).default("immediate"),
 });
 
 /** Open a hosted confirmation for an owned recurring Stripe subscription. */
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
     const result = await createPlanChangeSession({
       applicationId: context.application.id, user,
       subscriptionId: parsed.data.subscriptionId, planId: parsed.data.planId,
-      returnUrl: parsed.data.returnUrl,
+      returnUrl: parsed.data.returnUrl, timing: parsed.data.timing,
     });
     return Response.json(result, { headers: noStore });
   } catch (error) {

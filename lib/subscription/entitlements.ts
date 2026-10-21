@@ -39,6 +39,7 @@ export interface ResolvedEntitlements {
     cancelAtPeriodEnd: boolean;
     billingProvider: string;
     providerProductId: string | null;
+    pendingPlanChange?: { planId: string; planName: string; effectiveAt: string } | null;
   }[];
   roleKeys: string[];
   roleIds: string[];
@@ -312,6 +313,11 @@ export async function resolveEntitlements(input: {
       cancelAtPeriodEnd: row.cancelAtPeriodEnd,
       billingProvider: row.billingProvider,
       providerProductId: row.providerProductId,
+      pendingPlanChange: (() => {
+        const pending = row.entitlementSnapshot?.pendingPlanChange as Record<string, unknown> | undefined;
+        return pending && typeof pending.planId === "string" && typeof pending.planName === "string" && typeof pending.effectiveAt === "string"
+          ? { planId: pending.planId, planName: pending.planName, effectiveAt: pending.effectiveAt } : null;
+      })(),
     })),
     roleIds: roleIdList,
     directRoleIds,

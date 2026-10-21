@@ -30,6 +30,7 @@ import { complimentaryGrantSchema } from "./complimentary-schema";
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due"] as const;
 
 export interface OwnedPlan {
+  entitlementSnapshot?: Record<string, unknown> | null;
   planId: string;
   planName: string;
   planGroup: string;
@@ -61,6 +62,7 @@ export async function listOwnedPlans(input: {
         planName: plans.name,
         planGroup: plans.planGroup,
         billingProvider: subscriptions.billingProvider,
+        entitlementSnapshot: subscriptions.entitlementSnapshot,
         autoSubscribe: plans.autoSubscribe,
       })
       .from(subscriptions)
@@ -95,6 +97,7 @@ export async function assertPlanGroupAvailable(input: {
   plan: Plan;
   excludeSubscriptionId?: string;
   now?: Date;
+  allowScheduledPlanChangeId?: string;
 }, executor: DbExecutor = db) {
   const ownedPlans = await listOwnedPlans({
     applicationId: input.applicationId,
@@ -105,7 +108,11 @@ export async function assertPlanGroupAvailable(input: {
   const conflict = ownedPlans.find(
     (ownedPlan) =>
       ownedPlan.planGroup === input.plan.planGroup &&
-      !(ownedPlan.billingProvider === "internal" && ownedPlan.autoSubscribe),
+      !(ownedPlan.billingProvider === "internal" && ownedPlan.autoSubscribe &&
+        (!ownedPlan.entitlementSnapshot?.pendingPlanChange || (() => {
+          const pending = ownedPlan.entitlementSnapshot.pendingPlanChange as { scheduleId?: string; planId?: string };
+          return !!input.allowScheduledPlanChangeId && pending.scheduleId === input.allowScheduledPlanChangeId && pending.planId === input.plan.id;
+        })())),
   );
   if (!conflict) return;
   if (conflict.planId === input.plan.id) {
@@ -580,6 +587,7 @@ export async function upsertSubscriptionFromStripe(input: {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   providerProductId?: string | null;
+  stripeScheduleId?: string | null;
 }) {
   const now = new Date();
   const existing = await getSubscriptionByStripeId(input.stripeSubscriptionId);
@@ -601,6 +609,7 @@ export async function upsertSubscriptionFromStripe(input: {
       appUserId: input.appUserId,
       plan,
       excludeSubscriptionId: existing?.id,
+      allowScheduledPlanChangeId: input.stripeScheduleId ?? undefined,
     });
   }
 

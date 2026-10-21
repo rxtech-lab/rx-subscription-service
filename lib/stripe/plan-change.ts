@@ -7,6 +7,8 @@ import { requirePlan } from "@/lib/subscription/plans";
 import { assertPlanGroupAvailable } from "@/lib/subscription/subscriptions";
 import { ValidationError } from "@/lib/subscription/shared";
 import { ensurePlanPrice } from "./products";
+import { assertChangeTiming, type ChangeTiming } from "./plan-change-policy";
+import { createDeferredPlanReview } from "./deferred-plan-change";
 import { modeForUser, referenceId, stripe } from "./client";
 
 /** Only creates a confirmation session. Stripe applies the change after approval. */
@@ -16,6 +18,7 @@ export async function createPlanChangeSession(input: {
   subscriptionId: string;
   planId: string;
   returnUrl: string;
+  timing?: ChangeTiming;
 }) {
   const [owned] = await db.select().from(subscriptions).where(and(
     eq(subscriptions.id, input.subscriptionId),
@@ -23,8 +26,8 @@ export async function createPlanChangeSession(input: {
     eq(subscriptions.appUserId, input.user.id),
     inArray(subscriptions.status, ["active", "trialing"]),
   )).limit(1);
-  if (!owned || owned.billingProvider !== "stripe" || !owned.stripeSubscriptionId) {
-    throw new ValidationError("Only active Stripe subscriptions can change plans here");
+  if (!owned || !["stripe", "internal"].includes(owned.billingProvider)) {
+    throw new ValidationError("Only active Stripe or automatic free subscriptions can change plans here");
   }
   const [current, target] = await Promise.all([
     requirePlan(input.applicationId, owned.planId),
@@ -35,8 +38,28 @@ export async function createPlanChangeSession(input: {
       target.planGroup !== current.planGroup || target.currency !== current.currency) {
     throw new ValidationError("Choose a different active recurring plan in the same group and currency");
   }
+  if (owned.billingProvider === "internal") {
+    try { assertChangeTiming(current, target, input.timing ?? "immediate"); }
+    catch (error) { throw new ValidationError((error as Error).message); }
+  }
+  if (owned.entitlementSnapshot?.pendingPlanChange) {
+    throw new ValidationError("A plan change is already scheduled");
+  }
+  if (owned.billingProvider === "internal" && (!current.autoSubscribe || current.priceAmountCents !== 0)) {
+    throw new ValidationError("Only automatic free plans can change from internal billing");
+  }
   await assertPlanGroupAvailable({ applicationId: input.applicationId,
     appUserId: input.user.id, plan: target, excludeSubscriptionId: owned.id });
+  if (input.timing === "next_period") {
+    return createDeferredPlanReview({ ...input, owned, current, target });
+  }
+  if (owned.billingProvider === "internal") {
+    const { createPlanCheckout } = await import("./checkout");
+    const result = await createPlanCheckout({ applicationId: input.applicationId, user: input.user,
+      planId: target.id, successUrl: input.returnUrl, cancelUrl: input.returnUrl });
+    return { url: result.checkoutUrl };
+  }
+  if (!owned.stripeSubscriptionId) throw new ValidationError("Stripe subscription is missing");
   const mode = modeForUser(input.user);
   const client = stripe(mode);
   const subscription = await client.subscriptions.retrieve(owned.stripeSubscriptionId);
@@ -49,6 +72,11 @@ export async function createPlanChangeSession(input: {
       subscription.collection_method !== "charge_automatically") {
     throw new ValidationError("This subscription cannot change plans right now");
   }
+  if (item.price.unit_amount === null || item.price.unit_amount === undefined) {
+    throw new ValidationError("Only fixed-price plans can change immediately here");
+  }
+  try { assertChangeTiming({ ...current, priceAmountCents: item.price.unit_amount }, target, "immediate"); }
+  catch (error) { throw new ValidationError((error as Error).message); }
   // Refuse stale tabs, including a completed change whose webhook is still queued.
   const actualPlan = item.price.metadata?.planId ?? subscription.metadata.planId;
   if (actualPlan !== current.id) throw new ValidationError("Your plan has changed. Refresh billing and try again");

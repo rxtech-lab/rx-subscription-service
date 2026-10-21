@@ -1,5 +1,6 @@
 import "server-only";
 import type Stripe from "stripe";
+import { completeDeferredPlanChange } from "./deferred-plan-change";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -424,6 +425,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
     appUserId,
     planId,
     stripeSubscriptionId: subscription.id,
+    stripeScheduleId: referenceId(subscription.schedule),
     stripeCustomerId: referenceId(subscription.customer),
     status,
     currentPeriodStart,
@@ -554,7 +556,9 @@ export async function processStripeWebhook(
     switch (event.type) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded":
-        handled = await handleCheckoutCompleted(event.data.object, mode);
+        handled = event.data.object.metadata?.kind === "plan_change_setup"
+          ? await completeDeferredPlanChange(event.data.object, mode)
+          : await handleCheckoutCompleted(event.data.object, mode);
         break;
 
       case "checkout.session.async_payment_failed": {
