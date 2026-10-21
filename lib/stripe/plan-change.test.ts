@@ -46,7 +46,7 @@ describe("plan change confirmation", () => {
     expect(m.stripe).toHaveBeenCalledWith("sandbox");
     expect(m.where).toHaveBeenCalledOnce();
     expect(m.group).toHaveBeenCalledWith(expect.objectContaining({ appUserId: "user", excludeSubscriptionId: "local" }));
-    expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({ features: { subscription_update: {
+    expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({ features: { payment_method_update: { enabled: true }, subscription_update: {
       enabled: true, default_allowed_updates: ["price"], products: [{ product: "prod_new", prices: ["price_new"] }], proration_behavior: "always_invoice",
     } } }), expect.anything());
     expect(m.session).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_1", flow_data: {
@@ -108,7 +108,7 @@ describe("six requested billing cases", () => {
   });
   it("3: $10 to $20 mid-period uses immediate Stripe proration", async () => {
     await createPlanChangeSession({ ...input, timing: "immediate" });
-    expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({ features: { subscription_update: expect.objectContaining({ proration_behavior: "always_invoice" }) } }), expect.anything());
+    expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({ features: expect.objectContaining({ subscription_update: expect.objectContaining({ proration_behavior: "always_invoice" }) }) }), expect.anything());
     expect(m.session).toHaveBeenCalledWith(expect.objectContaining({ flow_data: expect.objectContaining({ type: "subscription_update_confirm" }) }));
   });
   it("4: $10 to $20 next period uses setup, without an immediate charge", async () => {
@@ -143,5 +143,16 @@ describe("actual Stripe price guards", () => {
     const sub = remote(); sub.items.data[0].price.unit_amount = 2000; m.retrieve.mockResolvedValue(sub);
     await expect(createPlanChangeSession({ ...input, timing: "immediate" })).rejects.toThrow("Downgrades must start at the next billing period");
     expect(m.session).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("portal payment-method prerequisite", () => {
+  it("enables payment-method updates and avoids replaying the failed v1 configuration", async () => {
+    await createPlanChangeSession(input);
+    expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({
+      features: expect.objectContaining({ payment_method_update: { enabled: true },
+        subscription_update: expect.objectContaining({ enabled: true }) }),
+    }), { idempotencyKey: "plan-change-config:v2:app:price_new" });
   });
 });
