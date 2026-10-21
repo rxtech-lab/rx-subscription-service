@@ -1,3 +1,6 @@
+import { PlanGrantFields } from "@/components/forms/plan-grant-fields";
+import { BalanceGrantCadence } from "@/components/forms/balance-grant-cadence";
+import { balanceGrantScheduleLabel } from "@/lib/subscription/grant-schedule";
 import { buildPermissionExpression } from "@/lib/permissions/expression";
 import {
   addPlanEntitlementAction,
@@ -200,8 +203,8 @@ export default async function PlansPage({
                                       : `${labelFor.usage(entitlement.usageItemId)}: ${entitlement.limitValue ?? "unlimited"}`
                                     : entitlement.kind === "balance_grant"
                                       ? plan.trialDays > 0
-                                        ? `${labelFor.unit(entitlement.unitId)}: trial ${entitlement.trialAmount ?? entitlement.amount}, non-trial ${entitlement.amount}/period`
-                                        : `${entitlement.amount} ${labelFor.unit(entitlement.unitId)}/period`
+                                        ? `${labelFor.unit(entitlement.unitId)}: trial ${entitlement.trialAmount ?? entitlement.amount}, non-trial ${entitlement.amount}/${balanceGrantScheduleLabel(entitlement)}`
+                                        : `${entitlement.amount} ${labelFor.unit(entitlement.unitId)}/${balanceGrantScheduleLabel(entitlement)}`
                                       : entitlement.kind === "permission"
                                         ? buildPermissionExpression({ key: entitlement.permissionKey ?? "", scope: entitlement.permissionScope ?? "all", targetIds: entitlement.permissionTargetIds ?? [] })
                                         : `${entitlement.featureKey}=${entitlement.featureValue ?? "on"}`}
@@ -528,93 +531,95 @@ export default async function PlansPage({
                   ))}
                 </Select>
               </Field>
-              <Field label="Kind">
-                <Select name="kind" defaultValue="role">
-                  <option value="role">Role</option>
-                  <option value="usage_limit">Usage limit</option>
-                  <option value="balance_grant">Balance grant</option>
-                  <option value="permission">Permission</option>
-                  <option value="feature">Feature flag</option>
-                </Select>
-              </Field>
-              <Field label="Role (for role grants)">
-                <Select name="roleId">
-                  <option value="">—</option>
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.title}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field label="Usage item">
-                  <Select name="usageItemId">
-                    <option value="">—</option>
-                    {usageItems.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Non-trial limit" hint="Blank = unlimited">
-                  <Input name="limitValue" type="number" min="0" />
-                </Field>
-                <Field label="Trial limit" hint="Blank = unlimited">
-                  <Input name="trialLimitValue" type="number" min="0" />
-                </Field>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field label="Balance unit">
-                  <Select name="unitId">
-                    <option value="">—</option>
-                    {units.map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Non-trial amount per period">
-                  <Input name="amount" type="number" min="1" />
-                </Field>
-                <Field label="Trial amount" hint="Blank = same as non-trial">
-                  <Input name="trialAmount" type="number" min="0" />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field
-                  label="Granted units expire"
-                  hint="Balance grants only"
-                >
-                  <Select name="balanceExpiryPolicy" defaultValue="never">
-                    <option value="never">Never — they accumulate</option>
-                    <option value="period_end">
-                      At the end of the granting period
-                    </option>
-                    <option value="duration">A number of months after the grant</option>
-                    <option value="after_plan_end">
-                      A number of months after the plan ends
-                    </option>
-                  </Select>
-                </Field>
-                <Field
-                  label="Expiry months"
-                  hint="Only for the two month-based policies"
-                >
-                  <Input name="balanceExpiryMonths" type="number" min="1" />
-                </Field>
-              </div>
-              <Field label="Permission key" hint="Bare key such as read:a">
-                <Input name="permissionKey" placeholder="read:a" />
-              </Field>
-              <Field label="Permission scope" hint="read, write, all, write:id, all:id, or a custom action">
-                <Input name="permissionScope" defaultValue="all" />
-              </Field>
-              <Field label="Target ids" hint="Comma separated, for scopes ending in :id">
-                <Input name="permissionTargetIds" placeholder="id1,id2" />
-              </Field>
+              <PlanGrantFields
+                role={<>
+                    <Field label="Role">
+                      <Select name="roleId">
+                        <option value="">—</option>
+                        {roles.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.title}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                </>}
+                usage={<>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Field label="Usage item">
+                        <Select name="usageItemId">
+                          <option value="">—</option>
+                          {usageItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label="Non-trial limit" hint="Blank = unlimited">
+                        <Input name="limitValue" type="number" min="0" />
+                      </Field>
+                      <Field label="Trial limit" hint="Blank = unlimited">
+                        <Input name="trialLimitValue" type="number" min="0" />
+                      </Field>
+                    </div>
+                </>}
+                balance={<>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Field label="Balance unit">
+                        <Select name="unitId">
+                          <option value="">—</option>
+                          {units.map((unit) => (
+                            <option key={unit.id} value={unit.id}>
+                              {unit.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label="Non-trial amount per grant">
+                        <Input name="amount" type="number" min="1" />
+                      </Field>
+                      <Field label="Trial amount per grant" hint="Blank = same as non-trial">
+                        <Input name="trialAmount" type="number" min="0" />
+                      </Field>
+                    </div>
+                    <BalanceGrantCadence />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field
+                        label="Granted units expire"
+                        hint="Balance grants only"
+                      >
+                        <Select name="balanceExpiryPolicy" defaultValue="never">
+                          <option value="never">Never — they accumulate</option>
+                          <option value="period_end">
+                            At the end of the billing period
+                          </option>
+                          <option value="duration">A number of months after the grant</option>
+                          <option value="after_plan_end">
+                            A number of months after the plan ends
+                          </option>
+                        </Select>
+                      </Field>
+                      <Field
+                        label="Expiry months"
+                        hint="Only for the two month-based policies"
+                      >
+                        <Input name="balanceExpiryMonths" type="number" min="1" />
+                      </Field>
+                    </div>
+                </>}
+                permission={<>
+                    <Field label="Permission key" hint="Bare key such as read:a">
+                      <Input name="permissionKey" placeholder="read:a" />
+                    </Field>
+                    <Field label="Permission scope" hint="read, write, all, write:id, all:id, or a custom action">
+                      <Input name="permissionScope" defaultValue="all" />
+                    </Field>
+                    <Field label="Target ids" hint="Comma separated, for scopes ending in :id">
+                      <Input name="permissionTargetIds" placeholder="id1,id2" />
+                    </Field>
+                </>}
+              />
             </div>
           </ActionForm>
         </FormDialog>

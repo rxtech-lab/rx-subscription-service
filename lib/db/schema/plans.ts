@@ -87,13 +87,16 @@ export const BALANCE_EXPIRY_POLICIES = [
   "duration",
   "after_plan_end",
 ] as const;
+export const BALANCE_GRANT_INTERVALS = ["period", "day", "week", "custom_days"] as const;
+export type BalanceGrantInterval = (typeof BALANCE_GRANT_INTERVALS)[number];
+
 export type BalanceExpiryPolicy = (typeof BALANCE_EXPIRY_POLICIES)[number];
 
 /**
  * What a plan grants. One row per grant so the console (and the AI) can add or
  * remove a single entitlement without rewriting the plan.
  *
- * `balance_grant` credits `amount` units every non-trial billing period and
+ * `balance_grant` credits `amount` units each configured interval (billing period by default) and
  * optionally `trialAmount` during a trial; `usage_limit` sets the per-period
  * allowance for a usage item.
  */
@@ -127,6 +130,8 @@ export const planEntitlements = pgTable(
     amount: bigint("amount", { mode: "number" }),
     /** Units granted while the subscription is trialing. Null inherits `amount`. */
     trialAmount: bigint("trial_amount", { mode: "number" }),
+    balanceGrantInterval: text("balance_grant_interval", { enum: BALANCE_GRANT_INTERVALS }).notNull().default("period"),
+    balanceGrantIntervalDays: bigint("balance_grant_interval_days", { mode: "number" }),
     /** `balance_grant` only. See `BALANCE_EXPIRY_POLICIES`. */
     balanceExpiryPolicy: text("balance_expiry_policy", {
       enum: BALANCE_EXPIRY_POLICIES,
@@ -142,6 +147,8 @@ export const planEntitlements = pgTable(
   },
   (table) => [
     index("plan_entitlements_plan_idx").on(table.planId),
+    check("plan_entitlements_grant_interval_valid", sql`${table.balanceGrantInterval} IN ('period', 'day', 'week', 'custom_days')`),
+    check("plan_entitlements_grant_days_valid", sql`(${table.balanceGrantInterval} = 'custom_days' AND ${table.balanceGrantIntervalDays} IS NOT NULL AND ${table.balanceGrantIntervalDays} BETWEEN 1 AND 3650) OR (${table.balanceGrantInterval} <> 'custom_days' AND ${table.balanceGrantIntervalDays} IS NULL)`),
     check(
       "plan_entitlements_expiry_months_positive",
       sql`${table.balanceExpiryMonths} IS NULL OR ${table.balanceExpiryMonths} >= 1`,

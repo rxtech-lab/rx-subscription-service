@@ -247,18 +247,20 @@ export const writeToolSchemas = {
       .int()
       .positive()
       .optional()
-      .describe("Units granted per non-trial period"),
+      .describe("Units granted per non-trial grant interval"),
     trialAmount: z
       .number()
       .int()
       .nonnegative()
       .optional()
       .describe("Units granted while trialing. Omit to use amount; zero grants none"),
+    balanceGrantInterval: z.enum(["period", "day", "week", "custom_days"]).optional().describe("Balance grant cadence, anchored to billing period start. Default period. Recurring plans only for day/week/custom_days"),
+    balanceGrantIntervalDays: z.number().int().min(1).max(3650).optional().describe("Required for custom_days"),
     balanceExpiryPolicy: balanceExpiryPolicySchema,
     balanceExpiryMonths: balanceExpiryMonthsSchema,
     featureKey: z.string().optional(),
     featureValue: z.string().optional(),
-  }),
+  }).refine((input) => input.balanceGrantInterval !== "custom_days" || input.balanceGrantIntervalDays !== undefined, { message: "balanceGrantIntervalDays is required for custom_days", path: ["balanceGrantIntervalDays"] }),
 
   removePlanEntitlement: z.object({
     planId: z.string().describe("Plan id returned by listPlans"),

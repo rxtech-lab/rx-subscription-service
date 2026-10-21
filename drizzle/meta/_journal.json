@@ -36,6 +36,13 @@
       "when": 1792581490334,
       "tag": "0004_topup_eligibility_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792585997489,
+      "tag": "0005_balance_grant_intervals",
+      "breakpoints": true
     }
   ]
 }

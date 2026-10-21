@@ -69,6 +69,26 @@ and AI tool re-checks that before touching anything.
 | **Permission** | A customizable action, serialized as `read:a:all` or `read:a:id1,id2` — the same syntax rxlab-auth uses. |
 | **Usage item** | Something counted per user, with its own reset schedule and overage policy. |
 
+Balance grants support `balanceGrantInterval`: `period` (the default), `day`,
+`week`, or `custom_days` with `balanceGrantIntervalDays` from 1 to 3,650.
+Configure these in **Plans → Add grant → Balance grant** or `addPlanEntitlement`.
+Daily, weekly, and custom schedules require a recurring plan. Each interval credits
+`amount`, or `trialAmount` while trialing. Intervals use fixed UTC durations from
+the billing-period start, reset at each new billing period, and never grant at or
+after its end. Existing grants retain their per-period behavior.
+
+The hourly balance workflow and authenticated subscription reads catch up due
+intervals within the current active or trialing period. Each subscription, unit,
+interval start, and trial/paid stage has an idempotent ledger key. New entitlements
+start at the next interval boundary on or after their creation; they do not
+backfill time before they were configured. Canceled, ended, past-due, and elapsed
+provider periods do not receive scheduled credits. Complimentary access follows
+the configured cadence until its access period ends, without renewing membership.
+Expiry remains independent: `period_end` still means billing-period end, and
+month-based duration starts at the scheduled grant instant, even during catch-up.
+Run `bun run db:migrate` to apply migration `0005_balance_grant_intervals` before
+using the updated application. The existing hourly cron requires `CRON_SECRET`.
+
 Plan usage grants can set separate trial and non-trial allowances. The trial
 allowance applies only while the subscription status is `trialing`; existing
 grants continue to use their regular allowance for both states.
@@ -217,8 +237,8 @@ balance unit, then presents the existing write-tool approval. Sandbox and
 production are always selected explicitly. A user must already have a record
 in that environment; the same RxLab identity may have a different record in each.
 
-`grantComplimentarySubscription` grants an active plan for 1–3,650 days, with one
-allowance credit for the entire period. It never renews, creates no payment or
+`grantComplimentarySubscription` grants an active plan for 1–3,650 days, with the plan’s configured
+balance grant cadence for the access period. It never renews, creates no payment or
 Apple transaction, and rejects overlapping plans in the same group. It replaces
 an automatic free tier in that group; the free tier resumes after access expires.
 Access expires on the next entitlement read, with a background sweep for idle

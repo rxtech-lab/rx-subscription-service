@@ -311,3 +311,16 @@ it("exposes validated topup AND/OR modes to admin tools", () => {
   expect(writeToolSchemas.updateTopup.parse({ topupId: "pack", eligibilityMode: "any" }).eligibilityMode).toBe("any");
   expect(writeToolSchemas.updateTopup.safeParse({ topupId: "pack", eligibilityMode: "invalid" }).success).toBe(false);
 });
+
+
+it("validates daily, weekly, custom-day and default grant cadences", () => {
+  const grant = { planId: "plan", kind: "balance_grant", unitId: "points", amount: 100 };
+  for (const balanceGrantInterval of ["period", "day", "week"]) {
+    expect(writeToolSchemas.addPlanEntitlement.safeParse({ ...grant, balanceGrantInterval }).success).toBe(true);
+  }
+  expect(writeToolSchemas.addPlanEntitlement.safeParse({ ...grant, balanceGrantInterval: "custom_days", balanceGrantIntervalDays: 3 }).success).toBe(true);
+  for (const days of [undefined, 0, -1, 1.5, 3651]) {
+    expect(writeToolSchemas.addPlanEntitlement.safeParse({ ...grant, balanceGrantInterval: "custom_days", balanceGrantIntervalDays: days }).success).toBe(false);
+  }
+  expect(writeToolSchemas.addPlanEntitlement.safeParse({ ...grant, balanceGrantInterval: "invalid" }).success).toBe(false);
+});

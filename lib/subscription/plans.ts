@@ -10,6 +10,8 @@ import {
   usageItems,
   DEFAULT_PLAN_GROUP,
   type BalanceExpiryPolicy,
+  type BalanceGrantInterval,
+  BALANCE_GRANT_INTERVALS,
   type BillingInterval,
   type EntitlementKind,
 } from "@/lib/db/schema";
@@ -340,6 +342,8 @@ type EntitlementFields = {
   unitId?: string | null;
   amount?: number | null;
   trialAmount?: number | null;
+  balanceGrantInterval?: BalanceGrantInterval | null;
+  balanceGrantIntervalDays?: number | null;
   balanceExpiryPolicy?: BalanceExpiryPolicy | null;
   balanceExpiryMonths?: number | null;
   featureKey?: string | null;
@@ -397,6 +401,8 @@ function entitlementColumnsForKind(input: EntitlementFields) {
     unitId: null,
     amount: null,
     trialAmount: null,
+    balanceGrantInterval: "period",
+    balanceGrantIntervalDays: null,
     balanceExpiryPolicy: "never",
     balanceExpiryMonths: null,
     featureKey: null,
@@ -436,6 +442,8 @@ function entitlementColumnsForKind(input: EntitlementFields) {
         // A blank trial value inherits the non-trial amount. Zero remains a
         // deliberate choice to grant no stored units during the trial.
         trialAmount: input.trialAmount ?? input.amount ?? null,
+        balanceGrantInterval: input.balanceGrantInterval ?? "period",
+        balanceGrantIntervalDays: input.balanceGrantInterval === "custom_days" ? input.balanceGrantIntervalDays ?? null : null,
         balanceExpiryPolicy: policy,
         // A duration on a policy that does not use one would be dead data that
         // silently takes effect if the policy is later switched.
@@ -453,7 +461,7 @@ function entitlementColumnsForKind(input: EntitlementFields) {
   }
 }
 
-async function assertEntitlementShape(input: EntitlementFields) {
+async function assertEntitlementShape(input: EntitlementFields & { planId: string }) {
   switch (input.kind) {
     case "role": {
       const roleId = blankToNull(input.roleId);
@@ -523,6 +531,16 @@ async function assertEntitlementShape(input: EntitlementFields) {
         .limit(1);
       if (!unit) {
         throw new ValidationError("balance unit does not belong to this application");
+      }
+      const interval = input.balanceGrantInterval ?? "period";
+      if (!BALANCE_GRANT_INTERVALS.includes(interval)) throw new ValidationError("Invalid balance grant interval");
+      if (interval !== "period") {
+        const plan = await requirePlan(input.applicationId, input.planId);
+        if (plan.billingInterval === "one_time") throw new ValidationError("Scheduled balance grants require a recurring plan");
+      }
+      if (interval === "custom_days") {
+        assertPositiveInteger(input.balanceGrantIntervalDays ?? 0, "balanceGrantIntervalDays");
+        if (input.balanceGrantIntervalDays! > 3650) throw new ValidationError("Grant interval cannot exceed 3650 days");
       }
       assertPositiveInteger(input.amount ?? 0, "amount");
       if (input.trialAmount !== null && input.trialAmount !== undefined) {

@@ -246,6 +246,7 @@ export async function grantTestSubscription(input: {
     appUserId: user.id,
     planId: plan.id,
     periodKey: String((subscription.currentPeriodStart ?? now).getTime()),
+    periodStart: subscription.currentPeriodStart ?? now, now,
     periodEnd: subscription.currentPeriodEnd,
     subscriptionId: subscription.id,
     status,
