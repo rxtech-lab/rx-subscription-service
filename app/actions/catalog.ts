@@ -1,5 +1,7 @@
 "use server";
 
+import { parseEligibilityMode } from "@/lib/subscription/topup-eligibility";
+
 import type { ResetPolicy, ResetUnit, TopupRuleType } from "@/lib/db/schema";
 import {
   createBalanceUnit,
@@ -208,6 +210,7 @@ export async function createTopupAction(
         priceAmountCents: moneyToCents(formData, "price"),
         currency: text(formData, "currency") || "usd",
         maxPurchasesPerUser: optionalInteger(formData, "maxPurchasesPerUser"),
+        eligibilityMode: parseEligibilityMode(text(formData, "eligibilityMode") || "all"),
         eligibility: topupEligibility(formData),
         actor,
       });
@@ -243,6 +246,7 @@ export async function updateTopupAction(
         priceAmountCents: moneyToCents(formData, "price"),
         currency: text(formData, "currency") || undefined,
         maxPurchasesPerUser: optionalInteger(formData, "maxPurchasesPerUser"),
+        eligibilityMode: formData.has("eligibilityMode") ? parseEligibilityMode(text(formData, "eligibilityMode")) : undefined,
         actor,
       });
     });

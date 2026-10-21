@@ -192,6 +192,7 @@ export default async function TopupsPage({
                         <span className="text-xs text-neutral-400">Anyone</span>
                       ) : (
                         <ul className="space-y-1">
+                          <li className="text-xs font-medium">{topup.eligibilityMode === "any" ? "Any condition (OR)" : "All conditions (AND)"}</li>
                           {rules.map((rule) => (
                             <li key={rule.id} className="flex items-center gap-2">
                               <span className="text-xs text-neutral-700">
@@ -235,6 +236,13 @@ export default async function TopupsPage({
                             />
                             <input type="hidden" name="topupId" value={topup.id} />
                             <div className="mt-4 space-y-3">
+                              <Field label="Eligibility conditions">
+                                <Select name="eligibilityMode" defaultValue={topup.eligibilityMode}>
+                                  <option value="all">All conditions (AND)</option>
+                                  <option value="any">Any condition (OR)</option>
+                                </Select>
+                                <p className="text-xs text-neutral-500">Purchase limits always apply. No conditions means anyone may buy.</p>
+                              </Field>
                               <Field label="Name">
                                 <Input name="name" defaultValue={topup.name} required />
                               </Field>
@@ -519,6 +527,12 @@ export default async function TopupsPage({
                   <Input name="maxPurchasesPerUser" type="number" min="1" />
                 </Field>
               </div>
+              <Field label="Eligibility conditions">
+                <Select name="eligibilityMode" defaultValue="all">
+                  <option value="all">All conditions (AND)</option>
+                  <option value="any">Any condition (OR)</option>
+                </Select>
+              </Field>
               <TopupEligibilityFields
                 plans={plans.map(({ id, name }) => ({ id, name }))}
                 roles={roles.map(({ id, title }) => ({ id, title }))}

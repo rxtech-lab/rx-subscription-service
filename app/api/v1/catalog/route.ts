@@ -96,6 +96,7 @@ export async function GET(request: Request) {
         amount: topup.amount,
         grants: catalogTopupGrants(grantsForTopup.get(topup.id) ?? [], unitsById),
         ...platformPrice({ local, platform, appleIntegration, apple }),
+        eligibilityMode: topup.eligibilityMode,
         eligible: eligibility?.eligible ?? null,
         blockedBy: eligibility?.failed ?? null,
         purchaseOptions: purchaseOptions({ local, appleIntegration, apple }),

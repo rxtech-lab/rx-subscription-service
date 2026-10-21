@@ -304,3 +304,10 @@ it("requires a positive integer credit amount, explicit environment, unit, and r
   }
   expect(writeToolSchemas.grantUserCredits.parse(grant)).toEqual(grant);
 });
+
+
+it("exposes validated topup AND/OR modes to admin tools", () => {
+  expect(writeToolSchemas.createTopup.parse(topup).eligibilityMode).toBe("all");
+  expect(writeToolSchemas.updateTopup.parse({ topupId: "pack", eligibilityMode: "any" }).eligibilityMode).toBe("any");
+  expect(writeToolSchemas.updateTopup.safeParse({ topupId: "pack", eligibilityMode: "invalid" }).success).toBe(false);
+});

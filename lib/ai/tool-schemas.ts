@@ -343,6 +343,7 @@ export const writeToolSchemas = {
     priceAmountCents: z.number().int().positive(),
     currency: z.string().length(3).default("usd"),
     maxPurchasesPerUser: z.number().int().positive().nullable().optional(),
+    eligibilityMode: z.enum(["all", "any"]).default("all").describe("Combine eligibility rules with AND (all) or OR (any). Purchase limits always apply."),
     eligibility: z
       .discriminatedUnion("type", [
         z.object({ type: z.literal("standalone") }),
@@ -357,6 +358,7 @@ export const writeToolSchemas = {
 
   updateTopup: z.object({
     topupId: z.string(),
+    eligibilityMode: z.enum(["all", "any"]).optional(),
     name: z.string().optional(),
     description: z.string().optional(),
     amount: z.number().int().positive().optional(),

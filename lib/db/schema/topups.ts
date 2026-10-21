@@ -25,6 +25,7 @@ export const topupProducts = pgTable(
     status: text("status", { enum: ["draft", "active", "archived"] })
       .notNull()
       .default("draft"),
+    eligibilityMode: text("eligibility_mode", { enum: ["all", "any"] }).notNull().default("all"),
     maxPurchasesPerUser: bigint("max_purchases_per_user", { mode: "number" }),
     sortOrder: bigint("sort_order", { mode: "number" }).notNull().default(0),
     stripeProductId: text("stripe_product_id"),
@@ -39,6 +40,7 @@ export const topupProducts = pgTable(
   (table) => [
     uniqueIndex("topup_products_app_key_idx").on(table.applicationId, table.key),
     index("topup_products_app_status_idx").on(table.applicationId, table.status),
+    check("topup_products_eligibility_mode", sql`${table.eligibilityMode} in ('all', 'any')`),
     check("topup_products_amount_positive", sql`${table.amount} > 0`),
     check("topup_products_price_nonnegative", sql`${table.priceAmountCents} >= 0`),
   ],
@@ -53,7 +55,7 @@ export type TopupRuleType = (typeof TOPUP_RULE_TYPES)[number];
 
 /**
  * Gates a topup behind subscription state — "only Pro subscribers may buy this
- * pack". Rules are ANDed. Evaluated when checkout is created *and* again at
+ * pack". The product selects whether all or any rules must pass. Evaluated when checkout is created *and* again at
  * fulfillment, so a plan cancelled mid-checkout cannot slip through.
  */
 export const topupEligibilityRules = pgTable(
