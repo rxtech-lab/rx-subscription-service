@@ -23,6 +23,7 @@ import { requireBalanceUnit } from "./units";
 import { requirePlan } from "./plans";
 import { requireRole } from "./roles";
 import { getUserRoleIds } from "./entitlements";
+import { combineEligibilityFailures, parseEligibilityMode } from "./topup-eligibility";
 import { topupGrantCredits } from "./topup-grant-rules";
 import { creditBalance } from "./users";
 
@@ -71,6 +72,7 @@ export async function createTopupProduct(input: {
   currency?: string;
   maxPurchasesPerUser?: number | null;
   sortOrder?: number;
+  eligibilityMode?: "all" | "any";
   eligibility?: TopupEligibility;
   actor: Actor;
 }) {
@@ -99,6 +101,7 @@ export async function createTopupProduct(input: {
     .limit(1);
   if (duplicate) throw new ValidationError(`a topup with key "${key}" already exists`);
 
+  const eligibilityMode = parseEligibilityMode(input.eligibilityMode);
   const eligibility = input.eligibility ?? { type: "standalone" };
   if (eligibility.type === "plan") {
     await requirePlan(input.applicationId, eligibility.planId);
@@ -121,6 +124,7 @@ export async function createTopupProduct(input: {
         priceAmountCents,
         currency,
         status: "draft",
+        eligibilityMode,
         maxPurchasesPerUser: input.maxPurchasesPerUser ?? null,
         sortOrder: input.sortOrder ?? 0,
         createdAt: now,
@@ -177,6 +181,7 @@ export async function updateTopupProduct(input: {
   priceAmountCents?: number;
   currency?: string;
   maxPurchasesPerUser?: number | null;
+  eligibilityMode?: "all" | "any";
   status?: "draft" | "active" | "archived";
   sortOrder?: number;
   actor: Actor;
@@ -214,6 +219,7 @@ export async function updateTopupProduct(input: {
         input.maxPurchasesPerUser === undefined
           ? before.maxPurchasesPerUser
           : input.maxPurchasesPerUser,
+      eligibilityMode: input.eligibilityMode === undefined ? before.eligibilityMode : parseEligibilityMode(input.eligibilityMode),
       status: input.status ?? before.status,
       sortOrder: input.sortOrder ?? before.sortOrder,
       // Both accounts' Prices are stale once the amount or currency moves.
@@ -484,7 +490,7 @@ export interface EligibilityResult {
 const ACTIVE_STATUSES = ["trialing", "active", "past_due"] as const;
 
 /**
- * Evaluate a topup's gates for one user. Rules are ANDed.
+ * Evaluate all or any eligibility rules, then enforce purchase limits independently.
  *
  * Called both when checkout starts and again at fulfillment, so a plan that
  * lapses mid-checkout cannot be used to buy a plan-gated pack.
@@ -500,7 +506,7 @@ export async function checkTopupEligibility(input: {
   const activeSubscriptions = await db
     .select({ planId: subscriptions.planId, status: subscriptions.status })
     .from(subscriptions)
-    .where(eq(subscriptions.appUserId, input.appUserId));
+    .where(and(eq(subscriptions.appUserId, input.appUserId), eq(subscriptions.applicationId, input.applicationId)));
   const active = activeSubscriptions.filter((subscription) =>
     (ACTIVE_STATUSES as readonly string[]).includes(subscription.status),
   );
@@ -534,6 +540,8 @@ export async function checkTopupEligibility(input: {
     }
   }
 
+  const eligibilityFailures = combineEligibilityFailures(product.eligibilityMode, rules.length, failed);
+
   if (product.maxPurchasesPerUser !== null) {
     const [{ value }] = await db
       .select({ value: count() })
@@ -546,9 +554,9 @@ export async function checkTopupEligibility(input: {
         ),
       );
     if (value >= product.maxPurchasesPerUser) {
-      failed.push({ ruleType: "purchase_limit", planId: null, roleId: null });
+      eligibilityFailures.push({ ruleType: "purchase_limit", planId: null, roleId: null });
     }
   }
 
-  return { eligible: failed.length === 0, failed };
+  return { eligible: eligibilityFailures.length === 0, failed: eligibilityFailures };
 }
