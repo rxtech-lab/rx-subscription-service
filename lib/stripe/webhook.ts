@@ -1,9 +1,11 @@
 import "server-only";
 import type Stripe from "stripe";
+import { completeDeferredPlanChange } from "./deferred-plan-change";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   appUsers,
+  plans,
   ledgerEntries,
   purchases,
   stripeWebhookEvents,
@@ -392,17 +394,26 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
   const metadata = subscription.metadata ?? {};
   const applicationId = metadata.applicationId;
   const appUserId = metadata.appUserId;
-  const planId = metadata.planId;
+  if (!applicationId || !appUserId) return false;
+  const item = subscription.items?.data?.[0];
+  const priceMetadata = item?.price?.metadata;
+  if (priceMetadata?.applicationId && priceMetadata.applicationId !== applicationId) {
+    throw new Error("STRIPE_PRICE_APPLICATION_MISMATCH");
+  }
+  const planId = priceMetadata?.planId ?? metadata.planId;
   if (!applicationId || !appUserId || !planId) return false;
+  const [plan] = await db.select({ id: plans.id }).from(plans).where(and(
+    eq(plans.id, planId), eq(plans.applicationId, applicationId),
+  )).limit(1);
+  if (!plan) throw new Error("STRIPE_PRICE_PLAN_NOT_FOUND");
 
   const [user] = await db
     .select({ id: appUsers.id })
     .from(appUsers)
-    .where(eq(appUsers.id, appUserId))
+    .where(and(eq(appUsers.id, appUserId), eq(appUsers.applicationId, applicationId)))
     .limit(1);
   if (!user) return false;
 
-  const item = subscription.items?.data?.[0];
   const currentPeriodStart = toDate(
     item?.current_period_start ?? subscription.start_date,
   );
@@ -414,6 +425,7 @@ export async function syncSubscriptionFromStripe(subscription: Stripe.Subscripti
     appUserId,
     planId,
     stripeSubscriptionId: subscription.id,
+    stripeScheduleId: referenceId(subscription.schedule),
     stripeCustomerId: referenceId(subscription.customer),
     status,
     currentPeriodStart,
@@ -544,7 +556,9 @@ export async function processStripeWebhook(
     switch (event.type) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded":
-        handled = await handleCheckoutCompleted(event.data.object, mode);
+        handled = event.data.object.metadata?.kind === "plan_change_setup"
+          ? await completeDeferredPlanChange(event.data.object, mode)
+          : await handleCheckoutCompleted(event.data.object, mode);
         break;
 
       case "checkout.session.async_payment_failed": {
@@ -581,9 +595,13 @@ export async function processStripeWebhook(
 
       case "customer.subscription.created":
       case "customer.subscription.updated":
-      case "customer.subscription.deleted":
-        handled = await syncSubscriptionFromStripe(event.data.object);
+      case "customer.subscription.deleted": {
+        // Events may arrive out of order after a plan change. Read Stripe's
+        // current price and status so an older event cannot restore the old plan.
+        const current = await stripe(mode).subscriptions.retrieve(event.data.object.id);
+        handled = await syncSubscriptionFromStripe(current);
         break;
+      }
 
       case "invoice.paid": {
         const invoice = event.data.object;
