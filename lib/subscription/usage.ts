@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  appUsers,
   usageCounters,
   usageRecords,
   type UsageCounter,
@@ -189,7 +190,7 @@ export async function getUsageStatus(input: {
 
 export interface RecordUsageResult {
   allowed: boolean;
-  reason?: "limit_exceeded" | "insufficient_balance";
+  reason?: "limit_exceeded" | "insufficient_balance" | "released";
   used: number;
   limit: number | null;
   remaining: number | null;
@@ -248,13 +249,15 @@ export async function recordUsage(input: {
       : [];
   const duplicate = currentDuplicate ?? legacyDuplicate;
   if (duplicate) {
+    const [released] = await db.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, `release:${input.idempotencyKey}`)).limit(1);
     const limit = await resolveLimit({
       applicationId: input.applicationId,
       appUserId: input.appUserId,
       item,
     });
     return {
-      allowed: true,
+      allowed: !released,
+      ...(released ? { reason: "released" as const } : {}),
       used: duplicate.usedAfter,
       limit,
       remaining: limit === null ? null : Math.max(0, limit - duplicate.usedAfter),
@@ -344,12 +347,24 @@ export async function recordUsage(input: {
     }
   }
 
-  const usedAfter = await db.transaction(async (tx) => {
+  const mutation = await db.transaction(async (tx) => {
+    await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, input.appUserId)).for("update");
+    const [released] = await tx.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, `release:${input.idempotencyKey}`)).limit(1);
+    if (released) return { used: counter.used, denied: "released" as const, duplicate: true };
+    const [retry] = await tx.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, input.idempotencyKey)).limit(1);
+    if (retry) return { used: retry.usedAfter, duplicate: true };
+
     const [updated] = await tx
       .update(usageCounters)
       .set({ used: sql`${usageCounters.used} + ${amount}`, updatedAt: now })
-      .where(eq(usageCounters.id, counter.id))
+      .where(and(eq(usageCounters.id, counter.id),
+        item.overagePolicy === "block" && limit !== null
+          ? sql`${usageCounters.used} + ${amount} <= ${limit}` : undefined))
       .returning();
+    if (!updated) {
+      const [current] = await tx.select().from(usageCounters).where(eq(usageCounters.id, counter.id));
+      return { used: current.used, denied: "limit_exceeded" as const, duplicate: false };
+    }
 
     await tx.insert(usageRecords).values({
       id: newId(),
@@ -363,17 +378,18 @@ export async function recordUsage(input: {
       metadata: input.metadata ?? null,
       createdAt: now,
     });
-    return updated.used;
+    return { used: updated.used, duplicate: false };
   });
-
+  const usedAfter = mutation.used;
   return {
-    allowed: true,
+    allowed: !mutation.denied,
+    ...(mutation.denied ? { reason: mutation.denied } : {}),
     used: usedAfter,
     limit,
     remaining: limit === null ? null : Math.max(0, limit - usedAfter),
     chargedUnits,
     periodEnd: period.end,
-    duplicate: false,
+    duplicate: mutation.duplicate,
   };
 }
 
@@ -406,4 +422,41 @@ export async function resetUsageCounter(input: {
     after: { usageItemId: item.id, used: 0 },
   });
   return updated;
+}
+
+/** Release one original usage operation exactly once, including late replies and old periods.
+ * A missing operation is tombstoned so a delayed consume cannot appear after release.
+ * Balance-charged meters are deliberately excluded: those require a financial refund.
+ */
+export async function releaseUsage(input: {
+  applicationId: string; appUserId: string; usageItemId: string; idempotencyKey: string;
+}) {
+  await requireAppUser(input.applicationId, input.appUserId);
+  const item = await requireUsageItem(input.applicationId, input.usageItemId);
+  if (item.overagePolicy === "charge_balance") throw new ValidationError("Balance-charged usage cannot be released");
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, input.appUserId)).for("update");
+    const key = `release:${input.idempotencyKey}`;
+    const [existing] = await tx.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, key)).limit(1);
+    if (existing) return { released: true, duplicate: true };
+    const [original] = await tx.select().from(usageRecords).where(and(
+      eq(usageRecords.idempotencyKey, input.idempotencyKey),
+      eq(usageRecords.appUserId, input.appUserId), eq(usageRecords.usageItemId, item.id),
+    )).limit(1);
+    let usedAfter = 0;
+    if (original?.counterId) {
+      const [counter] = await tx.update(usageCounters).set({
+        used: sql`greatest(0, ${usageCounters.used} - ${original.amount})`, updatedAt: now,
+      }).where(eq(usageCounters.id, original.counterId)).returning();
+      usedAfter = counter?.used ?? 0;
+    }
+    await tx.insert(usageRecords).values({
+      id: newId(), appUserId: input.appUserId, usageItemId: item.id,
+      counterId: original?.counterId ?? null, amount: -(original?.amount ?? 0),
+      usedAfter, chargedUnits: 0, idempotencyKey: key,
+      metadata: { releases: input.idempotencyKey }, createdAt: now,
+    });
+    return { released: true, duplicate: false };
+  });
 }

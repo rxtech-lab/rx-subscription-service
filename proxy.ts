@@ -18,9 +18,11 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
  * Workflow runtime's own callback path — how a suspended run resumes itself.
  * Putting the console's interactive login in front of either would stop the
  * scheduled sweep and strand every sleeping workflow.
+ * MCP and OAuth discovery authenticate separately; consent handles sign-in itself
+ * so the complete authorization request survives the login redirect.
  */
 export const config = {
   matcher: [
-    "/((?!api/auth|api/v1|api/e2e|api/stripe|api/cron|test|\\.well-known/workflow|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!oauth/authorize|api/auth|api/mcp|api/v1|api/e2e|api/stripe|api/cron|test|\\.well-known/(?:workflow|oauth-authorization-server|oauth-protected-resource)|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

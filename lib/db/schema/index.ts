@@ -12,3 +12,4 @@ export * from "./lots";
 export * from "./ai";
 export * from "./testing";
 export * from "./paywalls";
+export * from "./mcp";
