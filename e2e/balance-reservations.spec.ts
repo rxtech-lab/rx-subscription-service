@@ -116,7 +116,8 @@ test.describe.serial("balance reservations", () => {
       rxlabUserId,
       amount: 80,
       idempotencyKey: "partial-reserve",
-      expiresInSeconds: 2,
+      // Allow for cold route compilation in CI; expiry is tested separately.
+      expiresInSeconds: 60,
     });
     const originalExpiry = Date.parse(reserved.expiresAt);
 
