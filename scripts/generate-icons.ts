@@ -1,28 +1,21 @@
 /**
- * Render the brand mark in `lib/brand.ts` into the icon files Next.js serves
- * from `app/`: `icon.svg` (modern browsers), `favicon.ico` (legacy and direct
- * `/favicon.ico` hits), and `apple-icon.png` (iOS home screen).
- *
- * Re-run after editing `lib/brand.ts` and commit the output — the build does
- * not regenerate these.
- *
- *   bun run scripts/generate-icons.ts
- *
- * `sharp` comes in with Next.js rather than as a direct dependency; it is only
- * needed here, never at request time.
+ * Resize the generated artwork into all website icon assets.
+ * Run: bun run scripts/generate-icons.ts
+ * Commit the outputs; the build does not regenerate them.
  */
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { BRAND_MARK_SVG } from "../lib/brand";
 
 const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "app");
+const SOURCE = join(APP_DIR, "../public/brand/subscriptions-source.png");
 const ICO_SIZES = [16, 32, 48];
 const APPLE_ICON_SIZE = 180;
 
 const render = (size: number) =>
-  sharp(Buffer.from(BRAND_MARK_SVG)).resize(size, size).png().toBuffer();
+  // Next.js requires PNG payloads inside ICO files to be RGBA, even for opaque artwork.
+  sharp(SOURCE).resize(size, size).ensureAlpha().png().toBuffer();
 
 /**
  * A minimal ICO container: a 6-byte header, one 16-byte directory entry per
@@ -57,10 +50,11 @@ const icoImages = await Promise.all(
   ICO_SIZES.map(async (size) => ({ size, png: await render(size) })),
 );
 
-await writeFile(join(APP_DIR, "icon.svg"), BRAND_MARK_SVG);
+await writeFile(join(APP_DIR, "icon.png"), await render(512));
+await writeFile(join(APP_DIR, "../public/brand/subscriptions.png"), await render(128));
 await writeFile(join(APP_DIR, "favicon.ico"), buildIco(icoImages));
 await writeFile(join(APP_DIR, "apple-icon.png"), await render(APPLE_ICON_SIZE));
 
 console.log(
-  `Wrote app/icon.svg, app/favicon.ico (${ICO_SIZES.join(", ")}px), and app/apple-icon.png (${APPLE_ICON_SIZE}px)`,
+  `Wrote public/brand/subscriptions.png, app/icon.png, app/favicon.ico (${ICO_SIZES.join(", ")}px), and app/apple-icon.png (${APPLE_ICON_SIZE}px)`,
 );

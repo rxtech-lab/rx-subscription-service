@@ -3,8 +3,8 @@ import { Skeleton, SkeletonScreen } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <SkeletonScreen label="Loading paywalls" className="min-h-full bg-[#f7f8fc]">
-      <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
+    <SkeletonScreen label="Loading paywalls" className="min-h-full bg-transparent">
+      <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-4 sm:px-8 sm:pt-6">
         <Skeleton className="h-7 w-32 rounded-full" />
         <Skeleton className="mt-4 h-9 w-48" />
         <Skeleton className="mt-3 h-4 w-full max-w-xl" />

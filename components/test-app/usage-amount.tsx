@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import { recordTestUsageAction } from "@/app/actions/test-usage";
-import { FormDialog, useCloseFormDialog } from "@/components/ui/form-dialog";
+import { FormDialog, FormDialogActions, useCloseFormDialog } from "@/components/ui/form-dialog";
 import { Button, Field, Input } from "@/components/ui/primitives";
 import { FormPendingToast } from "@/components/ui/toast";
 
@@ -47,12 +47,14 @@ function AmountForm({
   current: number;
   onSave: (amount: number) => void;
 }) {
+  const formId = useId();
   const close = useCloseFormDialog();
   const [value, setValue] = useState(String(current));
   const parsed = parseAmount(value);
 
   return (
     <form
+      id={formId}
       onSubmit={(event) => {
         event.preventDefault();
         if (parsed === null) return;
@@ -73,7 +75,7 @@ function AmountForm({
           onChange={(event) => setValue(event.target.value)}
         />
       </Field>
-      <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+      <FormDialogActions>
         {parsed === null ? (
           <p className="mr-auto text-sm text-rose-600">
             Enter a whole number of 1 or more.
@@ -82,10 +84,10 @@ function AmountForm({
         <Button type="button" size="sm" variant="secondary" onClick={close ?? undefined}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={parsed === null}>
+        <Button type="submit" form={formId} size="sm" disabled={parsed === null}>
           Save
         </Button>
-      </div>
+      </FormDialogActions>
     </form>
   );
 }

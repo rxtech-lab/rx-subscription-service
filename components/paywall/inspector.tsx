@@ -110,7 +110,7 @@ export function Inspector({
   const childLabels = (node.children ?? []).map((child) => nodeLabel(child));
 
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-6 p-5">
       <div>
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-950">{node.type}</h3>
@@ -171,7 +171,7 @@ export function Inspector({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{children}</p>
+    <p className="text-xs font-medium uppercase tracking-widest text-slate-500">{children}</p>
   );
 }
 
@@ -214,7 +214,7 @@ function ImageSourceSwitch({
   return (
     <section className="space-y-2">
       <SectionTitle>Source</SectionTitle>
-      <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+      <div className="flex rounded-2xl border border-[#d5deef] bg-white p-0.5">
         {IMAGE_SOURCES.map((source) => (
           <button
             key={source.key}
@@ -515,7 +515,7 @@ function ColorField({
             value={hex}
             onChange={(event) => onChange(event.target.value.toUpperCase(), true)}
             onBlur={onBlur}
-            className="size-9 shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white p-1"
+            className="size-9 shrink-0 cursor-pointer rounded-2xl border border-[#d5deef] bg-white p-1"
           />
           <Input
             aria-label="Hex color"
@@ -706,7 +706,7 @@ function PeriodFilterField({
         Show a period switcher
       </label>
       {enabled ? (
-        <div className="space-y-2 rounded-lg border border-slate-200 p-2">
+        <div className="space-y-2 rounded-2xl border border-[#d5deef] p-2">
           <p className="text-[11px] leading-4 text-slate-500">
             Periods to offer — leave every box unchecked to offer the ones the plans use. A
             period with no plans is dropped, and the switcher hides unless two remain.
@@ -832,7 +832,7 @@ function TabsField({
   return (
     <div className="space-y-2">
       {value.map((row, index) => (
-        <div key={index} className="space-y-2 rounded-lg border border-slate-200 p-2">
+        <div key={index} className="space-y-2 rounded-2xl border border-[#d5deef] p-2">
           <div className="flex items-center gap-2">
             <Input
               aria-label={`Tab ${index + 1} title`}
@@ -932,7 +932,7 @@ function ProductOverridesField({
       {value.map((row, index) => {
         const options = knownKeys.includes(row.productKey) ? knownKeys : [row.productKey, ...knownKeys];
         return (
-          <div key={`${row.productKey}-${index}`} className="space-y-2 rounded-lg border border-slate-200 p-2">
+          <div key={`${row.productKey}-${index}`} className="space-y-2 rounded-2xl border border-[#d5deef] p-2">
             <div className="flex items-center gap-2">
               <Select
                 aria-label="Plan"
@@ -1187,7 +1187,7 @@ export function ThemeEditor({
   onEndCoalesce: () => void;
 }) {
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-6 p-5">
       <div>
         <h3 className="text-sm font-semibold text-slate-950">Theme</h3>
         <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -1264,7 +1264,7 @@ export function MaterialYouEditor({
   const colors = materialYouColors(selected, scheme);
 
   return (
-    <div className="space-y-6 p-4">
+    <div className="space-y-6 p-5">
       <div>
         <h3 className="text-sm font-semibold text-slate-950">Material You</h3>
         <p className="mt-1 text-xs leading-5 text-slate-500">

@@ -12,22 +12,7 @@ interface ApplicationSummary {
 }
 
 const ACCENTS = [
-  {
-    icon: "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white",
-    dot: "bg-blue-500",
-  },
-  {
-    icon: "bg-cyan-50 text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white",
-    dot: "bg-cyan-500",
-  },
-  {
-    icon: "bg-amber-50 text-amber-600 group-hover:bg-amber-500 group-hover:text-white",
-    dot: "bg-amber-500",
-  },
-  {
-    icon: "bg-rose-50 text-rose-600 group-hover:bg-rose-500 group-hover:text-white",
-    dot: "bg-rose-500",
-  },
+  { icon: "bg-[#dce7ff] text-[#2459a9] group-hover:bg-[#2459a9] group-hover:text-white", dot: "bg-blue-500" },
 ] as const;
 
 function initials(name: string): string {
@@ -91,7 +76,7 @@ export function ApplicationGrid({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search applications..."
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+            className="h-12 w-full rounded-full border border-transparent bg-[#e9eef8] pl-10 pr-10 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
           />
           {query ? (
             <button
@@ -128,7 +113,8 @@ export function ApplicationGrid({
               <Link
                 key={application.id}
                 href={`/apps/${application.id}`}
-                className="group relative flex min-h-56 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_45px_-24px_rgba(15,23,42,0.35)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200"
+                style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+                className="material-enter group relative flex min-h-56 flex-col overflow-hidden rounded-[24px] border border-[#e0e5ef] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition duration-200 motion-safe:hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_45px_-24px_rgba(15,23,42,0.35)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-200"
               >
                 <div className="flex items-start justify-between gap-4">
                   <span

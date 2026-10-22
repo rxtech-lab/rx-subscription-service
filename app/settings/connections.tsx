@@ -1,8 +1,8 @@
 "use client";
 import { Plug } from "lucide-react";
 import { ProjectAccessSelector } from "@/components/console/project-access-selector";
-import { useState } from "react";
-import { FormDialog, useCloseFormDialog } from "@/components/ui/form-dialog";
+import { useId, useState } from "react";
+import { FormDialog, FormDialogActions, useCloseFormDialog } from "@/components/ui/form-dialog";
 import { Button, Card } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/toast";
 import { SCOPE_LABELS } from "@/lib/mcp/scopes";
@@ -24,11 +24,12 @@ function ConnectionForm({
   apps: App[];
   disconnect?: boolean;
 }) {
+  const formId = useId();
   const close = useCloseFormDialog();
   const [pending, setPending] = useState(false);
   return (
     <form
-      className="flex min-h-0 flex-col overflow-hidden"
+      id={formId}
       action={async (form) => {
         setPending(true);
         const status = toast.loading(
@@ -56,7 +57,7 @@ function ConnectionForm({
         }
       }}
     >
-      <div className="min-h-0 space-y-6 overflow-y-auto px-6 py-5">
+      <div className="space-y-6">
         <input
           type="hidden"
           name="operation"
@@ -91,11 +92,12 @@ function ConnectionForm({
           </>
         )}
       </div>
-      <footer className="flex shrink-0 justify-end border-t border-slate-100 bg-white px-6 py-4">
-        <Button disabled={pending} type="submit">
+      <FormDialogActions>
+        <Button type="button" variant="secondary" disabled={pending} onClick={close ?? undefined}>Cancel</Button>
+        <Button disabled={pending} type="submit" form={formId}>
           {disconnect ? "Disconnect client" : "Save access"}
         </Button>
-      </footer>
+      </FormDialogActions>
     </form>
   );
 }
@@ -135,7 +137,6 @@ export function Connections({
               triggerLabel="Edit access"
               size="lg"
               title={`Access for ${c.name}`}
-              contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
               icon="edit"
               triggerVariant="secondary"
             >
@@ -144,7 +145,6 @@ export function Connections({
             <FormDialog
               triggerLabel="Disconnect"
               title="Disconnect client"
-              contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
               icon="remove"
               triggerVariant="secondary"
               size="sm"

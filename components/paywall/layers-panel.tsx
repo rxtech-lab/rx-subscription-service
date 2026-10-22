@@ -141,8 +141,8 @@ export function LayersPanel({
               : undefined
           }
           className={cn(
-            "group flex h-8 cursor-default items-center gap-1 rounded-lg pr-1 text-xs transition",
-            selected ? "bg-blue-50 text-blue-800" : "text-slate-700 hover:bg-slate-100",
+            "group flex h-10 cursor-default items-center gap-1 rounded-full pr-1 text-xs transition",
+            selected ? "bg-[#d4e3ff] text-[#163e7b]" : "text-slate-700 hover:bg-[#edf2fc]",
             dropTarget === node.id && "ring-2 ring-inset ring-blue-400",
           )}
           style={{ paddingLeft: 6 + depth * 14 }}
@@ -251,8 +251,8 @@ export function LayersPanel({
   };
 
   return (
-    <div className="px-2 py-3">
-      <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+    <div className="px-3 py-5">
+      <p className="px-2 pb-2 text-xs font-medium uppercase tracking-widest text-slate-500">
         Layers
       </p>
       <ul role="tree" aria-label="Paywall layers" className="space-y-0.5">
@@ -381,7 +381,7 @@ function Palette({
         ref={ref}
         role="menu"
         aria-label="Add node"
-        className="fixed z-50 max-h-[calc(100vh-1rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10"
+        className="fixed z-50 max-h-[calc(100vh-1rem)] overflow-y-auto rounded-[20px] border border-[#e0e5ef] bg-[var(--md-surface)] p-2 shadow-xl shadow-slate-900/10"
         style={position}
       >
         <NodeTypeGrid onPick={onPick} />

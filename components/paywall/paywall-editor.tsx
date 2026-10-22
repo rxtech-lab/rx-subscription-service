@@ -667,19 +667,19 @@ export function PaywallEditor({
   );
 
   return (
-    <div className="flex h-screen flex-col bg-[#f7f8fc] text-slate-900">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[var(--md-surface-container)] text-slate-900">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 bg-background px-4 py-4 sm:px-6">
         <Link
           href="/paywalls"
           prefetch={false}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+          className="flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#dce7ff] px-4 text-sm font-medium text-[var(--md-primary)] transition hover:bg-[#d4e3ff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
           Paywalls
         </Link>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-950">{paywall.name}</p>
-          <p className="truncate text-[11px] text-slate-400">
+        <div className="min-w-0 flex-1 sm:flex-none sm:max-w-64">
+          <p className="truncate text-base font-semibold tracking-tight text-slate-950">{paywall.name}</p>
+          <p className="truncate text-xs text-slate-500">
             {publishedAt
               ? `Draft v${currentVersion} · Published v${publishedVersion} ${new Date(publishedAt).toLocaleString()}`
               : `Draft v${currentVersion} · Never published`}
@@ -697,8 +697,8 @@ export function PaywallEditor({
           ) : null}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex items-center rounded-lg border border-slate-200 bg-white">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full bg-[#e5ecfa] p-1">
             <Button
               type="button"
               variant="ghost"
@@ -784,10 +784,10 @@ export function PaywallEditor({
       </header>
 
       <div
-        className={cn("grid min-h-0 flex-1", resizing && "select-none")}
-        style={{ gridTemplateColumns: `16rem minmax(0, 1fr) ${panelWidth}px` }}
+        className={cn("grid min-h-0 flex-1 gap-3 overflow-x-auto p-3 pt-0", resizing && "select-none")}
+        style={{ gridTemplateColumns: `16rem minmax(20rem, 1fr) ${panelWidth}px` }}
       >
-        <aside className="min-h-0 overflow-y-auto border-r border-slate-200 bg-white">
+        <aside className="min-h-0 overflow-y-auto rounded-[24px] border border-[#e0e5ef] bg-[var(--md-surface)]">
           <LayersPanel
             spec={activeSpec}
             selectedId={effectiveSelectedId}
@@ -804,7 +804,7 @@ export function PaywallEditor({
         </aside>
 
         <section
-          className="min-h-0 bg-[radial-gradient(circle,rgba(148,163,184,0.35)_1px,transparent_1px)] [background-size:18px_18px]"
+          className="min-h-0 overflow-hidden rounded-[24px] border border-[#d5deef] bg-[#e4ebf7] bg-[radial-gradient(circle,rgba(65,95,145,0.18)_1px,transparent_1px)] [background-size:20px_20px]"
           aria-label="Preview"
         >
           <PhoneCanvas
@@ -827,7 +827,7 @@ export function PaywallEditor({
 
         <aside
           ref={panelRef}
-          className="relative flex min-h-0 flex-col border-l border-slate-200 bg-white"
+          className="relative flex min-h-0 min-w-0 flex-col rounded-[24px] border border-[#e0e5ef] bg-[var(--md-surface)]"
         >
           <div
             role="separator"
@@ -847,7 +847,7 @@ export function PaywallEditor({
               resizing ? "after:bg-blue-500" : "after:bg-transparent",
             )}
           />
-          <div className="flex shrink-0 border-b border-slate-200">
+          <div className="flex min-w-0 shrink-0 gap-2 overflow-x-auto rounded-t-[24px] border-b border-[#e0e5ef] bg-[#edf2fc] p-3">
             {PANEL_TABS.map((entry) => {
               const Icon = entry.icon;
               const active = tab === entry.id;
@@ -858,13 +858,13 @@ export function PaywallEditor({
                   onClick={() => setTab(entry.id)}
                   aria-pressed={active}
                   className={cn(
-                    "flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 py-2.5 text-xs font-semibold transition",
+                    "flex size-16 shrink-0 flex-col items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl p-2 text-[11px] font-medium transition duration-200 focus-visible:outline-2 focus-visible:outline-blue-600",
                     active
-                      ? "border-blue-600 text-blue-700"
-                      : "border-transparent text-slate-500 hover:text-slate-900",
+                      ? "bg-[#d4e3ff] text-[#163e7b]"
+                      : "text-slate-600 hover:bg-[#e0e7f5] hover:text-slate-900",
                   )}
                 >
-                  <Icon className="size-3.5" aria-hidden="true" />
+                  <Icon className="size-4 shrink-0" aria-hidden="true" />
                   {entry.label}
                 </button>
               );

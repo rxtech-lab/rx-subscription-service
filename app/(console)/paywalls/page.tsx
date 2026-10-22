@@ -59,9 +59,9 @@ export default async function PaywallsPage() {
   const paywalls = await listPaywalls();
 
   return (
-    <div className="min-h-full bg-[#f7f8fc]">
+    <div className="min-h-full bg-transparent">
 
-      <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
+      <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-4 sm:px-8 sm:pt-6">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">

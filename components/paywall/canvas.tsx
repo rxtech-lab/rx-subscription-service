@@ -48,11 +48,11 @@ function DevicePicker({
   const customized = customizedPresets?.has(selected) ?? false;
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/90 px-3 py-2 backdrop-blur">
+    <div className="flex shrink-0 items-center gap-3 border-b border-[#d5deef] bg-[#edf2fc] px-3 py-3">
       <div
         role="group"
         aria-label="Preview device"
-        className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm"
+        className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-full bg-[#e0e7f5] p-1"
       >
         {PAYWALL_DEVICE_PRESETS.map((preset) => {
           const Icon = DEVICE_ICONS[preset.id];
@@ -66,11 +66,11 @@ function DevicePicker({
               title={`${preset.label} · ${preset.width} × ${preset.height}`}
               onClick={() => onChange(preset.id)}
               className={cn(
-                "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition",
+                "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
                 active
-                  ? "bg-white text-slate-950 shadow-sm ring-1 ring-slate-200"
-                  : "text-slate-500 hover:bg-white/70 hover:text-slate-900",
+                  ? "bg-[#d4e3ff] text-[#163e7b]"
+                  : "text-slate-600 hover:bg-white/60 hover:text-slate-900",
               )}
             >
               <Icon className="size-3.5" aria-hidden="true" />

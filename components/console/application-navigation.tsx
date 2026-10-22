@@ -74,12 +74,12 @@ export function ApplicationNavigation({
                 href={href}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                  "flex items-center gap-3 rounded-full text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
                   orientation === "vertical"
                     ? "px-3 py-2.5"
                     : "px-3 py-2 whitespace-nowrap",
                   isActive
-                    ? "bg-blue-50 text-blue-700"
+                    ? "bg-[#d4e3ff] text-[#163e7b]"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
                 )}
               >
