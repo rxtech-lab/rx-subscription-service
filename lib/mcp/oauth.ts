@@ -78,6 +78,8 @@ export function validRedirect(value: string) {
     const u = new URL(value);
     if (u.hash || u.username || u.password) return false;
     return (
+      // RxCode uses this existing callback with a non-dotted app scheme.
+      value === "rxcode://mcp/oauth/callback" ||
       u.protocol === "https:" ||
       (u.protocol === "http:" &&
         ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)) ||
