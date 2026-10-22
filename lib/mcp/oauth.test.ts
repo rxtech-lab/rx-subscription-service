@@ -38,6 +38,7 @@ import {
 } from "./oauth";
 import { toolCatalog, callTool } from "./tools";
 import { POST } from "@/app/api/mcp/route";
+import { POST as register } from "@/app/api/mcp/oauth/register/route";
 import { updateConnection } from "@/app/settings/actions";
 const pg = new PGlite();
 const database = drizzle(pg, { schema });
@@ -91,6 +92,40 @@ afterAll(async () => {
   await pg.close();
 });
 describe("OAuth security", () => {
+  it("registers RxCode's callback and completes a PKCE exchange", async () => {
+    const redirect = "rxcode://mcp/oauth/callback";
+    const response = await register(new Request(`${resource()}/oauth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_name: "RxCode",
+        redirect_uris: [redirect],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    }));
+    expect(response.status).toBe(201);
+    const client = await response.json();
+    expect(client.redirect_uris).toEqual([redirect]);
+    params.set("client_id", client.client_id);
+    params.set("redirect_uri", redirect);
+    const { tokens } = await connect();
+    expect(await authenticate(tokens.access_token)).not.toBeNull();
+  });
+  it.each([
+    "rxcode://other/oauth/callback",
+    "rxcode://mcp/other",
+    "rxcode://mcp/oauth/callback?next=evil",
+    "rxcode://mcp/oauth/callback#fragment",
+    "rxcode://user:password@mcp/oauth/callback",
+    "otherapp://mcp/oauth/callback",
+  ])("rejects unsupported custom callback %s", async (uri) => {
+    expect(validRedirect(uri)).toBe(false);
+    await expect(registerClient({ redirect_uris: [uri] })).rejects.toMatchObject({
+      code: "invalid_client_metadata",
+    });
+  });
   it("rejects unsafe redirects and encrypts delegated tokens with authentication", () => {
     for (const uri of [
       "javascript:alert(1)",
