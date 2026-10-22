@@ -1,4 +1,5 @@
 "use client";
+import { Plug } from "lucide-react";
 import { ProjectAccessSelector } from "@/components/console/project-access-selector";
 import { useState } from "react";
 import { FormDialog, useCloseFormDialog } from "@/components/ui/form-dialog";
@@ -27,7 +28,7 @@ function ConnectionForm({
   const [pending, setPending] = useState(false);
   return (
     <form
-      className="space-y-6"
+      className="flex min-h-0 flex-col overflow-hidden"
       action={async (form) => {
         setPending(true);
         const status = toast.loading(
@@ -55,42 +56,46 @@ function ConnectionForm({
         }
       }}
     >
-      <input
-        type="hidden"
-        name="operation"
-        value={disconnect ? "disconnect" : "update"}
-      />
-      {disconnect ? (
-        <p>
-          Disconnect {connection.name}? Its access and refresh tokens will stop
-          working immediately.
-        </p>
-      ) : (
-        <>
-          <fieldset disabled={pending} className="space-y-3">
-            <legend className="mb-3 font-semibold">Scopes</legend>
-            {Object.entries(SCOPE_LABELS).map(([scope, label]) => (
-              <label key={scope} className="flex gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  name="scopes"
-                  value={scope}
-                  defaultChecked={connection.scopes.includes(scope)}
-                />
-                {label}
-              </label>
-            ))}
-          </fieldset>
-          <ProjectAccessSelector
-            apps={apps}
-            defaultSelectedIds={connection.applicationIds}
-            disabled={pending}
-          />
-        </>
-      )}
-      <Button disabled={pending} type="submit">
-        {disconnect ? "Disconnect client" : "Save access"}
-      </Button>
+      <div className="min-h-0 space-y-6 overflow-y-auto px-6 py-5">
+        <input
+          type="hidden"
+          name="operation"
+          value={disconnect ? "disconnect" : "update"}
+        />
+        {disconnect ? (
+          <p>
+            Disconnect {connection.name}? Its access and refresh tokens will stop
+            working immediately.
+          </p>
+        ) : (
+          <>
+            <fieldset disabled={pending} className="space-y-3">
+              <legend className="mb-3 font-semibold">Scopes</legend>
+              {Object.entries(SCOPE_LABELS).map(([scope, label]) => (
+                <label key={scope} className="flex gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    name="scopes"
+                    value={scope}
+                    defaultChecked={connection.scopes.includes(scope)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+            <ProjectAccessSelector
+              apps={apps}
+              defaultSelectedIds={connection.applicationIds}
+              disabled={pending}
+            />
+          </>
+        )}
+      </div>
+      <footer className="flex shrink-0 justify-end border-t border-slate-100 bg-white px-6 py-4">
+        <Button disabled={pending} type="submit">
+          {disconnect ? "Disconnect client" : "Save access"}
+        </Button>
+      </footer>
     </form>
   );
 }
@@ -103,7 +108,8 @@ export function Connections({
 }) {
   if (!connections.length)
     return (
-      <Card className="p-8">
+      <Card className="flex flex-col items-center px-6 py-12 text-center">
+        <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 ring-1 ring-slate-100"><Plug className="size-5" aria-hidden="true" /></span>
         <h2 className="font-semibold">No connected clients</h2>
         <p className="mt-2 text-sm text-slate-500">
           Add the MCP URL in your client and sign in to connect.
@@ -124,11 +130,12 @@ export function Connections({
               Expires {c.expiresAt.slice(0, 10)}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <FormDialog
               triggerLabel="Edit access"
               size="lg"
               title={`Access for ${c.name}`}
+              contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
               icon="edit"
               triggerVariant="secondary"
             >
@@ -137,6 +144,7 @@ export function Connections({
             <FormDialog
               triggerLabel="Disconnect"
               title="Disconnect client"
+              contentClassName="flex min-h-0 flex-col overflow-hidden p-0"
               icon="remove"
               triggerVariant="secondary"
               size="sm"

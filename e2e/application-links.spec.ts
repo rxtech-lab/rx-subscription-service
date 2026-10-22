@@ -95,6 +95,7 @@ test("links in settings, shares live API data and writes, and restores local dat
   await expect(sourceCard).not.toContainText("Linked to");
 
   await page.goto(`/apps/${SOURCE}/settings`);
+  await page.getByRole("button", { name: "Edit application link" }).click();
   const picker = page.getByLabel("Link to another app", { exact: false });
   await expect(picker).toHaveValue("");
   await expect(picker.locator(`option[value="${SOURCE}"]`)).toHaveCount(0);
@@ -102,9 +103,11 @@ test("links in settings, shares live API data and writes, and restores local dat
   await page.getByRole("button", { name: "Save application link" }).click();
   await expect(page.getByRole("link", { name: "Manage shared subscriptions in Default Plan App" })).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Edit application link" }).click();
   await expect(picker).toHaveValue(TARGET);
   await expect(page.getByRole("link", { name: "Manage shared subscriptions in Default Plan App" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("linked-application-settings.png"), fullPage: true, caret: "initial" });
+  if (await page.getByRole("dialog").isVisible()) await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("link", { name: "All applications", exact: true }).last().click();
   await expect(sourceCard).toContainText("Linked to Default Plan App");
   await expect(sourceCard).toContainText("Shared subscriptions and paywall");
@@ -181,10 +184,12 @@ test("links in settings, shares live API data and writes, and restores local dat
 
   // A second app may link through the first; the target picker prevents cycles.
   await page.goto(`/apps/${SECOND}/settings`);
+  await page.getByRole("button", { name: "Edit application link" }).click();
   await picker.selectOption(SOURCE);
   await page.getByRole("button", { name: "Save application link" }).click();
   await expect(page.getByRole("link", { name: "Manage shared subscriptions in Default Plan App" })).toBeVisible();
   expect((await body(await request.get("/api/v1/entitlements", { headers: headers(chainKey), params }))).user.id).toBe(shared.user.id);
+  if (await page.getByRole("dialog").isVisible()) await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("link", { name: "All applications", exact: true }).last().click();
   const chainCard = page.getByRole("link").filter({
     has: page.getByRole("heading", { name: "Linked web app", exact: true }),
@@ -193,6 +198,7 @@ test("links in settings, shares live API data and writes, and restores local dat
   await expect(chainCard).toContainText("Uses Default Plan App's subscriptions and paywall");
   await expect(targetCard).toContainText("Shared with Linked mobile app, Linked web app");
   await page.goto(`/apps/${TARGET}/settings`);
+  await page.getByRole("button", { name: "Edit application link" }).click();
   await expect(picker.locator(`option[value="${SOURCE}"]`)).toHaveCount(0);
   await expect(picker.locator(`option[value="${SECOND}"]`)).toHaveCount(0);
 
@@ -207,11 +213,14 @@ test("links in settings, shares live API data and writes, and restores local dat
   }
 
   await page.goto(`/apps/${SOURCE}/settings`);
+  await page.getByRole("button", { name: "Edit application link" }).click();
   await picker.selectOption("");
   await page.getByRole("button", { name: "Save application link" }).click();
   await expect(page.getByRole("link", { name: "Manage shared subscriptions in Default Plan App" })).not.toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Edit application link" }).click();
   await expect(picker).toHaveValue("");
+  if (await page.getByRole("dialog").isVisible()) await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("link", { name: "All applications", exact: true }).last().click();
   await expect(sourceCard).not.toContainText("Linked to");
   await expect(sourceCard).toContainText("Shared with Linked web app");
@@ -238,6 +247,8 @@ test("concurrent reciprocal links cannot create a cycle", async ({ browser }) =>
     const left = await context.newPage();
     const right = await context.newPage();
     await Promise.all([left.goto(`/apps/${SOURCE}/settings`), right.goto(`/apps/${SECOND}/settings`)]);
+    await left.getByRole("button", { name: "Edit application link" }).click();
+    await right.getByRole("button", { name: "Edit application link" }).click();
     await left.getByLabel("Link to another app", { exact: false }).selectOption(SECOND);
     await right.getByLabel("Link to another app", { exact: false }).selectOption(SOURCE);
     await Promise.all([

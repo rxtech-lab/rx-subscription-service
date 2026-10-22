@@ -15,6 +15,7 @@ import { ApiKeyKindFields } from "@/components/forms/api-key-fields";
 import { SearchField } from "@/components/forms/search-field";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
+  Badge,
   Card,
   CardHeader,
   EmptyState,
@@ -86,7 +87,7 @@ function SettingsTabs({
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
                   isActive
-                    ? "bg-slate-900 text-white"
+                    ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
                 )}
               >
@@ -144,7 +145,11 @@ export default async function SettingsPage({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Settings</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-500">Manage your application, integrations, and access.</p>
+      </header>
       <SettingsTabs appId={appId} activeTab={activeTab} />
 
       {activeTab === "general" ? (
@@ -154,13 +159,13 @@ export default async function SettingsPage({
           description="Mirrored from rxlab-auth. Edit the name and icon there."
         />
         <dl className="space-y-2 px-5 py-4 text-sm">
-          <div className="flex gap-3">
+          <div className="grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
             <dt className="w-32 text-neutral-500">Name</dt>
             <dd className="text-neutral-900">{application.name}</dd>
           </div>
-          <div className="flex gap-3">
+          <div className="grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
             <dt className="w-32 text-neutral-500">OAuth client id</dt>
-            <dd className="font-mono text-xs text-neutral-900">{application.id}</dd>
+            <dd className="break-all font-mono text-xs text-slate-900">{application.id}</dd>
           </div>
         </dl>
         </Card>
@@ -172,30 +177,12 @@ export default async function SettingsPage({
             title="Shared subscriptions"
             description="Link this application to another application to use its plans, usage, top-ups, users, subscriptions, balances, and paywall."
           />
-          <ActionForm
-            key={applicationLink.linkedApplicationId ?? "independent"}
-            action={updateApplicationLinkAction}
-            submitLabel="Save application link"
-            pendingLabel="Saving application link…"
-            className="space-y-4 px-5 py-4"
-          >
-            <input type="hidden" name="applicationId" value={appId} />
-            <Field label="Link to another app" hint="Choose an application you manage. All app API reads and writes will use its shared data.">
-              <Select name="linkedApplicationId" defaultValue={applicationLink.linkedApplicationId ?? ""}>
-                <option value="">None — use this application&apos;s own data</option>
-                {applicationLink.linkedApplicationId && !applicationLink.options.some((option) => option.id === applicationLink.linkedApplicationId) ? (
-                  <option value={applicationLink.linkedApplicationId} disabled>Current link unavailable — choose another app or unlink</option>
-                ) : null}
-                {applicationLink.options.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}{option.name !== option.effectiveName ? ` (uses ${option.effectiveName})` : ""} — {option.id}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <p className="text-xs leading-5 text-slate-500">
-              Keep using this application&apos;s API keys. Each key keeps its environment and access restrictions.
-              Linking does not copy or merge existing data. Unlink to use this application&apos;s own data again.
+          <div className="space-y-4 px-5 py-5">
+            <Badge tone={applicationLink.linkedApplicationId ? "blue" : "neutral"}>
+              {applicationLink.linkedApplicationId ? "Linked application" : "Independent application"}
+            </Badge>
+            <p className="text-sm leading-6 text-slate-500">
+              {applicationLink.linkedApplicationId ? "Subscription data is shared with a linked application." : "This application manages its own subscriptions and balances."}
             </p>
             {applicationLink.effectiveApplication ? (
               <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-950">
@@ -211,7 +198,35 @@ export default async function SettingsPage({
             ) : applicationLink.error ? (
               <p className="text-sm text-rose-600">{applicationLink.error} Choose another app or unlink.</p>
             ) : null}
-          </ActionForm>
+            <FormDialog triggerLabel="Edit application link" title="Shared subscriptions" description="Choose which application's subscription data to use." icon="edit" triggerVariant="secondary">
+                <ActionForm
+                  key={applicationLink.linkedApplicationId ?? "independent"}
+                  action={updateApplicationLinkAction}
+                  submitLabel="Save application link"
+                  pendingLabel="Saving application link…"
+                  className="space-y-4"
+                >
+                  <input type="hidden" name="applicationId" value={appId} />
+                  <Field label="Link to another app" hint="Choose an application you manage. All app API reads and writes will use its shared data.">
+                    <Select name="linkedApplicationId" defaultValue={applicationLink.linkedApplicationId ?? ""}>
+                      <option value="">None — use this application&apos;s own data</option>
+                      {applicationLink.linkedApplicationId && !applicationLink.options.some((option) => option.id === applicationLink.linkedApplicationId) ? (
+                        <option value={applicationLink.linkedApplicationId} disabled>Current link unavailable — choose another app or unlink</option>
+                      ) : null}
+                      {applicationLink.options.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name}{option.name !== option.effectiveName ? ` (uses ${option.effectiveName})` : ""} — {option.id}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <p className="text-xs leading-5 text-slate-500">
+                    Keep using this application&apos;s API keys. Each key keeps its environment and access restrictions.
+                    Linking does not copy or merge existing data. Unlink to use this application&apos;s own data again.
+                  </p>
+                </ActionForm>
+            </FormDialog>
+          </div>
         </Card>
       ) : null}
 
@@ -221,30 +236,10 @@ export default async function SettingsPage({
             title="Test automation"
             description="Run regression suites after subscription configuration changes from the console or assistant."
           />
-          <ActionForm
-            action={updateTestAutomationSettingsAction}
-            submitLabel="Save automation"
-            pendingLabel="Saving test automation…"
-            className="px-5 py-4"
-          >
-            <input type="hidden" name="applicationId" value={appId} />
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-              <input
-                type="checkbox"
-                name="runTestsOnChange"
-                defaultChecked={testAutomation.runTestsOnChange}
-                className="mt-0.5 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span>
-                <span className="block text-sm font-semibold text-slate-900">
-                  Run all test suites after configuration changes
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-slate-500">
-                  Applies to plans, top-ups, access, units, usage items, and coupons.
-                  Runs use disposable test users and continue in the background.
-                </span>
-              </span>
-            </label>
+          <div className="space-y-4 px-5 py-5">
+            <Badge tone={testAutomation.runTestsOnChange ? "green" : "neutral"}>
+              {testAutomation.runTestsOnChange ? "Automatic runs enabled" : "Manual runs only"}
+            </Badge>
             <p className="mt-3 text-xs text-slate-500">
               {testAutomation.suiteCount === 0 ? (
                 <>
@@ -260,8 +255,7 @@ export default async function SettingsPage({
               ) : (
                 <>
                   {testAutomation.suiteCount.toLocaleString("en-US")} test{" "}
-                  {testAutomation.suiteCount === 1 ? "suite" : "suites"} will run
-                  after each change. Manage them in{" "}
+                  {testAutomation.suiteCount === 1 ? "suite is" : "suites are"} available. Manage them in{" "}
                   <Link
                     href={`/apps/${appId}/test/cases`}
                     className="font-semibold text-blue-700 hover:underline"
@@ -272,7 +266,34 @@ export default async function SettingsPage({
                 </>
               )}
             </p>
-          </ActionForm>
+            <FormDialog triggerLabel="Edit automation" title="Test automation" description="Choose when regression suites run." icon="edit" triggerVariant="secondary">
+                <ActionForm
+                  action={updateTestAutomationSettingsAction}
+                  submitLabel="Save automation"
+                  pendingLabel="Saving test automation…"
+                  className="space-y-4"
+                >
+                  <input type="hidden" name="applicationId" value={appId} />
+                  <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <input
+                      type="checkbox"
+                      name="runTestsOnChange"
+                      defaultChecked={testAutomation.runTestsOnChange}
+                      className="mt-0.5 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">
+                        Run all test suites after configuration changes
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">
+                        Applies to plans, top-ups, access, units, usage items, and coupons.
+                        Runs use disposable test users and continue in the background.
+                      </span>
+                    </span>
+                  </label>
+                </ActionForm>
+            </FormDialog>
+          </div>
         </Card>
       ) : null}
 
@@ -282,48 +303,11 @@ export default async function SettingsPage({
             title="App Store"
             description="Connect StoreKit 2 purchases and App Store Server Notifications V2 to this application."
           />
-          <ActionForm
-            action={updateAppleIntegrationAction}
-            submitLabel="Save App Store settings"
-            pendingLabel="Saving App Store settings…"
-            className="space-y-4 px-5 py-4"
-          >
-            <input type="hidden" name="applicationId" value={appId} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Bundle ID">
-                <Input
-                  name="bundleId"
-                  defaultValue={appleIntegration?.bundleId ?? ""}
-                  placeholder="com.rxlab.rxargo"
-                  required
-                />
-              </Field>
-              <Field label="Apple app ID" hint="The numeric ID from App Store Connect.">
-                <Input
-                  name="appAppleId"
-                  type="number"
-                  min="1"
-                  defaultValue={appleIntegration?.appAppleId ?? undefined}
-                  required
-                />
-              </Field>
+          <div className="space-y-5 px-5 py-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge tone={appleIntegration?.enabled ? "green" : "neutral"}>{appleIntegration?.enabled ? "Purchases enabled" : "Purchases disabled"}</Badge>
+              <span className="break-all text-sm text-slate-600">{appleIntegration?.bundleId || "No app connected"}</span>
             </div>
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-              <input
-                type="checkbox"
-                name="enabled"
-                defaultChecked={appleIntegration?.enabled ?? false}
-                className="mt-0.5 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span>
-                <span className="block text-sm font-semibold text-slate-900">
-                  Enable App Store purchases
-                </span>
-                <span className="mt-1 block text-xs text-slate-500">
-                  Enable only after credentials, products, and notifications are ready.
-                </span>
-              </span>
-            </label>
             <dl className="space-y-3 rounded-xl border border-slate-200 p-4 text-xs">
               <div className="flex flex-wrap justify-between gap-2">
                 <dt className="text-slate-500">Shared credentials</dt>
@@ -342,7 +326,52 @@ export default async function SettingsPage({
                 <dd className="break-all font-mono text-slate-900">{notificationUrl}</dd>
               </div>
             </dl>
-          </ActionForm>
+            <FormDialog triggerLabel="Edit App Store settings" title="App Store settings" description="Connect your app and enable purchases when the integration is ready." icon="edit" triggerVariant="secondary">
+                <ActionForm
+                  action={updateAppleIntegrationAction}
+                  submitLabel="Save App Store settings"
+                  pendingLabel="Saving App Store settings…"
+                  className="space-y-4"
+                >
+                  <input type="hidden" name="applicationId" value={appId} />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Bundle ID">
+                      <Input
+                        name="bundleId"
+                        defaultValue={appleIntegration?.bundleId ?? ""}
+                        placeholder="com.rxlab.rxargo"
+                        required
+                      />
+                    </Field>
+                    <Field label="Apple app ID" hint="The numeric ID from App Store Connect.">
+                      <Input
+                        name="appAppleId"
+                        type="number"
+                        min="1"
+                        defaultValue={appleIntegration?.appAppleId ?? undefined}
+                        required
+                      />
+                    </Field>
+                  </div>
+                  <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                    <input
+                      type="checkbox"
+                      name="enabled"
+                      defaultChecked={appleIntegration?.enabled ?? false}
+                      className="mt-0.5 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">
+                        Enable App Store purchases
+                      </span>
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Enable only after credentials, products, and notifications are ready.
+                      </span>
+                    </span>
+                  </label>
+                </ActionForm>
+            </FormDialog>
+          </div>
         </Card>
       ) : null}
 
@@ -352,14 +381,10 @@ export default async function SettingsPage({
         <CardHeader
           title="API keys"
           description="Environment-scoped credentials for /api/v1. Sandbox keys keep users, usage, balances, purchases, and Stripe activity isolated from production."
-          action={
-            <SearchField
-              label="Search API keys"
-              placeholder="Search name, environment, or prefix"
-              className="w-56"
-            />
-          }
         />
+        <div className="border-b border-slate-100 px-5 py-4">
+          <SearchField label="Search API keys" placeholder="Search name, environment, or prefix" className="w-full sm:max-w-sm" />
+        </div>
         {apiKeyData.keys.length === 0 ? (
           <EmptyState
             title={query ? "No matching API keys" : "No API keys"}
@@ -449,7 +474,7 @@ export default async function SettingsPage({
                   {apiKeyData.pagination.totalPages} ·{" "}
                   {apiKeyData.pagination.totalCount.toLocaleString("en-US")} keys
                 </span>
-                <div className="flex gap-3">
+                <div className="grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
                   {apiKeyData.pagination.page > 1 ? (
                     <Link
                       href={pageHref(apiKeyData.pagination.page - 1)}
@@ -503,10 +528,11 @@ export default async function SettingsPage({
           </Card>
 
           <Card>
-            <CardHeader
-              title="Using the API"
-              description="Send the key as X-Api-Key. The key selects Xcode, sandbox, or production, and its kind decides what it may do."
-            />
+            <details className="group">
+              <summary className="cursor-pointer rounded-2xl px-5 py-4 text-sm font-semibold text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                Using the API
+                <span className="mt-1 block text-xs font-normal leading-5 text-slate-500">View authentication examples for secret and publishable keys.</span>
+              </summary>
             <pre className="overflow-x-auto px-5 py-4 text-xs text-neutral-700">
               {`# --- Secret key, from your backend -----------------------------
 # It names the user it acts for, and reaches every endpoint.
@@ -535,6 +561,7 @@ curl -X POST "$BASE/api/v1/balances" \\
   -d '{"unit":"credits","amount":1000,"operation":"credit","idempotencyKey":"x"}'
 # => 403 insufficient_key_scope`}
             </pre>
+            </details>
           </Card>
         </>
       ) : null}

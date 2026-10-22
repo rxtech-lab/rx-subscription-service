@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Bot, ChevronRight } from "lucide-react";
@@ -81,9 +80,7 @@ export default async function ApplicationLayout({
             </div>
 
             <div className="overflow-x-auto border-t border-slate-100 px-4 py-2 xl:hidden">
-              <Suspense fallback={<div className="h-9" />}>
-                <ApplicationNavigation appId={appId} orientation="horizontal" />
-              </Suspense>
+              <ApplicationNavigation appId={appId} orientation="horizontal" />
             </div>
           </header>
 
@@ -93,9 +90,7 @@ export default async function ApplicationLayout({
                 Workspace
               </p>
               <div className="mt-3">
-                <Suspense fallback={<div className="h-96" />}>
-                  <ApplicationNavigation appId={appId} />
-                </Suspense>
+                <ApplicationNavigation appId={appId} />
               </div>
 
               <div className="mt-auto rounded-2xl border border-blue-100 bg-blue-50/70 p-4">

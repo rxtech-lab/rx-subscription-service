@@ -45,6 +45,7 @@ export function FormDialog({
   size = "md",
   triggerVariant = "primary",
   triggerSize = "md",
+  contentClassName,
 }: {
   triggerLabel: string;
   title: string;
@@ -59,6 +60,7 @@ export function FormDialog({
     | "menu"
     | "menuDanger";
   triggerSize?: "sm" | "md";
+  contentClassName?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -105,7 +107,7 @@ export function FormDialog({
           {open ? (
             <FormDialogContext.Provider value={closeDialog}>
               <div className="flex max-h-[min(86vh,760px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                <header className="flex items-start justify-between gap-5 border-b border-slate-100 px-6 py-5">
+                <header className="flex shrink-0 items-start justify-between gap-5 border-b border-slate-100 px-6 py-5">
                   <div>
                     <h2
                       id={titleId}
@@ -131,7 +133,7 @@ export function FormDialog({
                     <X className="size-4" aria-hidden="true" />
                   </button>
                 </header>
-                <div className="overflow-y-auto px-6 py-5">{children}</div>
+                <div className={cn("overflow-y-auto px-6 py-5", contentClassName)}>{children}</div>
               </div>
             </FormDialogContext.Provider>
           ) : null}

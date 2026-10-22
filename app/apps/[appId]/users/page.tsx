@@ -1,3 +1,5 @@
+import { ResetUsageDialog } from "@/components/console/reset-usage-dialog";
+import { listUsageItems } from "@/lib/subscription/usage-items";
 import Link from "next/link";
 import { createAppUserAction } from "@/app/actions/users";
 import { ActionForm } from "@/components/forms/action-form";
@@ -59,10 +61,11 @@ export default async function UsersPage({
   const consoleUser = await requireConsoleUser();
 
   const requestedPage = Number(Array.isArray(page) ? page[0] : page) || 1;
-  const [{ users, pagination }, appUserOptions, directory] = await Promise.all([
+  const [{ users, pagination }, appUserOptions, directory, usageItems] = await Promise.all([
     listAppUsers(appId, requestedPage),
     listAppUserOptions(appId),
     loadRxLabUsers(consoleUser.accessToken),
+    listUsageItems(appId),
   ]);
   const existingRxLabUserIds = new Set(
     appUserOptions.map((user) => user.rxlabUserId),
@@ -83,7 +86,13 @@ export default async function UsersPage({
         title="Users"
         description="One record per rxlab identity per application, each with its own balances, level, and usage."
         action={
-          availableUsers.length > 0 ? (
+          <div className="flex flex-wrap items-start justify-end gap-2">
+            <ResetUsageDialog
+              applicationId={appId}
+              scope="all"
+              items={usageItems.map((item) => ({ id: item.id, name: item.name }))}
+            />
+          {availableUsers.length > 0 ? (
             <div className="shrink-0 whitespace-nowrap">
               <FormDialog
                 triggerLabel="Add user"
@@ -123,7 +132,8 @@ export default async function UsersPage({
                 {addUserUnavailableReason}
               </p>
             </div>
-          )
+          )}
+          </div>
         }
       />
       {users.length === 0 ? (

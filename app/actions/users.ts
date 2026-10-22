@@ -22,6 +22,8 @@ import {
   cancelSubscription,
   syncInternalDefaultSubscriptions,
 } from "@/lib/subscription/subscriptions";
+import { revalidatePath } from "next/cache";
+import { resetUserUsage } from "@/lib/subscription/reset-usage";
 import { resetUsageCounter } from "@/lib/subscription/usage";
 import {
   checkbox,
@@ -201,4 +203,31 @@ export async function deleteApiKeyAction(formData: FormData): Promise<void> {
     await deleteApiKey({ applicationId, keyId: text(formData, "keyId"), actor });
   });
   revalidateApp(applicationId, "settings");
+}
+
+export async function resetUserUsageAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const applicationId = text(formData, "applicationId");
+  try {
+    const environment = text(formData, "environment");
+    const userScope = text(formData, "userScope");
+    const usageScope = text(formData, "usageScope");
+    if (!isApiEnvironment(environment) ||
+        (userScope !== "user" && userScope !== "all") ||
+        (usageScope !== "item" && usageScope !== "all") ||
+        !checkbox(formData, "confirmed")) {
+      throw new ValidationError("Choose the reset scope and confirm the reset");
+    }
+    const count = await withApplication(applicationId, ({ actor }) => resetUserUsage({
+      applicationId, environment, userScope, usageScope,
+      appUserId: text(formData, "appUserId"),
+      usageItemId: text(formData, "usageItemId"), actor,
+    }));
+    revalidatePath(`/apps/${applicationId}/users`, "layout");
+    return { success: `Usage reset. ${count} counter(s) reset.` };
+  } catch (error) {
+    return toActionState(error);
+  }
 }
