@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
-import { BRAND_MARK_DATA_URI } from "@/lib/brand";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export const alt = "RxLab Subscriptions — plans, entitlements, usage, and billing";
 export const size = { width: 1200, height: 630 };
@@ -7,7 +8,9 @@ export const contentType = "image/png";
 
 const HIGHLIGHTS = ["Plans", "Entitlements", "Usage", "Billing"];
 
-export default function OpengraphImage() {
+export default async function OpengraphImage() {
+  const mark = await readFile(join(process.cwd(), "public/brand/subscriptions.png"));
+  const markDataUri = `data:image/png;base64,${mark.toString("base64")}`;
   return new ImageResponse(
     (
       <div
@@ -49,7 +52,7 @@ export default function OpengraphImage() {
         />
 
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <img src={BRAND_MARK_DATA_URI} width={84} height={84} alt="" />
+          <img src={markDataUri} style={{ borderRadius: 20 }} width={84} height={84} alt="" />
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span style={{ fontSize: 34, fontWeight: 600, letterSpacing: -0.5 }}>
               RxLab

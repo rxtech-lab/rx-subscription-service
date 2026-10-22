@@ -18,7 +18,7 @@ export default function Loading() {
           <div className="space-y-4 px-5 py-5">
             <Skeleton className="h-6 w-36 rounded-full" />
             <Skeleton className="h-4 w-64 max-w-full" />
-            <Skeleton className="h-10 w-44 rounded-lg" />
+            <Skeleton className="h-10 w-44 rounded-full" />
           </div>
         </Card>
       ))}

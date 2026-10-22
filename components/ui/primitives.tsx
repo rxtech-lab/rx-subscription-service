@@ -6,13 +6,13 @@ const buttonVariants = cva(
   // `whitespace-nowrap shrink-0`: every size here is a fixed height, so a label
   // that wraps does not grow the button — it spills out of it. A long error
   // message beside the buttons in a dialog footer was enough to do that.
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold shadow-sm transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition duration-200 active:scale-[0.98] motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        primary: "bg-blue-600 text-white hover:bg-blue-700",
+        primary: "bg-[var(--md-primary)] text-white hover:bg-[#174a9c] hover:shadow-md",
         secondary:
-          "border border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50",
+          "border border-[#bec6d8] bg-transparent text-[var(--md-primary)] hover:bg-[#e8edfa]",
         ghost: "shadow-none text-slate-600 hover:bg-slate-100 hover:text-slate-950",
         danger: "bg-rose-600 text-white hover:bg-rose-700",
         menu: "w-full justify-start shadow-none text-slate-700 hover:bg-slate-100 hover:text-slate-950",
@@ -44,7 +44,7 @@ export function Card({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]",
+        "rounded-[24px] border border-[#e0e5ef] bg-[var(--md-surface)] shadow-[0_2px_6px_rgba(24,50,90,0.03)]",
         className,
       )}
       {...props}
@@ -78,7 +78,7 @@ export function Input({ className, ...props }: ComponentProps<"input">) {
   return (
     <input
       className={cn(
-        "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
+        "h-10 w-full rounded-xl border border-[#bec6d8] bg-[var(--md-surface)] px-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
         className,
       )}
       {...props}
@@ -90,7 +90,7 @@ export function Select({ className, ...props }: ComponentProps<"select">) {
   return (
     <select
       className={cn(
-        "h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
+        "h-10 w-full rounded-xl border border-[#bec6d8] bg-[var(--md-surface)] px-3 text-sm text-slate-900 shadow-sm outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
         className,
       )}
       {...props}
@@ -102,7 +102,7 @@ export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
   return (
     <textarea
       className={cn(
-        "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
+        "w-full rounded-xl border border-[#bec6d8] bg-[var(--md-surface)] px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
         className,
       )}
       {...props}

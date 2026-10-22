@@ -3,14 +3,14 @@
 import { Check, Copy, KeyRound } from "lucide-react";
 import {
   useActionState,
+  useId,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/primitives";
-import { useCloseFormDialog } from "@/components/ui/form-dialog";
+import { FormDialogActions, useCloseFormDialog } from "@/components/ui/form-dialog";
 import { FormPendingToast, withActionToast } from "@/components/ui/toast";
 import type { ActionState } from "@/app/actions/shared";
 
@@ -45,14 +45,17 @@ export async function copyText(text: string) {
 
 function SubmitButton({
   label,
+  form,
+  pending,
   pendingLabel = "Saving…",
 }: {
   label: string;
+  form?: string;
+  pending: boolean;
   pendingLabel?: string;
 }) {
-  const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="sm" disabled={pending}>
+    <Button type="submit" form={form} size="sm" disabled={pending}>
       {pending ? pendingLabel : label}
     </Button>
   );
@@ -88,8 +91,9 @@ export function ActionForm({
       }),
     [action, pendingLabel],
   );
-  const [state, formAction] = useActionState(toastedAction, {});
+  const [state, formAction, pending] = useActionState(toastedAction, {});
   const closeDialog = useCloseFormDialog();
+  const formId = useId();
 
   useEffect(() => {
     if (state.success) closeDialog?.();
@@ -97,12 +101,13 @@ export function ActionForm({
 
   return (
     <form
+      id={formId}
       action={formAction}
       className={className}
       autoComplete={autoComplete}
     >
       {children}
-      <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+      <FormDialogActions>
         {state.error ? (
           <p className="mr-auto min-w-0 text-sm text-rose-600">
             {state.error}
@@ -113,8 +118,8 @@ export function ActionForm({
             Cancel
           </Button>
         ) : null}
-        <SubmitButton label={submitLabel} pendingLabel={pendingLabel} />
-      </div>
+        <SubmitButton pending={pending} form={formId} label={submitLabel} pendingLabel={pendingLabel} />
+      </FormDialogActions>
     </form>
   );
 }
@@ -138,8 +143,9 @@ export function ApiKeyForm({
       }),
     [action],
   );
-  const [state, formAction] = useActionState(toastedAction, {});
+  const [state, formAction, pending] = useActionState(toastedAction, {});
   const closeDialog = useCloseFormDialog();
+  const formId = useId();
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
 
   useEffect(() => {
@@ -213,19 +219,19 @@ export function ApiKeyForm({
           </p>
         </div>
 
-        <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
+        <FormDialogActions>
           <Button type="button" size="sm" onClick={closeDialog ?? undefined}>
             Done
           </Button>
-        </div>
+        </FormDialogActions>
       </div>
     );
   }
 
   return (
-    <form action={formAction}>
+    <form id={formId} action={formAction}>
       {children}
-      <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+      <FormDialogActions>
         {state.error ? (
           <p className="mr-auto min-w-0 text-sm text-rose-600">
             {state.error}
@@ -236,8 +242,8 @@ export function ApiKeyForm({
             {state.secret ? "Done" : "Cancel"}
           </Button>
         ) : null}
-        <SubmitButton label="Create key" />
-      </div>
+        <SubmitButton pending={pending} form={formId} label="Create key" />
+      </FormDialogActions>
     </form>
   );
 }

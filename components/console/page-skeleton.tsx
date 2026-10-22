@@ -27,9 +27,9 @@ export function ConsoleTableSkeleton({
     <SkeletonScreen label="Loading" className="space-y-6">
       <Card>
         <HeaderSkeleton />
-        <div className="flex gap-5 border-b border-slate-200 bg-slate-50/80 px-5 py-3">
+        <div className="flex gap-5 border-b border-slate-200 bg-[#edf2fc] px-5 py-3">
           {Array.from({ length: columns }, (_, column) => (
-            <Skeleton key={column} className="h-3 flex-1 bg-slate-200" />
+            <Skeleton key={column} className="h-3 flex-1 bg-[#d5dff0]" />
           ))}
         </div>
         {Array.from({ length: rows }, (_, row) => (
@@ -50,7 +50,7 @@ export function ConsoleTableSkeleton({
       {actions > 0 ? (
         <div className="flex flex-wrap justify-end gap-3">
           {Array.from({ length: actions }, (_, action) => (
-            <Skeleton key={action} className="h-10 w-32 rounded-lg" />
+            <Skeleton key={action} className="h-10 w-32 rounded-full" />
           ))}
         </div>
       ) : null}
@@ -66,9 +66,9 @@ export function ConsoleCardsSkeleton({ cards = 2 }: { cards?: number }) {
         <Card key={card}>
           <HeaderSkeleton />
           <div className="space-y-4 px-5 py-5">
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-full rounded-lg" />
-            <Skeleton className="h-10 w-40 rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-xl" />
+            <Skeleton className="h-10 w-full rounded-xl" />
+            <Skeleton className="h-10 w-40 rounded-full" />
           </div>
         </Card>
       ))}

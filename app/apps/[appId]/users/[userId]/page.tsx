@@ -1,7 +1,7 @@
 import { ResetUsageDialog } from "@/components/console/reset-usage-dialog";
 import { AppleUserAccount } from "@/components/console/apple-user-account";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
 import { adjustBalanceAction, setUserLevelAction } from "@/app/actions/users";
 import { ActionForm } from "@/components/forms/action-form";
@@ -280,6 +280,12 @@ export default async function UserDetailPage({
 
   return (
     <div className="space-y-6">
+      <div className="sticky top-0 z-20 w-fit rounded-full bg-[var(--md-surface)] shadow-sm">
+        <Link href={`/apps/${encodeURIComponent(appId)}/users`} className="console-nav-link console-back-link">
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Back to users
+        </Link>
+      </div>
       <Card className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

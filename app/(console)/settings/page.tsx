@@ -31,7 +31,7 @@ export default async function SettingsPage() {
       ),
     );
   return (
-    <div className="min-h-full bg-[#f7f8fc]">
+    <div className="min-h-full bg-transparent">
       <main className="mx-auto max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
         <header className="mb-8">
           <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">Workspace preferences</p>

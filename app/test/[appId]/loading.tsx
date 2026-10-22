@@ -13,7 +13,7 @@ export default function Loading() {
           <div className="space-y-3 px-5 py-5">
             <Skeleton className="h-3.5 w-full" />
             <Skeleton className="h-3.5 w-4/5" />
-            <Skeleton className="h-10 w-36 rounded-lg" />
+            <Skeleton className="h-10 w-36 rounded-full" />
           </div>
         </Card>
       ))}

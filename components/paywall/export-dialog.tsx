@@ -4,7 +4,7 @@ import { Check, Copy, Download } from "lucide-react";
 import { useState } from "react";
 import { exportPaywallAction } from "@/app/actions/paywalls";
 import { copyText } from "@/components/forms/action-form";
-import { FormDialog } from "@/components/ui/form-dialog";
+import { FormDialog, FormDialogActions } from "@/components/ui/form-dialog";
 import { Button, Field, Select } from "@/components/ui/primitives";
 import type { PaywallSpec } from "@/lib/paywall/schema";
 
@@ -115,7 +115,7 @@ function ExportPanel({
         </Field>
       </div>
 
-      <div className="flex items-center gap-2">
+      <FormDialogActions>
         <Button type="button" size="sm" disabled={busy} onClick={() => void generate()}>
           {busy ? "Generating…" : "Generate"}
         </Button>
@@ -145,7 +145,7 @@ function ExportPanel({
           </>
         ) : null}
         {error ? <p className="ml-auto text-xs text-rose-600">{error}</p> : null}
-      </div>
+      </FormDialogActions>
 
       {json ? (
         <pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-3 font-mono text-[11px] leading-4 text-slate-100">

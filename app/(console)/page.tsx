@@ -44,46 +44,46 @@ export default async function HomePage() {
   const applicationLinks = await getApplicationLinkSummaries(applications.map((application) => application.id));
 
   return (
-    <div className="min-h-full bg-[#f7f8fc]">
+    <div className="min-h-full">
 
       <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
-        <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-slate-950 px-6 py-9 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.75)] sm:px-10 sm:py-11">
-          <div className="absolute -right-20 -top-36 size-80 rounded-full bg-blue-500/25 blur-3xl" />
-          <div className="absolute -bottom-40 right-52 size-72 rounded-full bg-cyan-400/15 blur-3xl" />
+        <section className="material-enter relative overflow-hidden rounded-[32px] bg-[#dce7ff] px-6 py-9 sm:px-10 sm:py-11">
+          <div className="absolute -right-20 -top-36 size-80 rounded-full bg-blue-300/20" />
+          <div className="absolute -bottom-40 right-52 size-72 rounded-full bg-white/20" />
           <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-sky-200">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/40 px-3 py-1.5 text-xs font-medium text-blue-800">
                 <Sparkles className="size-3.5" aria-hidden="true" />
                 Subscription workspace
               </div>
               <h1
                 id="applications-heading"
-                className="mt-5 text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl"
+                className="mt-5 text-3xl font-medium tracking-[-0.035em] text-[#142e62] sm:text-4xl"
               >
-                Manage every product from one place.
+                A home for every product.
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
                 Configure plans, access, usage, and billing for the applications your
                 RxLab permissions allow you to manage.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:flex">
-              <div className="min-w-32 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="min-w-32 rounded-2xl border border-white/50 bg-white/40 px-4 py-3 backdrop-blur-sm">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
                   <Boxes className="size-3.5" aria-hidden="true" />
                   Applications
                 </div>
-                <p className="mt-1 text-2xl font-semibold text-white">
+                <p className="mt-1 text-2xl font-semibold text-[#142e62]">
                   {applications.length}
                 </p>
               </div>
-              <div className="min-w-32 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="min-w-32 rounded-2xl border border-white/50 bg-white/40 px-4 py-3 backdrop-blur-sm">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
                   <ShieldCheck className="size-3.5" aria-hidden="true" />
                   Access
                 </div>
-                <p className="mt-1 text-sm font-semibold text-emerald-300">Authorized</p>
+                <p className="mt-1 text-sm font-semibold text-blue-800">Authorized</p>
               </div>
             </div>
           </div>
