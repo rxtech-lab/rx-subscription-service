@@ -8,12 +8,13 @@ import {
   resolveRequestUser,
 } from "@/lib/api/context";
 import { getUsageItemByKey } from "@/lib/subscription/usage-items";
-import { getUsageStatus, recordUsage } from "@/lib/subscription/usage";
+import { getUsageStatus, recordUsage, releaseUsage } from "@/lib/subscription/usage";
 import { apiUsageKey, scopedApiUsageKey } from "@/lib/api/idempotency";
 
 const schema = z.object({
   rxlabUserId: z.string().min(1),
   item: z.string().min(1),
+  operation: z.enum(["consume", "release"]).default("consume"),
   amount: z.number().int().positive().default(1),
   idempotencyKey: z.string().min(1).max(180).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -61,6 +62,11 @@ export async function POST(request: Request) {
       callerIdempotencyKey,
     );
 
+    if (parsed.data.operation === "release") {
+      if (!parsed.data.idempotencyKey) throw new ApiError(400, "invalid_request", "Releasing usage requires the original idempotencyKey");
+      const result = await releaseUsage({ applicationId: context.application.id, appUserId: user.id, usageItemId: item.id, idempotencyKey });
+      return Response.json(result, { headers: noStore });
+    }
     const result = await recordUsage({
       applicationId: context.application.id,
       appUserId: user.id,

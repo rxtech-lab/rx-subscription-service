@@ -1,0 +1,5 @@
+simulation: subscription-mcp
+routing: path
+mocks:
+  - routeKey: api
+    path: ../mocks/rxlab-auth/config.yaml

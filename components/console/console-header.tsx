@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, Smartphone, type LucideIcon } from "lucide-react";
+import { Boxes, Smartphone, Settings, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/console/brand-mark";
@@ -13,10 +13,11 @@ interface Tab {
   icon: LucideIcon;
 }
 
-/** The two console-wide sections; everything else lives under an application. */
+/** The console-wide sections; everything else lives under an application. */
 const TABS: Tab[] = [
   { href: "/", label: "Applications", icon: Boxes },
   { href: "/paywalls", label: "Paywalls", icon: Smartphone },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function ConsoleHeader({
