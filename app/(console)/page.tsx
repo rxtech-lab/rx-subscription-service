@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { Boxes, ShieldCheck, Sparkles } from "lucide-react";
 import { ApplicationGrid } from "@/components/console/application-grid";
 import { BrandMark } from "@/components/console/brand-mark";
-import { ConsoleHeader } from "@/components/console/console-header";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { authStatus } from "@/lib/auth";
 import { getApplicationLinkSummaries } from "@/lib/applications/links";
@@ -43,11 +42,9 @@ export default async function HomePage() {
 
   const applications = await getManagedApplications();
   const applicationLinks = await getApplicationLinkSummaries(applications.map((application) => application.id));
-  const displayName = user.name || user.email || "Admin";
 
   return (
     <div className="min-h-full bg-[#f7f8fc]">
-      <ConsoleHeader displayName={displayName} email={user.email} />
 
       <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
         <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-slate-950 px-6 py-9 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.75)] sm:px-10 sm:py-11">

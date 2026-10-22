@@ -7,7 +7,6 @@ import {
   renamePaywallAction,
 } from "@/app/actions/paywalls";
 import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
-import { ConsoleHeader } from "@/components/console/console-header";
 import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
@@ -55,14 +54,12 @@ function CreatePaywallDialog() {
 }
 
 export default async function PaywallsPage() {
-  const user = await requireConsoleUser();
+  await requireConsoleUser();
 
   const paywalls = await listPaywalls();
-  const displayName = user.name || user.email || "Admin";
 
   return (
     <div className="min-h-full bg-[#f7f8fc]">
-      <ConsoleHeader displayName={displayName} email={user.email} />
 
       <main className="mx-auto w-full max-w-7xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">

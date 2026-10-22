@@ -1,3 +1,4 @@
+import { ResetUsageDialog } from "@/components/console/reset-usage-dialog";
 import { AppleUserAccount } from "@/components/console/apple-user-account";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
@@ -422,7 +423,19 @@ export default async function UserDetailPage({
         </Card>
 
         <Card>
-          <CardHeader title="Usage" />
+          <CardHeader
+            title="Usage"
+            action={
+              <ResetUsageDialog
+                key={`${user.id}-${environment}`}
+                applicationId={appId}
+                scope="user"
+                appUserId={user.id}
+                environment={environment}
+                items={usage.map((item) => ({ id: item.itemId, name: item.name }))}
+              />
+            }
+          />
           {usage.length === 0 ? (
             <EmptyState title="No usage items" />
           ) : (

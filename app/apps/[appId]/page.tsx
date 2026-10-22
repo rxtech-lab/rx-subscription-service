@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AnalyticsOverview } from "@/components/console/analytics-overview";
-import { Card, CardHeader } from "@/components/ui/primitives";
+import { Card } from "@/components/ui/primitives";
 import { requireApplicationAccess } from "@/lib/console/session";
 import {
   clampAnalyticsDays,
@@ -83,49 +83,6 @@ export default async function OverviewPage({
 
       <AnalyticsOverview appId={appId} analytics={analytics} />
 
-      <Card>
-        <CardHeader
-          title="Getting started"
-          description="A workable setup needs these pieces, roughly in this order."
-        />
-        <ol className="space-y-3 px-5 py-4 text-sm text-neutral-600">
-          <li>
-            <span className="font-medium text-neutral-900">1. Balance units</span> —
-            define what you meter, such as points or credits, and set what they are
-            worth in each currency.
-          </li>
-          <li>
-            <span className="font-medium text-neutral-900">2. Roles and permissions</span>{" "}
-            — describe what a subscriber may do, using the{" "}
-            <code className="rounded bg-neutral-100 px-1">read:a:all</code> /{" "}
-            <code className="rounded bg-neutral-100 px-1">read:a:id1,id2</code> syntax.
-          </li>
-          <li>
-            <span className="font-medium text-neutral-900">3. Usage items</span> — the
-            things you count per user, and how often they reset.
-          </li>
-          <li>
-            <span className="font-medium text-neutral-900">4. Plans</span> — monthly,
-            quarterly, yearly, or one-time, each granting roles, allowances, and
-            balances.
-          </li>
-          <li>
-            <span className="font-medium text-neutral-900">5. Topups</span> — extra
-            balance to buy, optionally gated behind a plan.
-          </li>
-          <li>
-            <span className="font-medium text-neutral-900">6. An API key</span> — under
-            Settings, so your app can read entitlements and report usage.
-          </li>
-        </ol>
-      </Card>
-
-      <Card>
-        <CardHeader
-          title="Assistant"
-          description="The button in the bottom-right corner opens a chat that can make these changes for you. It asks before applying anything."
-        />
-      </Card>
     </div>
   );
 }
