@@ -7,6 +7,7 @@ import { requirePlan } from "@/lib/subscription/plans";
 import { assertPlanGroupAvailable } from "@/lib/subscription/subscriptions";
 import { ValidationError } from "@/lib/subscription/shared";
 import { ensurePlanPrice } from "./products";
+import { prepareCheckoutPromotionCodes } from "./coupons";
 import { assertChangeTiming, type ChangeTiming } from "./plan-change-policy";
 import { createDeferredPlanReview } from "./deferred-plan-change";
 import { modeForUser, referenceId, stripe } from "./client";
@@ -84,16 +85,25 @@ export async function createPlanChangeSession(input: {
   const price = await client.prices.retrieve(priceId);
   const productId = referenceId(price.product);
   if (!productId) throw new ValidationError("Plan price has no product");
+  const customerId = referenceId(subscription.customer);
+  if (!customerId) throw new ValidationError("Stripe subscription has no customer");
+  const allowPromotionCodes = await prepareCheckoutPromotionCodes({
+    applicationId: input.applicationId,
+    user: input.user,
+    customerId,
+    target: { kind: "plan", plan: target },
+    mode,
+  });
   // Isolated configuration: this deep link can only change to the selected plan.
   const configuration = await client.billingPortal.configurations.create({
     features: { payment_method_update: { enabled: true }, subscription_update: {
-      enabled: true, default_allowed_updates: ["price"],
+      enabled: true, default_allowed_updates: allowPromotionCodes ? ["price", "promotion_code"] : ["price"],
       products: [{ product: productId, prices: [priceId] }],
       proration_behavior: "always_invoice",
     } },
-  }, { idempotencyKey: `plan-change-config:v2:${input.applicationId}:${priceId}` });
+  }, { idempotencyKey: `plan-change-config:v3:${input.applicationId}:${priceId}:${allowPromotionCodes ? "coupons" : "no-coupons"}` });
   const session = await client.billingPortal.sessions.create({
-    customer: referenceId(subscription.customer)!,
+    customer: customerId,
     configuration: configuration.id,
     return_url: input.returnUrl,
     flow_data: {

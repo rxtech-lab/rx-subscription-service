@@ -4,6 +4,7 @@ import type { AppUser } from "@/lib/db/schema";
 const m = vi.hoisted(() => ({
   rows: [] as unknown[], plans: new Map<string, unknown>(),
   limit: vi.fn(), group: vi.fn(), price: vi.fn(), retrieve: vi.fn(),
+  promotions: vi.fn(),
   checkout: vi.fn(), customer: vi.fn(), setup: vi.fn(), priceRetrieve: vi.fn(), configuration: vi.fn(), session: vi.fn(), stripe: vi.fn(), where: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
@@ -11,6 +12,7 @@ vi.mock("@/lib/db", () => ({ db: { select: () => ({ from: () => ({ where: m.wher
 vi.mock("@/lib/subscription/plans", () => ({ requirePlan: (_app: string, id: string) => m.plans.get(id) }));
 vi.mock("@/lib/subscription/subscriptions", () => ({ assertPlanGroupAvailable: m.group }));
 vi.mock("./products", () => ({ ensurePlanPrice: m.price }));
+vi.mock("./coupons", () => ({ prepareCheckoutPromotionCodes: m.promotions }));
 vi.mock("./client", () => ({ modeForUser: (user: { isTest: boolean }) => user.isTest ? "sandbox" : "live",
   referenceId: (value: string | { id: string }) => typeof value === "string" ? value : value?.id,
   stripe: m.stripe,
@@ -30,6 +32,7 @@ const input = { applicationId: "app", user: { id: "user", isTest: true } as AppU
 
 beforeEach(() => {
   vi.resetAllMocks();
+  m.promotions.mockResolvedValue(false);
   m.plans = new Map([["old", { ...current }], ["new", { ...target }]]);
   m.limit.mockResolvedValue([owned]); m.where.mockReturnValue({ limit: m.limit });
   m.customer.mockResolvedValue("cus_1"); m.checkout.mockResolvedValue({ checkoutUrl: "https://checkout.stripe.com/free-upgrade" });
@@ -153,6 +156,36 @@ describe("portal payment-method prerequisite", () => {
     expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({
       features: expect.objectContaining({ payment_method_update: { enabled: true },
         subscription_update: expect.objectContaining({ enabled: true }) }),
-    }), { idempotencyKey: "plan-change-config:v2:app:price_new" });
+    }), { idempotencyKey: "plan-change-config:v3:app:price_new:no-coupons" });
+  });
+});
+
+describe("plan change coupon entry", () => {
+  it.each([true, false])("enables coupon entry only when eligible coupons exist: %s", async (eligible) => {
+    m.promotions.mockResolvedValue(eligible);
+    await createPlanChangeSession(input);
+    expect(m.promotions).toHaveBeenCalledWith({
+      applicationId: "app", user: input.user, customerId: "cus_1",
+      target: { kind: "plan", plan: target }, mode: "sandbox",
+    });
+    expect(m.configuration).toHaveBeenCalledWith(expect.objectContaining({
+      features: expect.objectContaining({ subscription_update: expect.objectContaining({
+        default_allowed_updates: eligible ? ["price", "promotion_code"] : ["price"],
+      }) }),
+    }), { idempotencyKey: `plan-change-config:v3:app:price_new:${eligible ? "coupons" : "no-coupons"}` });
+  });
+
+  it("does not open confirmation if coupon preparation fails", async () => {
+    m.promotions.mockRejectedValue(new Error("Coupon preparation failed"));
+    await expect(createPlanChangeSession(input)).rejects.toThrow("Coupon preparation failed");
+    expect(m.configuration).not.toHaveBeenCalled();
+    expect(m.session).not.toHaveBeenCalled();
+  });
+
+  it("prepares live coupons for the subscription's expanded customer", async () => {
+    m.retrieve.mockResolvedValue({ ...remote(), customer: { id: "cus_live" } });
+    await createPlanChangeSession({ ...input, user: { ...input.user, isTest: false } });
+    expect(m.promotions).toHaveBeenCalledWith(expect.objectContaining({ customerId: "cus_live", mode: "live" }));
+    expect(m.session).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_live" }));
   });
 });
