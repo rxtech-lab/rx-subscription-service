@@ -438,6 +438,10 @@ Stripe account. Checkout resolves a submitted `couponCode` against the calling
 application and applies the resulting Stripe Coupon directly. When a code is
 not pre-applied, Checkout enables its promotion-code field only if the user has
 an eligible app coupon, mirrored as a customer-specific Stripe Promotion Code.
+Immediate plan-change confirmations use the same eligibility check for the
+selected destination plan and enable the portal's coupon entry when an eligible
+code is available. Scheduled changes use payment-method setup, not a purchase
+checkout, and do not offer coupon entry.
 
 Coupons support fixed or percentage discounts, an optional maximum discount,
 one-time or repeating durations, selected plans/topups, user allow-lists,
