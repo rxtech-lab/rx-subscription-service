@@ -83,6 +83,7 @@ export async function grantSubscriptionAction(
         environment: text(formData, "environment"),
         planId: text(formData, "planId"),
         periodDays: Number(text(formData, "periodDays")),
+        autoRenew: text(formData, "autoRenew") === "true",
         reason: text(formData, "reason"),
       });
       if (!parsed.success) throw new ValidationError(parsed.error.issues[0].message);

@@ -41,6 +41,6 @@ Use `listSubscriptionUsers` with an explicit `sandbox` or `production` environme
 }
 ```
 
-The grant applies plan access and configured allowances without charging or creating a store purchase. It expires after 1–3650 days without renewal. The service rejects environment mismatches, inactive or automatic free plans, and existing ownership in the same plan group. The reason and administrator are recorded in audit history. Xcode is not supported for complimentary grants.
+The grant applies plan access and configured allowances without charging or creating a store purchase. It expires after 1–3650 days by default. Set `autoRenew: true` to renew every `periodDays` without charging until canceled. Each renewal grants the plan’s current allowances; missed periods are caught up without duplicate credits. Cancel at period end stops renewal; cancel now ends access immediately. The service rejects environment mismatches, inactive or automatic free plans, and existing ownership in the same plan group. The reason and administrator are recorded in audit history. Xcode is not supported for complimentary grants.
 
-The dashboard provides the same operation under **Subscriptions → Grant subscription** and the user's **Subscriptions → Grant subscription** dialog. Select the environment first, then the user, plan, duration, and reason.
+The dashboard provides the same operation under **Subscriptions → Grant subscription** and the user's **Subscriptions → Grant subscription** dialog. Select the environment first, then the user, plan, period length, renewal mode, and reason.

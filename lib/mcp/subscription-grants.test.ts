@@ -86,3 +86,44 @@ it("rejects dashboard submissions when application access is denied", async () =
   expect(await grantSubscriptionAction({}, form())).toEqual({ error: "Denied" });
   expect(await db.select().from(schema.subscriptions)).toHaveLength(0);
 });
+
+it("renews complimentary periods, catches up once, and honors cancellation", async () => {
+  const { expireComplimentarySubscriptions, cancelSubscription } = await import("@/lib/subscription/subscriptions");
+  await db.insert(schema.balanceUnits).values({ id: "credits", applicationId: "app", key: "credits", name: "Credits", createdAt: now, updatedAt: now });
+  await db.insert(schema.planEntitlements).values({ id: "allowance", planId: "plan", kind: "balance_grant", unitId: "credits", amount: 100, createdAt: now, updatedAt: now });
+  expect(await grantSubscriptionAction({}, form({ autoRenew: "true" }))).toHaveProperty("success");
+  const [original] = await db.select().from(schema.subscriptions);
+  expect(original.cancelAtPeriodEnd).toBe(false);
+  const renewalTime = new Date(original.currentPeriodEnd!.getTime() + 31 * 86400000);
+  expect(await expireComplimentarySubscriptions({ now: renewalTime })).toBe(1);
+  const [renewed] = await db.select().from(schema.subscriptions);
+  expect(renewed.status).toBe("active");
+  expect(renewed.currentPeriodStart!.getTime()).toBe(original.currentPeriodEnd!.getTime() + 30 * 86400000);
+  expect(renewed.currentPeriodEnd!.getTime()).toBe(original.currentPeriodEnd!.getTime() + 60 * 86400000);
+  expect(await expireComplimentarySubscriptions({ now: renewalTime })).toBe(0);
+  const credits = await db.select().from(schema.ledgerEntries);
+  expect(credits).toHaveLength(3);
+  expect(credits.reduce((total, entry) => total + entry.delta, 0)).toBe(300);
+  await cancelSubscription({ applicationId: "app", subscriptionId: original.id, immediately: false, actor: { type: "user", id: "admin" } });
+  await expireComplimentarySubscriptions({ now: renewed.currentPeriodEnd! });
+  expect((await db.select().from(schema.subscriptions))[0].status).toBe("expired");
+});
+
+it("never renews an immediately canceled grant or a legacy fixed grant", async () => {
+  const { expireComplimentarySubscriptions, cancelSubscription } = await import("@/lib/subscription/subscriptions");
+  await grantSubscriptionAction({}, form({ autoRenew: "true" }));
+  const [original] = await db.select().from(schema.subscriptions);
+  await cancelSubscription({ applicationId: "app", subscriptionId: original.id, immediately: true, actor: { type: "user", id: "admin" } });
+  expect(await expireComplimentarySubscriptions({ now: original.currentPeriodEnd! })).toBe(0);
+  expect((await db.select().from(schema.subscriptions))[0].status).toBe("canceled");
+  await grantSubscriptionAction({}, form({ appUserId: "production-user", environment: "production", operationId: "fixed" }));
+  const fixed = (await db.select().from(schema.subscriptions)).find((row) => row.appUserId === "production-user")!;
+  await expireComplimentarySubscriptions({ now: fixed.currentPeriodEnd! });
+  expect((await db.select().from(schema.subscriptions)).find((row) => row.id === fixed.id)!.status).toBe("expired");
+});
+
+it("MCP accepts auto-renew and prevents changing renewal mode on replay", async () => {
+  expect(await callTool(grant(), "grantComplimentarySubscription", { applicationId: "app", confirmed: true, input: { ...input, autoRenew: true } })).toMatchObject({ ok: true, result: { subscription: { cancelAtPeriodEnd: false } } });
+  await grantSubscriptionAction({}, form({ appUserId: "production-user", environment: "production" }));
+  expect(await grantSubscriptionAction({}, form({ appUserId: "production-user", environment: "production", autoRenew: "true" }))).toHaveProperty("error");
+});

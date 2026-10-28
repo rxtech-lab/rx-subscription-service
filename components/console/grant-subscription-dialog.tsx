@@ -23,7 +23,7 @@ export function GrantSubscriptionDialog({
 }) {
   return (
     <FormDialog triggerLabel="Grant subscription" title="Grant a subscription" size="sm"
-      description="Give complimentary plan access without charging the user. Access expires after the selected duration and does not renew.">
+      description="Give complimentary plan access without charging the user. Choose a fixed duration or renew complimentary access until canceled.">
       <GrantForm applicationId={applicationId} users={users} plans={plans} />
     </FormDialog>
   );
@@ -59,7 +59,13 @@ function GrantForm({ applicationId, users, plans }: {
             {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.planGroup}</option>)}
           </Select>
         </Field>
-        <Field label="Duration (days)" hint="Starts immediately, including the plan’s configured allowances.">
+        <Field label="Renewal" hint="Auto-renew repeats the selected period without charging. Cancel from the subscriptions page.">
+          <Select name="autoRenew" defaultValue="false">
+            <option value="false">Expire after one period</option>
+            <option value="true">Auto-renew until canceled</option>
+          </Select>
+        </Field>
+        <Field label="Period (days)" hint="Starts immediately, including the plan’s configured allowances.">
           <Input name="periodDays" type="number" min={1} max={3650} step={1} required />
         </Field>
         <Field label="Reason" hint="Recorded in the audit history.">

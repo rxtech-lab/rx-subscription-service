@@ -132,6 +132,7 @@ export async function grantComplimentarySubscription(input: {
   environment: "sandbox" | "production";
   planId: string;
   periodDays: number;
+  autoRenew?: boolean;
   reason: string;
   /** Stable SDK tool-call ID, so a resumed approval cannot grant twice. */
   operationId: string;
@@ -163,8 +164,8 @@ export async function grantComplimentarySubscription(input: {
     )).limit(1);
     if (previous) {
       const details = previous.entitlementSnapshot?.complimentary as
-        { periodDays?: number; reason?: string } | undefined;
-      if (previous.planId !== args.planId || details?.periodDays !== args.periodDays || details?.reason !== args.reason) {
+        { periodDays?: number; reason?: string; autoRenew?: boolean } | undefined;
+      if ((details?.autoRenew ?? false) !== args.autoRenew || previous.planId !== args.planId || details?.periodDays !== args.periodDays || details?.reason !== args.reason) {
         throw new ValidationError("This grant operation was already used with different details");
       }
       return { subscription: previous, environment: user.environment, duplicate: true };
@@ -185,13 +186,13 @@ export async function grantComplimentarySubscription(input: {
     const [subscription] = await tx.insert(subscriptions).values({
       id: newId(), applicationId: input.applicationId, appUserId: user.id, planId: plan.id,
       status: "active", billingProvider: "complimentary", providerSubscriptionId,
-      currentPeriodStart: now, currentPeriodEnd: periodEnd, cancelAtPeriodEnd: true,
-      entitlementSnapshot: { ...snapshot, complimentary: { periodDays: args.periodDays, reason: args.reason } },
+      currentPeriodStart: now, currentPeriodEnd: periodEnd, cancelAtPeriodEnd: !args.autoRenew,
+      entitlementSnapshot: { ...snapshot, complimentary: { periodDays: args.periodDays, reason: args.reason, autoRenew: args.autoRenew } },
       startedAt: now, createdAt: new Date(), updatedAt: new Date(),
     }).returning();
 
     await replaceInternalDefaultForPlan({ applicationId: input.applicationId, appUserId: user.id, planId: plan.id }, tx);
-    // Start the configured allowance cadence; membership never renews.
+    // Start the configured allowance cadence for the first period.
     await grantPeriodBalances({
       applicationId: input.applicationId, appUserId: user.id, planId: plan.id,
       subscriptionId: subscription.id, periodKey: subscription.id, periodStart: now, periodEnd, now,
@@ -207,7 +208,7 @@ export async function grantComplimentarySubscription(input: {
   });
 }
 
-/** Expiry is enforced on access reads and also swept for inactive users. */
+/** Renewal and expiry run on access reads and in the sweep for inactive users. */
 export async function expireComplimentarySubscriptions(input: {
   applicationId?: string;
   appUserId?: string;
@@ -224,6 +225,38 @@ export async function expireComplimentarySubscriptions(input: {
       input.appUserId ? eq(subscriptions.appUserId, input.appUserId) : undefined,
     )).limit(input.limit ?? 500).for("update");
     for (const before of rows) {
+      const details = before.entitlementSnapshot?.complimentary as
+        { periodDays?: number; autoRenew?: boolean } | undefined;
+      if (details?.autoRenew === true && !before.cancelAtPeriodEnd &&
+          Number.isInteger(details.periodDays) && details.periodDays! >= 1 && details.periodDays! <= 3650) {
+        let start = before.currentPeriodStart!;
+        let end = before.currentPeriodEnd!;
+        // Finish scheduled allowances in the old period before advancing it.
+        await grantPeriodBalances({
+          applicationId: before.applicationId, appUserId: before.appUserId, planId: before.planId,
+          subscriptionId: before.id, periodKey: String(start.getTime()),
+          periodStart: start, periodEnd: end, now, scheduledOnly: true, status: before.status,
+        }, tx);
+        while (end <= now) {
+          start = end;
+          end = new Date(start.getTime() + details.periodDays! * 86_400_000);
+          await grantPeriodBalances({
+            applicationId: before.applicationId, appUserId: before.appUserId, planId: before.planId,
+            subscriptionId: before.id, periodKey: String(start.getTime()),
+            periodStart: start, periodEnd: end, now, status: before.status,
+            idempotencyPrefix: "complimentary_plan_grant",
+            referenceType: "subscription", referenceId: before.id,
+          }, tx);
+        }
+        await tx.update(subscriptions).set({ currentPeriodStart: start, currentPeriodEnd: end, updatedAt: now })
+          .where(eq(subscriptions.id, before.id));
+        await recordAudit({
+          applicationId: before.applicationId, actor: { type: "system", id: null },
+          action: "subscription.renew_complimentary", entityType: "subscription", entityId: before.id,
+          before, after: { currentPeriodStart: start, currentPeriodEnd: end },
+        }, tx);
+        continue;
+      }
       const endedAt = before.currentPeriodEnd!;
       await tx.update(subscriptions).set({ status: "expired", endedAt, cancelAtPeriodEnd: false, updatedAt: now })
         .where(eq(subscriptions.id, before.id));

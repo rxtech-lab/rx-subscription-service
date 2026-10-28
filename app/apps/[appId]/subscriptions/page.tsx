@@ -254,6 +254,10 @@ export default async function SubscriptionsPage({
                     <Badge tone={statusTone(subscription.status)}>
                       {subscription.status}
                     </Badge>
+                    {subscription.billingProvider === "complimentary" &&
+                    !subscription.cancelAtPeriodEnd && subscription.status === "active" ? (
+                      <span className="ml-2 text-xs text-neutral-500">auto-renews</span>
+                    ) : null}
                     {subscription.cancelAtPeriodEnd ? (
                       <span className="ml-2 text-xs text-neutral-500">ending</span>
                     ) : null}
