@@ -15,26 +15,32 @@ type UserOption = {
 type PlanOption = { id: string; name: string; planGroup: string };
 
 export function GrantSubscriptionDialog({
-  applicationId, users, plans,
+  applicationId, users, plans, currentUser,
 }: {
   applicationId: string;
   users: UserOption[];
   plans: PlanOption[];
+  currentUser?: UserOption;
 }) {
   return (
     <FormDialog triggerLabel="Grant subscription" title="Grant a subscription" size="sm"
       description="Give complimentary plan access without charging the user. Choose a fixed duration or renew complimentary access until canceled.">
-      <GrantForm applicationId={applicationId} users={users} plans={plans} />
+      <GrantForm applicationId={applicationId} users={users} plans={plans} currentUser={currentUser} />
     </FormDialog>
   );
 }
 
-function GrantForm({ applicationId, users, plans }: {
-  applicationId: string; users: UserOption[]; plans: PlanOption[];
+function GrantForm({ applicationId, users, plans, currentUser }: {
+  applicationId: string; users: UserOption[]; plans: PlanOption[]; currentUser?: UserOption;
 }) {
-  const [environment, setEnvironment] = useState("");
+  const [environment, setEnvironment] = useState(
+    currentUser && ["sandbox", "production"].includes(currentUser.environment)
+      ? currentUser.environment
+      : "",
+  );
   const [operationId] = useState(() => crypto.randomUUID());
   const eligibleUsers = users.filter((user) => user.environment === environment);
+  const scopedUser = currentUser ? eligibleUsers[0] : undefined;
   return (
     <ActionForm action={grantSubscriptionAction} submitLabel="Grant subscription" pendingLabel="Granting subscription…">
       <input type="hidden" name="applicationId" value={applicationId} />
@@ -47,12 +53,19 @@ function GrantForm({ applicationId, users, plans }: {
             <option value="production">Production</option>
           </Select>
         </Field>
-        <Field label="User" hint={environment && !eligibleUsers.length ? "No users in this environment." : undefined}>
-          <Select key={environment} name="appUserId" required defaultValue="">
-            <option value="" disabled>Select a user</option>
-            {eligibleUsers.map((user) => <option key={user.id} value={user.id}>{user.label}</option>)}
-          </Select>
-        </Field>
+        {currentUser ? (
+          <Field label="User" hint={environment && !scopedUser ? "No user record in this environment." : undefined}>
+            <input type="hidden" name="appUserId" value={scopedUser?.id ?? ""} />
+            <p className="text-sm text-neutral-700">{currentUser.label}</p>
+          </Field>
+        ) : (
+          <Field label="User" hint={environment && !eligibleUsers.length ? "No users in this environment." : undefined}>
+            <Select key={environment} name="appUserId" required defaultValue="">
+              <option value="" disabled>Select a user</option>
+              {eligibleUsers.map((user) => <option key={user.id} value={user.id}>{user.label}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field label="Plan" hint={!plans.length ? "Activate a plan without automatic free access first." : undefined}>
           <Select name="planId" required defaultValue="">
             <option value="" disabled>Select a plan</option>

@@ -137,7 +137,24 @@ export async function deleteBalanceUnit(input: {
   actor: Actor;
 }) {
   const before = await requireBalanceUnit(input.applicationId, input.unitId);
-  await db.delete(balanceUnits).where(eq(balanceUnits.id, input.unitId));
+  try {
+    await db.delete(balanceUnits).where(
+      and(eq(balanceUnits.id, input.unitId), eq(balanceUnits.applicationId, input.applicationId)),
+    );
+  } catch (error) {
+    // Drizzle wraps the database error in `cause`. Keep the FK restriction,
+    // including when a topup is added concurrently with the deletion.
+    const cause = error instanceof Error && error.cause ? error.cause : error;
+    if (
+      typeof cause === "object" && cause !== null && "code" in cause &&
+      (cause.code === "23503" || cause.code === "23001")
+    ) {
+      throw new ValidationError(
+        "This unit is used by a topup product or bonus grant. Remove those references before deleting it.",
+      );
+    }
+    throw error;
+  }
   await recordAudit({
     applicationId: input.applicationId,
     actor: input.actor,
