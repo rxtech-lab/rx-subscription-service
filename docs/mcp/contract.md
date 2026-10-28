@@ -22,3 +22,25 @@ The local RxLab mock is derived from `lib/rxlab/oauth-clients.ts`. Searching for
 Use `bun run db:migrate` against the intended deployment database before connecting clients. Migration `0006_loving_masked_marvel.sql` creates the three MCP tables. Keep AUTH_SECRET stable: rotating it requires clients to reconnect because delegated credentials can no longer be decrypted.
 
 Protocol reference: [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). Writes retain the web agent's service validation, audit logging and automatic test scheduling. MCP clients are responsible for showing per-action approval before sending `confirmed: true`; OAuth write scopes authorize the client to perform those writes.
+
+## Grant complimentary plan access
+
+Use `listSubscriptionUsers` with an explicit `sandbox` or `production` environment to find the user's environment-specific `appUserId`. Check `listPlans` and `listSubscriptions` before granting. With `subscriptions:write`, call `grantComplimentarySubscription` after approval:
+
+```json
+{
+  "applicationId": "your-application-id",
+  "confirmed": true,
+  "input": {
+    "appUserId": "environment-specific-user-id",
+    "environment": "sandbox",
+    "planId": "active-plan-id",
+    "periodDays": 30,
+    "reason": "Complimentary access approved by support"
+  }
+}
+```
+
+The grant applies plan access and configured allowances without charging or creating a store purchase. It expires after 1–3650 days by default. Set `autoRenew: true` to renew every `periodDays` without charging until canceled. Each renewal grants the plan’s current allowances; missed periods are caught up without duplicate credits. Cancel at period end stops renewal; cancel now ends access immediately. The service rejects environment mismatches, inactive or automatic free plans, and existing ownership in the same plan group. The reason and administrator are recorded in audit history. Xcode is not supported for complimentary grants.
+
+The dashboard provides the same operation under **Subscriptions → Grant subscription** and the user's **Subscriptions → Grant subscription** dialog. Select the environment first, then the user, plan, period length, renewal mode, and reason.

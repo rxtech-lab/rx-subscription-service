@@ -1,3 +1,4 @@
+import { GrantSubscriptionDialog } from "@/components/console/grant-subscription-dialog";
 import Link from "next/link";
 import {
   deleteXcodeSubscriptionAction,
@@ -120,74 +121,85 @@ export default async function SubscriptionsPage({
           title="Subscriptions"
           description="Paid subscriptions follow Stripe or the App Store. Automatic free plans and complimentary access are managed in RxArgo."
           action={
-            canTest ? (
-              <FormDialog
-                triggerLabel="Test subscription"
-                title="Test a subscription checkout"
-                description={
-                  mode === "live"
-                    ? "This uses the configured live Stripe account and may create a real charge."
-                    : "Create a Stripe Checkout session and sync the subscription after it succeeds."
-                }
-                size="sm"
-              >
-                <ActionForm
-                  action={startTestSubscriptionAction}
-                  submitLabel="Continue to Stripe"
-                  pendingLabel="Opening Stripe…"
+            <div className="flex flex-wrap items-center gap-2">
+              <GrantSubscriptionDialog
+                applicationId={appId}
+                plans={purchasablePlans}
+                users={users.map((user) => ({
+                  id: user.id,
+                  environment: user.environment,
+                  label: `${userLabel(user, rxLabUsersById)} · ${user.rxlabUserId}`,
+                }))}
+              />
+              {canTest ? (
+                <FormDialog
+                  triggerLabel="Test subscription"
+                  title="Test a subscription checkout"
+                  description={
+                    mode === "live"
+                      ? "This uses the configured live Stripe account and may create a real charge."
+                      : "Create a Stripe Checkout session and sync the subscription after it succeeds."
+                  }
+                  size="sm"
                 >
-                  <input type="hidden" name="applicationId" value={appId} />
-                  <div className="space-y-4">
-                    <Field label="User">
-                      <Select name="appUserId" required>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {userLabel(user, rxLabUsersById)} · {user.rxlabUserId}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label="Plan">
-                      <Select name="planId" required>
-                        {plans.map((plan) => (
-                          <option key={plan.id} value={plan.id}>
-                            {plan.name} · {plan.planGroup} ·{" "}
-                            {formatMoney(plan.priceAmountCents, plan.currency)}{" "}
-                            {formatInterval(
-                              plan.billingInterval,
-                              plan.intervalCount,
-                            )}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Field label="Coupon code" hint="Optional; belongs to this app.">
-                      <Input
-                        name="couponCode"
-                        placeholder="LAUNCH25"
-                        className="uppercase"
-                      />
-                    </Field>
-                    <p className="text-xs leading-5 text-slate-500">
-                      {mode === "test"
-                        ? "Stripe test mode is active. Complete Checkout with a Stripe test payment method."
-                        : mode === "live"
-                          ? "Live mode is active. Completing Checkout creates a real Stripe subscription."
-                          : "The configured Stripe key mode could not be identified."}
-                    </p>
-                  </div>
-                </ActionForm>
-              </FormDialog>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                disabled
-                title={testUnavailableReason}
-              >
-                Test subscription
-              </Button>
-            )
+                  <ActionForm
+                    action={startTestSubscriptionAction}
+                    submitLabel="Continue to Stripe"
+                    pendingLabel="Opening Stripe…"
+                  >
+                    <input type="hidden" name="applicationId" value={appId} />
+                    <div className="space-y-4">
+                      <Field label="User">
+                        <Select name="appUserId" required>
+                          {users.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {userLabel(user, rxLabUsersById)} · {user.rxlabUserId}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label="Plan">
+                        <Select name="planId" required>
+                          {plans.map((plan) => (
+                            <option key={plan.id} value={plan.id}>
+                              {plan.name} · {plan.planGroup} ·{" "}
+                              {formatMoney(plan.priceAmountCents, plan.currency)}{" "}
+                              {formatInterval(
+                                plan.billingInterval,
+                                plan.intervalCount,
+                              )}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label="Coupon code" hint="Optional; belongs to this app.">
+                        <Input
+                          name="couponCode"
+                          placeholder="LAUNCH25"
+                          className="uppercase"
+                        />
+                      </Field>
+                      <p className="text-xs leading-5 text-slate-500">
+                        {mode === "test"
+                          ? "Stripe test mode is active. Complete Checkout with a Stripe test payment method."
+                          : mode === "live"
+                            ? "Live mode is active. Completing Checkout creates a real Stripe subscription."
+                            : "The configured Stripe key mode could not be identified."}
+                      </p>
+                    </div>
+                  </ActionForm>
+                </FormDialog>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled
+                  title={testUnavailableReason}
+                >
+                  Test subscription
+                </Button>
+              )}
+            </div>
           }
         />
         {subscriptions.length === 0 ? (
@@ -242,6 +254,10 @@ export default async function SubscriptionsPage({
                     <Badge tone={statusTone(subscription.status)}>
                       {subscription.status}
                     </Badge>
+                    {subscription.billingProvider === "complimentary" &&
+                    !subscription.cancelAtPeriodEnd && subscription.status === "active" ? (
+                      <span className="ml-2 text-xs text-neutral-500">auto-renews</span>
+                    ) : null}
                     {subscription.cancelAtPeriodEnd ? (
                       <span className="ml-2 text-xs text-neutral-500">ending</span>
                     ) : null}
