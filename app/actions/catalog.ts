@@ -83,12 +83,20 @@ export async function updateBalanceUnitAction(
   return { success: "Unit updated." };
 }
 
-export async function deleteBalanceUnitAction(formData: FormData): Promise<void> {
+export async function deleteBalanceUnitAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const applicationId = text(formData, "applicationId");
-  await withConfigurationUpdate(applicationId, async ({ actor }) => {
-    await deleteBalanceUnit({ applicationId, unitId: text(formData, "unitId"), actor });
-  });
+  try {
+    await withConfigurationUpdate(applicationId, async ({ actor }) => {
+      await deleteBalanceUnit({ applicationId, unitId: text(formData, "unitId"), actor });
+    });
+  } catch (error) {
+    return toActionState(error);
+  }
   revalidateApp(applicationId, "units");
+  return { success: "Unit deleted." };
 }
 
 /** "N units cost $X" — stored as an exact integer rate. */

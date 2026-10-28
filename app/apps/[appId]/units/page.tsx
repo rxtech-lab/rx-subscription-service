@@ -4,7 +4,7 @@ import {
   setPointRateAction,
   updateBalanceUnitAction,
 } from "@/app/actions/catalog";
-import { ActionForm, InlineActionButton } from "@/components/forms/action-form";
+import { ActionForm } from "@/components/forms/action-form";
 import { ActionMenu, ActionMenuDivider } from "@/components/ui/action-menu";
 import { FormDialog } from "@/components/ui/form-dialog";
 import {
@@ -117,15 +117,19 @@ export default async function UnitsPage({ params }: PageProps<"/apps/[appId]">) 
 
                         <ActionMenuDivider />
 
-                        <InlineActionButton
-                          action={deleteBalanceUnitAction}
-                          label="Delete"
-                          variant="menuDanger"
-                          confirmMessage="Delete this unit? Balances and topups using it will be removed."
+                        <FormDialog
+                          triggerLabel="Delete"
+                          title={`Delete ${unit.name}?`}
+                          description="This permanently removes the unit, its balances, rates, and plan grants. Topup products and bonus grants must stop using this unit before it can be deleted."
+                          icon="remove"
+                          triggerVariant="menuDanger"
+                          size="sm"
                         >
-                          <input type="hidden" name="applicationId" value={appId} />
-                          <input type="hidden" name="unitId" value={unit.id} />
-                        </InlineActionButton>
+                          <ActionForm action={deleteBalanceUnitAction} submitLabel="Delete unit" pendingLabel="Deleting unit…">
+                            <input type="hidden" name="applicationId" value={appId} />
+                            <input type="hidden" name="unitId" value={unit.id} />
+                          </ActionForm>
+                        </FormDialog>
                       </ActionMenu>
                     </Td>
                   </tr>
