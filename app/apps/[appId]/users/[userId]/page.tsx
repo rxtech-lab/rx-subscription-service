@@ -495,6 +495,11 @@ export default async function UserDetailPage({
             <GrantSubscriptionDialog
               applicationId={appId}
               plans={grantPlans}
+              currentUser={{
+                id: user.id,
+                environment: user.environment,
+                label: user.displayName || user.email || user.rxlabUserId,
+              }}
               users={[sandboxUser, productionUser]
                 .filter((entry) => entry !== null)
                 .map((entry) => ({
