@@ -7,7 +7,8 @@ import { createPlanCheckout } from "@/lib/stripe/checkout";
 import { siteUrl } from "@/lib/stripe/client";
 import { requirePlan } from "@/lib/subscription/plans";
 import { ValidationError } from "@/lib/subscription/shared";
-import { deleteXcodeSubscription } from "@/lib/subscription/subscriptions";
+import { complimentaryGrantSchema } from "@/lib/subscription/complimentary-schema";
+import { grantComplimentarySubscription, deleteXcodeSubscription } from "@/lib/subscription/subscriptions";
 import { requireAppUser } from "@/lib/subscription/users";
 import {
   revalidateApp,
@@ -68,4 +69,34 @@ export async function deleteXcodeSubscriptionAction(
     });
   });
   revalidateApp(applicationId, "subscriptions");
+}
+
+export async function grantSubscriptionAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const applicationId = text(formData, "applicationId");
+  try {
+    await withApplication(applicationId, async ({ actor }) => {
+      const parsed = complimentaryGrantSchema.safeParse({
+        appUserId: text(formData, "appUserId"),
+        environment: text(formData, "environment"),
+        planId: text(formData, "planId"),
+        periodDays: Number(text(formData, "periodDays")),
+        reason: text(formData, "reason"),
+      });
+      if (!parsed.success) throw new ValidationError(parsed.error.issues[0].message);
+      await grantComplimentarySubscription({
+        ...parsed.data, applicationId, actor,
+        operationId: text(formData, "operationId"),
+      });
+    });
+    revalidateApp(applicationId, "subscriptions");
+    revalidateApp(applicationId, "users");
+    revalidateApp(applicationId, `users/${text(formData, "appUserId")}`);
+    revalidateApp(applicationId);
+    return { success: "Subscription granted." };
+  } catch (error) {
+    return toActionState(error);
+  }
 }

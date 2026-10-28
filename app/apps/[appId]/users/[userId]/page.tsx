@@ -1,3 +1,4 @@
+import { GrantSubscriptionDialog } from "@/components/console/grant-subscription-dialog";
 import { ResetUsageDialog } from "@/components/console/reset-usage-dialog";
 import { AppleUserAccount } from "@/components/console/apple-user-account";
 import Link from "next/link";
@@ -40,6 +41,7 @@ import { resolveEntitlements } from "@/lib/subscription/entitlements";
 import { listPurchaseHistory } from "@/lib/subscription/purchases";
 import {
   listSubscriptions,
+  listPurchasablePlans,
   syncInternalDefaultSubscriptions,
 } from "@/lib/subscription/subscriptions";
 import { isGranularity, type Granularity } from "@/lib/subscription/series";
@@ -238,6 +240,7 @@ export default async function UserDetailPage({
     paymentHistory,
     localPurchaseHistory,
     statistics,
+    grantPlans,
   ] = await Promise.all([
       getBalances(user.id),
       listBalanceUnits(appId),
@@ -260,6 +263,7 @@ export default async function UserDetailPage({
         pageSize: 100,
       }),
       statisticsPromise,
+      listPurchasablePlans(appId),
     ]);
   const applePurchases = localPurchaseHistory.purchases.filter(
     (purchase) => purchase.billingProvider === "apple_app_store",
@@ -485,7 +489,22 @@ export default async function UserDetailPage({
       />
 
       <Card>
-        <CardHeader title="Subscriptions" />
+        <CardHeader
+          title="Subscriptions"
+          action={
+            <GrantSubscriptionDialog
+              applicationId={appId}
+              plans={grantPlans}
+              users={[sandboxUser, productionUser]
+                .filter((entry) => entry !== null)
+                .map((entry) => ({
+                  id: entry.id,
+                  environment: entry.environment,
+                  label: entry.displayName || entry.email || entry.rxlabUserId,
+                }))}
+            />
+          }
+        />
         {subscriptions.length === 0 ? (
           <EmptyState title="No subscriptions" />
         ) : (
