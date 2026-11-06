@@ -1,5 +1,6 @@
 import { GrantSubscriptionDialog } from "@/components/console/grant-subscription-dialog";
 import { ResetUsageDialog } from "@/components/console/reset-usage-dialog";
+import { UserUsageLimitDialog } from "@/components/console/user-usage-limit-dialog";
 import { AppleUserAccount } from "@/components/console/apple-user-account";
 import Link from "next/link";
 import { ArrowLeft, ExternalLink } from "lucide-react";
@@ -455,20 +456,29 @@ export default async function UserDetailPage({
                   <Th>Item</Th>
                   <Th>Used</Th>
                   <Th>Resets</Th>
+                  <Th>Limit</Th>
                 </tr>
               </thead>
               <tbody>
                 {usage.map((item) => (
                   <tr key={item.itemId}>
-                    <Td>{item.name}</Td>
+                    <Td>
+                      {item.name}
+                      {item.itemId in entitlements.usageLimitOverrides && <span className="mt-1 block text-xs text-blue-700">User override</span>}
+                    </Td>
                     <Td>
                       {item.used}
-                      {item.limit === null ? "" : ` / ${item.limit}`}
+                      {item.limit === null ? " / Unlimited" : ` / ${item.limit}`}
                     </Td>
                     <Td>
                       <span className="text-xs text-neutral-500">
                         {item.resetsAt ? formatDate(item.resetsAt) : "never"}
                       </span>
+                    </Td>
+                    <Td>
+                      <UserUsageLimitDialog applicationId={appId} appUserId={user.id}
+                        userLabel={user.displayName ?? user.email ?? user.id} item={item}
+                        override={entitlements.usageLimitOverrides[item.itemId]} />
                     </Td>
                   </tr>
                 ))}
