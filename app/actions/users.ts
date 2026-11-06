@@ -25,6 +25,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { resetUserUsage } from "@/lib/subscription/reset-usage";
 import { resetUsageCounter } from "@/lib/subscription/usage";
+import { updateUserUsageLimit } from "@/lib/subscription/user-usage-limits";
 import {
   checkbox,
   integer,
@@ -203,6 +204,26 @@ export async function deleteApiKeyAction(formData: FormData): Promise<void> {
     await deleteApiKey({ applicationId, keyId: text(formData, "keyId"), actor });
   });
   revalidateApp(applicationId, "settings");
+}
+
+export async function updateUserUsageLimitAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const applicationId = text(formData, "applicationId");
+  try {
+    const appUserId = text(formData, "appUserId");
+    const mode = text(formData, "mode");
+    const rawLimit = text(formData, "limitValue");
+    await withApplication(applicationId, ({ actor }) => updateUserUsageLimit({
+      applicationId, appUserId, usageItemId: text(formData, "usageItemId"), mode,
+      limitValue: rawLimit === "" ? undefined : Number(rawLimit), actor,
+    }));
+    revalidatePath(`/apps/${applicationId}/users`, "layout");
+    return { success: mode === "default" ? "Plan/default limit restored for this user." : "Usage limit updated for this user only." };
+  } catch (error) {
+    return toActionState(error);
+  }
 }
 
 export async function resetUserUsageAction(
