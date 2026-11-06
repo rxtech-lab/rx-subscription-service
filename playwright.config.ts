@@ -19,7 +19,11 @@ export default defineConfig({
   // test budget goes up with it, so a slow compile cannot eat the whole test.
   timeout: 60_000,
   expect: { timeout: 15_000 },
-  use: { baseURL: E2E_BASE_URL },
+  use: {
+    baseURL: E2E_BASE_URL,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+  },
   webServer: [
     {
       command: "bun e2e/fake-stripe.ts",
