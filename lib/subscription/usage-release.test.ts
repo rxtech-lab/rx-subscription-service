@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, expect, it, vi } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
+import { usageRecords } from '@/lib/db/schema';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/db', async () => {
   const { PGlite } = await import('@electric-sql/pglite');
@@ -11,7 +12,7 @@ vi.mock('./users', () => ({ requireAppUser: async () => ({ testClockOffsetMs: 0 
 vi.mock('./entitlements', () => ({ resolveEntitlements: async () => ({ usageLimits: {} }), getBillingWindow: async () => ({ start: null, end: null }) }));
 vi.mock('./usage-items', () => ({ requireUsageItem: async () => ({ id: 'meter', name: 'Storage', defaultLimit: 10, overagePolicy: 'block', resetPolicy: 'never' }) }));
 import { db } from '@/lib/db';
-import { recordUsage, releaseUsage } from './usage';
+import { recordUsage, releaseUsage, settleUsage } from './usage';
 const input = { applicationId: 'app', appUserId: 'user', usageItemId: 'meter' };
 beforeAll(async () => {
  const statements = `CREATE TABLE app_users (id text PRIMARY KEY); INSERT INTO app_users VALUES ('user');
@@ -33,4 +34,22 @@ it('tombstones release-before-consume so delayed requests cannot leak quota', as
  await releaseUsage({ ...input, idempotencyKey: 'late' });
  await releaseUsage({ ...input, idempotencyKey: 'new' });
  expect(await recordUsage({ ...input, amount: 1, idempotencyKey: 'late' })).toMatchObject({ allowed: false, reason: 'released' });
+});
+
+it('settles actual usage exactly once and prevents later refunds', async () => {
+ await recordUsage({ ...input, amount: 6, idempotencyKey: 'settle-test' });
+ expect(await settleUsage({ ...input, amount: 2, idempotencyKey: 'settle-test' })).toEqual({ settled: true, duplicate: false });
+ expect(await settleUsage({ ...input, amount: 2, idempotencyKey: 'settle-test' })).toEqual({ settled: true, duplicate: true });
+ await expect(settleUsage({ ...input, amount: 1, idempotencyKey: 'settle-test' })).rejects.toThrow('conflicts');
+ await expect(releaseUsage({ ...input, idempotencyKey: 'settle-test' })).rejects.toThrow('Settled');
+ const rows = await db.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, 'settle:settle-test'));
+ expect(rows[0].amount).toBe(-4);
+});
+it('rejects missing reservations, released reservations, and over-settlement', async () => {
+ await expect(settleUsage({ ...input, amount: 0, idempotencyKey: 'missing' })).rejects.toThrow('not found');
+ await expect(settleUsage({ ...input, amount: 0, idempotencyKey: 'late' })).rejects.toThrow('Released');
+ await recordUsage({ ...input, amount: 2, idempotencyKey: 'bounds' });
+ await expect(settleUsage({ ...input, amount: 3, idempotencyKey: 'bounds' })).rejects.toThrow('exceeds');
+ const results = await Promise.all([0,0].map(amount => settleUsage({ ...input, amount, idempotencyKey: 'bounds' })));
+ expect(results.filter(r => r.duplicate)).toHaveLength(1);
 });
