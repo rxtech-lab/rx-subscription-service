@@ -437,6 +437,8 @@ export async function releaseUsage(input: {
   const now = new Date();
   return db.transaction(async (tx) => {
     await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, input.appUserId)).for("update");
+    const [settled] = await tx.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, `settle:${input.idempotencyKey}`)).limit(1);
+    if (settled) throw new ValidationError("Settled usage cannot be released");
     const key = `release:${input.idempotencyKey}`;
     const [existing] = await tx.select().from(usageRecords).where(eq(usageRecords.idempotencyKey, key)).limit(1);
     if (existing) return { released: true, duplicate: true };
@@ -458,5 +460,46 @@ export async function releaseUsage(input: {
       metadata: { releases: input.idempotencyKey }, createdAt: now,
     });
     return { released: true, duplicate: false };
+  });
+}
+
+/** Reduce a reserved usage charge to its final actual amount in its original period. */
+export async function settleUsage(input: {
+  applicationId: string; appUserId: string; usageItemId: string;
+  idempotencyKey: string; amount: number;
+}) {
+  if (!Number.isSafeInteger(input.amount) || input.amount < 0) throw new ValidationError("amount must be a nonnegative safe integer");
+  if (!input.idempotencyKey.trim()) throw new ValidationError("idempotencyKey is required");
+  await requireAppUser(input.applicationId, input.appUserId);
+  const item = await requireUsageItem(input.applicationId, input.usageItemId);
+  if (item.overagePolicy === "charge_balance") throw new ValidationError("Balance-charged usage cannot be settled");
+  return db.transaction(async (tx) => {
+    // Same lock as consume/release: only one operation may finalize a reservation.
+    await tx.select({ id: appUsers.id }).from(appUsers).where(eq(appUsers.id, input.appUserId)).for("update");
+    const scope = and(eq(usageRecords.appUserId, input.appUserId), eq(usageRecords.usageItemId, item.id));
+    const [released] = await tx.select().from(usageRecords).where(and(scope, eq(usageRecords.idempotencyKey, `release:${input.idempotencyKey}`))).limit(1);
+    if (released) throw new ValidationError("Released usage cannot be settled");
+    const [original] = await tx.select().from(usageRecords).where(and(scope, eq(usageRecords.idempotencyKey, input.idempotencyKey))).limit(1);
+    if (!original?.counterId || original.amount <= 0 || original.chargedUnits !== 0) throw new ValidationError("Original usage reservation was not found or cannot be settled");
+    if (input.amount > original.amount) throw new ValidationError("Settlement exceeds reserved usage");
+    const key = `settle:${input.idempotencyKey}`;
+    const [existing] = await tx.select().from(usageRecords).where(and(scope, eq(usageRecords.idempotencyKey, key))).limit(1);
+    const adjustment = input.amount - original.amount;
+    if (existing) {
+      if (existing.amount !== adjustment) throw new ValidationError("Settlement amount conflicts with previous settlement");
+      return { settled: true, duplicate: true };
+    }
+    const now = new Date();
+    const [counter] = await tx.update(usageCounters).set({
+      used: sql`greatest(0, ${usageCounters.used} + ${adjustment})`, updatedAt: now,
+    }).where(eq(usageCounters.id, original.counterId)).returning();
+    if (!counter) throw new ValidationError("Original usage counter is unavailable");
+    await tx.insert(usageRecords).values({
+      id: newId(), appUserId: input.appUserId, usageItemId: item.id,
+      counterId: original.counterId, amount: adjustment, usedAfter: counter.used,
+      chargedUnits: 0, idempotencyKey: key,
+      metadata: { settles: input.idempotencyKey, actualAmount: input.amount }, createdAt: now,
+    });
+    return { settled: true, duplicate: false };
   });
 }

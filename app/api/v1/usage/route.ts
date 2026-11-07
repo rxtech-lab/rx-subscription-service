@@ -8,14 +8,14 @@ import {
   resolveRequestUser,
 } from "@/lib/api/context";
 import { getUsageItemByKey } from "@/lib/subscription/usage-items";
-import { getUsageStatus, recordUsage, releaseUsage } from "@/lib/subscription/usage";
+import { getUsageStatus, recordUsage, releaseUsage, settleUsage } from "@/lib/subscription/usage";
 import { apiUsageKey, scopedApiUsageKey } from "@/lib/api/idempotency";
 
 const schema = z.object({
   rxlabUserId: z.string().min(1),
   item: z.string().min(1),
-  operation: z.enum(["consume", "release"]).default("consume"),
-  amount: z.number().int().positive().default(1),
+  operation: z.enum(["consume", "release", "settle"]).default("consume"),
+  amount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   idempotencyKey: z.string().min(1).max(180).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -62,6 +62,11 @@ export async function POST(request: Request) {
       callerIdempotencyKey,
     );
 
+    if (parsed.data.operation === "settle") {
+      if (!parsed.data.idempotencyKey || parsed.data.amount === undefined) throw new ApiError(400, "invalid_request", "Settlement requires the original idempotencyKey and actual amount");
+      const result = await settleUsage({ applicationId: context.application.id, appUserId: user.id, usageItemId: item.id, idempotencyKey, amount: parsed.data.amount });
+      return Response.json(result, { headers: noStore });
+    }
     if (parsed.data.operation === "release") {
       if (!parsed.data.idempotencyKey) throw new ApiError(400, "invalid_request", "Releasing usage requires the original idempotencyKey");
       const result = await releaseUsage({ applicationId: context.application.id, appUserId: user.id, usageItemId: item.id, idempotencyKey });
@@ -71,7 +76,7 @@ export async function POST(request: Request) {
       applicationId: context.application.id,
       appUserId: user.id,
       usageItemId: item.id,
-      amount: parsed.data.amount,
+      amount: parsed.data.amount ?? 1,
       idempotencyKey,
       legacyIdempotencyKey,
       metadata: parsed.data.metadata ?? null,
@@ -100,7 +105,7 @@ export async function GET(request: Request) {
       applicationId: context.application.id,
       appUserId: user.id,
     });
-    return Response.json({ usage }, { headers: noStore });
+    return Response.json({ usage, capabilities: ["settle_usage_v1"] }, { headers: noStore });
   } catch (error) {
     return apiError(error);
   }
