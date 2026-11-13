@@ -126,7 +126,7 @@ export function AnalyticsOverview({
         <Card className="p-5">
           <BarChart
             title="Subscription changes per day"
-            description="Started against ended, on the same scale."
+            description="New subscriptions and cancellations. Upgrades and downgrades are excluded from cancellations; returning to an automatic free plan or ending access counts when access ends."
             series={[series.newSubscriptions, series.canceledSubscriptions]}
           />
         </Card>

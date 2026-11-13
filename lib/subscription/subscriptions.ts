@@ -281,12 +281,13 @@ function internalPeriodEnd(plan: Plan, start: Date): Date {
   return addMonthsUtc(start, months);
 }
 
-async function endInternalSubscriptions(ids: string[], endedAt: Date, executor: DbExecutor = db) {
+async function endInternalSubscriptions(ids: string[], endedAt: Date, executor: DbExecutor = db, replaced = false) {
   if (ids.length === 0) return;
   const ended = await executor
     .update(subscriptions)
     .set({
-      status: "canceled",
+      // Replacing the automatic tier ends its access without canceling the user.
+      status: replaced ? "expired" : "canceled",
       cancelAtPeriodEnd: false,
       endedAt,
       updatedAt: new Date(),
@@ -329,6 +330,7 @@ export async function replaceInternalDefaultForPlan(input: {
     rows.map((row) => row.id),
     new Date(),
     executor,
+    true,
   );
 }
 
