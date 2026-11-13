@@ -1,6 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { cancellationSubscriptions } from "./analytics-cancellations";
 import {
   appUsers,
   plans,
@@ -92,6 +93,11 @@ export async function getApplicationAnalytics(
   const [subscriptionRows, purchaseRows, userRows] = await Promise.all([
     db
       .select({
+        id: subscriptions.id,
+        appUserId: subscriptions.appUserId,
+        planGroup: plans.planGroup,
+        autoSubscribe: plans.autoSubscribe,
+        planPriceAmountCents: plans.priceAmountCents,
         status: subscriptions.status,
         startedAt: subscriptions.startedAt,
         endedAt: subscriptions.endedAt,
@@ -167,6 +173,7 @@ export async function getApplicationAnalytics(
   const liveSubscriptions = realSubscriptions.filter((row) =>
     (LIVE_STATUSES as readonly string[]).includes(row.status),
   );
+  const cancellations = cancellationSubscriptions(realSubscriptions);
 
   const intervals: Interval[] = realSubscriptions.map((row) => ({
     start: row.startedAt,
@@ -231,7 +238,7 @@ export async function getApplicationAnalytics(
     totals: {
       activeSubscriptions: liveSubscriptions.length,
       newSubscriptions: newSubscriptionsInRange,
-      canceledSubscriptions: realSubscriptions.filter(
+      canceledSubscriptions: cancellations.filter(
         (row) => row.endedAt !== null && row.endedAt >= rangeStart,
       ).length,
       mrrCents: liveSubscriptions.reduce(
@@ -268,7 +275,7 @@ export async function getApplicationAnalytics(
         dates,
         countByDay(
           dates,
-          realSubscriptions.map((row) => row.endedAt),
+          cancellations.map((row) => row.endedAt),
         ),
       ),
       netRevenue: series(
